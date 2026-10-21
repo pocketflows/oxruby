@@ -11,6 +11,11 @@ rust-version.workspace = true
 name = "oxtree"
 path = "src/main.rs"
 
+[features]
+default = []
+# Link the oxc formatter crates instead of always running `oxfmt`.
+oxc = []
+
 [dependencies]
 rayon = "1.10"
 regex = "1"
