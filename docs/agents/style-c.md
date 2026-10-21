@@ -64,9 +64,38 @@
 - Style/ReturnNilInPredicateMethodDefinition 39
 - Style/ReverseFind 14
 
+## Pending / WIP branches (local, not on main)
+
+`style-c-pending`: green, waiting only on a landing window or on another
+agent's mixin. Land in this order once main's full gate is green:
+
+1. `Port Style/RescueStandardError; add RescueNode mixin` (37) — shared
+   mixin, needs the full gate; doesn't depend on the TEMP commits, so
+   cherry-pick it onto `style-c` and land it alone.
+2. `TEMP: copy of style-d's ReparsedEquivalence` + Style/RedundantParentheses
+   (337). When style-d lands `mixin/reparsed_equivalence.rs`, drop the TEMP
+   commit (`git rebase --onto main <TEMP-sha> style-c-pending`).
+3. `TEMP: indentation helpers of layout-b's Alignment and its MatchRange` +
+   Style/RedundantConditional (11), Style/ParallelAssignment (91),
+   Style/RedundantStringEscape (328). Drop TEMP once layout-b lands
+   `alignment.rs` and `match_range.rs` (their API is the same).
+
+`style-c-wip`: ported but blocked by a spec that can't pass yet (see below):
+Style/NumberedParametersLimit, Style/NumericLiterals, Style/RedundantArgument,
+Style/RescueModifier.
+
 ## Left
 
-Everything else in Style N–R (see `../rubocop/lib/rubocop/cop/style/[n-r]*.rb`).
+- Next (MinBodyLength: style-b), OneLineConditional (OnNormalIfUnless and
+  IfThenCorrector: style-b; Alignment: layout-b).
+- PercentLiteralDelimiters, PercentQLiterals, RedundantCapitalW,
+  RedundantInterpolation (PercentLiteral: lint-a).
+- QuotedSymbols (SymbolHelp: lint-b).
+- RedundantFormat (`utils/format_string`: lint-a).
+- RedundantLineContinuation (needs tokens, MatchRange, ReparsedEquivalence).
+- RedundantRegexpEscape, RedundantRegexpCharacterClass: need a port of the
+  `regexp_parser` gem (`RegexpNode#parsed_tree`). Claimed by style-c as
+  `regexp_parser`; also unblocks several Lint cops.
 
 ## Blocked / principled failures
 
@@ -87,6 +116,12 @@ Everything else in Style N–R (see `../rubocop/lib/rubocop/cop/style/[n-r]*.rb`
   `ASCII-8BIT` encoding on invalid strings before dumping) would fix it; the
   binary side already decodes `!binary` values for this cop.
   - Style/RedundantArgument (14/15), on `style-c-wip`.
+- **The runner's final `offenses.uniq`** (owner: `runtime`, `runner.rs`).
+  RuboCop's runner drops offenses equal in line, column, cop, message and
+  severity; the cop-level specs don't. `blah rescue 1 rescue 2` gives two
+  RescueModifier offenses at 1:1 (ranges 0..13 and 0..22) and the spec
+  expects both. Skipping the dedup in spec mode (`--raw-config`) would fix it.
+  - Style/RescueModifier (19/20), on `style-c-wip`.
 
 ## Mixins owned
 
