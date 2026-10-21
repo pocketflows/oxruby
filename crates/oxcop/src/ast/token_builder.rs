@@ -18,7 +18,7 @@
 //!
 //! The result feeds the existing port of the translation lexer (`lexer.rs`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use ruby_prism::{Location, Node, Visit};
 
@@ -63,7 +63,7 @@ fn build(ps: &ProcessedSource<'_>) -> (Vec<RawToken>, Vec<usize>) {
         src,
         toks: Vec::new(),
         heredocs: Vec::new(),
-        binary_prefix: Vec::new(),
+        binary_prefix: HashSet::new(),
         parents: Vec::new(),
         marker: std::marker::PhantomData,
     };
@@ -207,7 +207,7 @@ struct Collector<'s, 'pr> {
     toks: Vec<Tok>,
     heredocs: Vec<Heredoc>,
     /// Where a paren-less `def`'s parameters start.
-    binary_prefix: Vec<usize>,
+    binary_prefix: HashSet<usize>,
     /// For each enclosing node, whether it is an `ArrayNode`.
     parents: Vec<bool>,
     marker: std::marker::PhantomData<&'pr ()>,
@@ -660,7 +660,8 @@ impl<'pr> Collector<'_, 'pr> {
                 if n.lparen_loc().is_none()
                     && let Some(params) = n.parameters()
                 {
-                    self.binary_prefix.push(params.location().start() as usize);
+                    self.binary_prefix
+                        .insert(params.location().start() as usize);
                 }
                 if let Some(op) = n.operator_loc() {
                     let ty = if self.text(&op) == b"::" {
@@ -1463,27 +1464,34 @@ impl<'s> Emitter<'s> {
             r.sort_by_key(|&(start, end, _)| (start, std::cmp::Reverse(end)));
             r
         };
-        let owner_of = |pos: usize, skip: Option<usize>| -> usize {
-            let mut owner = 0;
-            let mut best_start = 0;
-            for &(start, end, h) in &regions {
-                if start > pos {
-                    break;
-                }
-                if Some(h) != skip && pos < end && start >= best_start {
-                    owner = h + 1;
-                    best_start = start;
-                }
-            }
-            owner
-        };
+        // Tokens and regions are sorted by start, so one sweep with a stack
+        // of the open regions finds each one's innermost owner.
         self.groups = vec![Vec::new(); self.heredocs.len() + 1];
-        for (i, tok) in self.toks.iter().enumerate() {
-            self.groups[owner_of(tok.start, None)].push(i);
-        }
         self.children = vec![Vec::new(); self.heredocs.len() + 1];
-        for &(start, _, h) in &regions {
-            self.children[owner_of(start, Some(h))].push(h);
+        let mut open: Vec<(usize, usize)> = Vec::new();
+        let mut next = 0;
+        for (i, tok) in self.toks.iter().enumerate() {
+            while let Some(&(start, end, h)) = regions.get(next)
+                && start <= tok.start
+            {
+                while open.last().is_some_and(|&(e, _)| e <= start) {
+                    open.pop();
+                }
+                self.children[open.last().map_or(0, |&(_, o)| o + 1)].push(h);
+                open.push((end, h));
+                next += 1;
+            }
+            while open.last().is_some_and(|&(e, _)| e <= tok.start) {
+                open.pop();
+            }
+            self.groups[open.last().map_or(0, |&(_, o)| o + 1)].push(i);
+        }
+        for &(start, end, h) in &regions[next..] {
+            while open.last().is_some_and(|&(e, _)| e <= start) {
+                open.pop();
+            }
+            self.children[open.last().map_or(0, |&(_, o)| o + 1)].push(h);
+            open.push((end, h));
         }
     }
 
@@ -1519,19 +1527,19 @@ impl<'s> Emitter<'s> {
 
     /// The heredoc body of `group` that starts at `pos`, if any.
     fn child_at(&self, group: usize, pos: usize) -> Option<usize> {
-        self.children[group]
-            .iter()
+        let children = &self.children[group];
+        let i = children.partition_point(|&h| self.body_start[h] < pos);
+        children
+            .get(i)
             .copied()
-            .find(|&h| self.body_start[h] == pos)
+            .filter(|&h| self.body_start[h] == pos)
     }
 
     /// Where the next heredoc body of `group` at or after `pos` starts.
     fn next_child_start(&self, group: usize, pos: usize) -> Option<usize> {
-        self.children[group]
-            .iter()
-            .map(|&h| self.body_start[h])
-            .filter(|&s| s >= pos)
-            .min()
+        let children = &self.children[group];
+        let i = children.partition_point(|&h| self.body_start[h] < pos);
+        children.get(i).map(|&h| self.body_start[h])
     }
 
     /// Skips the heredoc bodies that start at `pos`.
