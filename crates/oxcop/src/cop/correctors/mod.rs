@@ -8,6 +8,7 @@ pub mod if_then_corrector;
 pub mod lambda_literal_to_method_corrector;
 pub mod line_break_corrector;
 pub mod multiline_literal_brace_corrector;
+pub mod ordered_gem_corrector;
 pub mod parentheses_corrector;
 pub mod percent_literal_corrector;
 pub mod punctuation_corrector;

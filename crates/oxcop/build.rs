@@ -1,7 +1,9 @@
 //! Generates the cop registry: every `src/cop/<department>/<name>.rs` file
 //! defines a cop struct named after the file in CamelCase (and implementing
-//! `Default` and `Cop`). Helpers shared by cops live elsewhere (`cop/mixin/`
-//! or subdirectories), so adding a cop never touches a shared file.
+//! `Default` and `Cop`). Helpers shared by cops live elsewhere (`cop/mixin/`),
+//! or in a department subdirectory with a `mod.rs` (`metrics/utils/`), which
+//! becomes a public module of the department. Adding a cop never touches a
+//! shared file.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -70,6 +72,25 @@ fn main() {
             .unwrap_or_default();
         files.sort();
         let _ = writeln!(modules, "pub mod {department} {{");
+        // Helpers of a department (`metrics/utils/`) live in a subdirectory
+        // with a `mod.rs`.
+        let mut subdirs: Vec<String> = std::fs::read_dir(&dir)
+            .map(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .map(|e| e.path())
+                    .filter(|p| p.join("mod.rs").is_file())
+                    .filter_map(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        subdirs.sort();
+        for subdir in &subdirs {
+            let path = dir.join(subdir).join("mod.rs");
+            println!("cargo:rerun-if-changed={}", dir.join(subdir).display());
+            let _ = writeln!(modules, "    #[path = {:?}]", path.display().to_string());
+            let _ = writeln!(modules, "    pub mod {subdir};");
+        }
         for file in &files {
             let path = dir.join(format!("{file}.rs"));
             let _ = writeln!(modules, "    #[path = {:?}]", path.display().to_string());
