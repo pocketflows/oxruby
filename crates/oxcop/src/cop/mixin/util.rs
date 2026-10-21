@@ -157,7 +157,8 @@ pub fn ruby_inspect(string: &str) -> String {
             '\x1b' => out.push_str("\\e"),
             '#' if matches!(chars.get(i + 1), Some('{' | '$' | '@')) => out.push_str("\\#"),
             c if (c as u32) < 0x20 || c as u32 == 0x7f => {
-                out.push_str(&format!("\\x{:02X}", c as u32));
+                // UTF-8 strings escape code points as `\uXXXX`.
+                out.push_str(&format!("\\u{:04X}", c as u32));
             }
             c if is_printable(c) => out.push(c),
             c if (c as u32) <= 0xffff => out.push_str(&format!("\\u{:04X}", c as u32)),
