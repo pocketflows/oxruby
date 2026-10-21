@@ -54,6 +54,19 @@ Owner: `runtime` (see the roster in `docs/PARALLEL.md`).
   when the file contains `<%`. **`inherit_gem`** resolves through
   `OXCOP_GEMS`; without the launcher it warns and is skipped.
 
+## Handoff to `shim`
+
+Already landed by runtime (9fe3cd9 and before), so `shim` needn't redo
+them: AutoGenState persistence across the `--persist-cops` loop and across
+calls in one example; `--lsp`; re-raising cop errors as their class
+(RuboCop::Warning, ValidationError, ...); global offenses on an empty
+buffer as `NO_LOCATION`; ExcludeLimit tmp_dir; `buffer.name` file names;
+cop instances persisting across files in one example (`--prior`);
+real-path inspection (ScriptPermission's shape); binary-encoded and
+magic-encoding stdin. Not done: the "no department given" warning
+(Migration/DepartmentName), invalid-UTF-8 strings in a spec's cop config
+(`YAML.dump` raises; serde can't hold the bytes anyway).
+
 ## API for cop authors (shim support)
 
 - **Raising from a cop** (`raise ArgumentError, "..."` upstream): call
