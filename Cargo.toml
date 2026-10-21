@@ -1,8 +1,6 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-# Vendored with oxcop additions (see vendor/ruby-prism/OXCOP.md).
-exclude = ["vendor/ruby-prism"]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,7 +12,7 @@ rust-version = "1.88"
 [workspace.dependencies]
 clap = { version = "4.6", features = ["derive"] }
 globset = "0.4"
-ruby-prism = "1.9"
+ruby-prism = "=2.0.0-rc.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml_ng = "0.10"

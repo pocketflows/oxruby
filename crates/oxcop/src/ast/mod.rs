@@ -17,6 +17,7 @@ pub mod lexer;
 pub mod node;
 pub mod node_pattern;
 pub mod node_type;
+pub mod token_builder;
 
 use std::fmt::Write as _;
 

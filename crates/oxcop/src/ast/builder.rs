@@ -1154,6 +1154,12 @@ impl<'s> Builder<'s> {
         self.n0(NodeType::Kwnilarg, l)
     }
 
+    /// `&nil` (no block accepted).
+    pub fn blocknilarg(&mut self, amper_t: T, nil_t: T) -> NodeId {
+        let l = self.arg_prefix_map(&amper_t, &nil_t);
+        self.n0(NodeType::Blocknilarg, l)
+    }
+
     pub fn shadowarg(&mut self, name_t: T) -> NodeId {
         let l = self.variable_map(&name_t);
         let v = value(&name_t).to_owned();

@@ -85,6 +85,7 @@ node_types! {
     Kwoptarg => "kwoptarg",
     Kwrestarg => "kwrestarg",
     Kwnilarg => "kwnilarg",
+    Blocknilarg => "blocknilarg",
     Shadowarg => "shadowarg",
     Blockarg => "blockarg",
     Procarg0 => "procarg0",

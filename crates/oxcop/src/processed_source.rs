@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use ruby_prism::ParseResult;
 
 use crate::ast::Ast;
-use crate::ast::lexer::{Lexer, Token};
+use crate::ast::lexer::Token;
 
 /// A half-open byte range into the source, like `Parser::Source::Range`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -119,7 +119,7 @@ impl Range {
 
 impl From<&ruby_prism::Location<'_>> for Range {
     fn from(location: &ruby_prism::Location<'_>) -> Self {
-        Self::new(location.start_offset(), location.end_offset())
+        Self::new(location.start() as usize, location.end() as usize)
     }
 }
 
@@ -177,7 +177,7 @@ impl<'src> ProcessedSource<'src> {
         let diagnostics: Vec<Diagnostic> = parse_result
             .errors()
             .map(|d| Diagnostic {
-                message: d.message().to_owned(),
+                message: String::from_utf8_lossy(d.message()).into_owned(),
                 range: Range::from(&d.location()),
             })
             .collect();
@@ -188,7 +188,7 @@ impl<'src> ProcessedSource<'src> {
         // `ProcessedSource#lines` stops at `__END__`.
         let end_line = parse_result
             .data_loc()
-            .map(|loc| line_index(&line_starts, loc.start_offset()));
+            .map(|loc| line_index(&line_starts, loc.start() as usize));
         let mut lines: Vec<&str> = source.split('\n').collect();
         if let Some(end_line) = end_line {
             lines.truncate(end_line);
@@ -400,7 +400,7 @@ impl<'src> ProcessedSource<'src> {
             if !self.valid_syntax() {
                 return Vec::new();
             }
-            Lexer::new(self.source, &crate::prism::tokens(&self.parse_result)).tokens()
+            crate::ast::token_builder::tokens(self)
         })
     }
 

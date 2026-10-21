@@ -12,7 +12,7 @@ fn lossy(bytes: &[u8]) -> String {
 }
 
 fn range(location: &Location<'_>) -> Range {
-    Range::new(location.start_offset(), location.end_offset())
+    Range::new(location.start() as usize, location.end() as usize)
 }
 
 fn token(location: Option<Location<'_>>) -> T {
@@ -357,6 +357,10 @@ impl<'s> Compiler<'s> {
                     .block_pass(token(Some(n.operator_loc())), expression)
             }
             Node::BlockLocalVariableNode { .. } => b.shadowarg(token(Some(node.location()))),
+            Node::NoBlockParameterNode { .. } => {
+                let n = node.as_no_block_parameter_node().unwrap();
+                b.blocknilarg(token(Some(n.operator_loc())), token(Some(n.keyword_loc())))
+            }
             Node::BlockParameterNode { .. } => {
                 let n = node.as_block_parameter_node().unwrap();
                 b.blockarg(token(Some(n.operator_loc())), token(n.name_loc()))
@@ -644,8 +648,8 @@ impl<'s> Compiler<'s> {
                 let n = node.as_defined_node().unwrap();
                 let value = self.visit(&n.value())?;
                 let multiline = n.lparen_loc().is_some_and(|lparen| {
-                    let start = n.keyword_loc().start_offset();
-                    self.source()[start..lparen.end_offset()].contains(&b'\n')
+                    let start = n.keyword_loc().start() as usize;
+                    self.source()[start..lparen.end() as usize].contains(&b'\n')
                 });
                 if multiline {
                     let begin = self.builder.begin(
@@ -695,7 +699,7 @@ impl<'s> Compiler<'s> {
                 let n = node.as_find_pattern_node().unwrap();
                 let mut elements = vec![n.left().as_node()];
                 elements.extend(n.requireds().iter());
-                elements.push(n.right());
+                elements.push(n.right().as_node());
                 let elements = self.visit_all(elements);
                 match n.constant() {
                     Some(constant) => {
@@ -760,9 +764,9 @@ impl<'s> Compiler<'s> {
                     None => {
                         let end = n
                             .statements()
-                            .map(|s| s.location().start_offset())
-                            .unwrap_or_else(|| n.end_keyword_loc().start_offset());
-                        self.srange_semicolon(n.collection().location().end_offset(), Some(end))
+                            .map(|s| s.location().start() as usize)
+                            .unwrap_or_else(|| n.end_keyword_loc().start() as usize);
+                        self.srange_semicolon(n.collection().location().end() as usize, Some(end))
                     }
                 };
                 let body = n.statements().and_then(|s| self.visit(&s.as_node()));
@@ -780,7 +784,7 @@ impl<'s> Compiler<'s> {
             Node::ForwardingParameterNode { .. } => b.forward_arg(token(Some(node.location()))),
             Node::ForwardingSuperNode { .. } => {
                 let n = node.as_forwarding_super_node().unwrap();
-                let start = node.location().start_offset();
+                let start = node.location().start() as usize;
                 let call = self.builder.keyword_cmd(
                     NodeType::Zsuper,
                     Some(Tok::new("super", Range::new(start, start + 5))),
@@ -1102,7 +1106,7 @@ impl<'s> Compiler<'s> {
                 self.builder.match_pattern(
                     NodeType::MatchPatternP,
                     value,
-                    token(Some(n.operator_loc())),
+                    token(Some(n.keyword_loc())),
                     pattern,
                 )
             }
@@ -1126,7 +1130,7 @@ impl<'s> Compiler<'s> {
                 self.builder
                     .match_op(receiver, token(call.message_loc()), arg)
             }
-            Node::MissingNode { .. } => return None,
+            Node::ErrorRecoveryNode { .. } => return None,
             Node::MultiTargetNode { .. } => {
                 let n = node.as_multi_target_node().unwrap();
                 let mut elements: Vec<Node<'_>> = n.lefts().iter().collect();
@@ -1396,9 +1400,9 @@ impl<'s> Compiler<'s> {
                 return self.visit_loop(
                     NodeType::Until,
                     node,
-                    n.keyword_loc(),
+                    n.until_keyword_loc(),
                     n.do_keyword_loc(),
-                    n.closing_loc(),
+                    n.end_keyword_loc(),
                     n.predicate(),
                     n.statements(),
                 );
@@ -1408,9 +1412,9 @@ impl<'s> Compiler<'s> {
                 return self.visit_loop(
                     NodeType::While,
                     node,
-                    n.keyword_loc(),
+                    n.while_keyword_loc(),
                     n.do_keyword_loc(),
-                    n.closing_loc(),
+                    n.end_keyword_loc(),
                     n.predicate(),
                     n.statements(),
                 );
@@ -1421,14 +1425,14 @@ impl<'s> Compiler<'s> {
                 let then_t = match n.then_keyword_loc() {
                     Some(then) => token(Some(then)),
                     None => self.srange_semicolon(
-                        conditions.last().unwrap().location().end_offset(),
-                        n.statements().map(|s| s.location().start_offset()),
+                        conditions.last().unwrap().location().end() as usize,
+                        n.statements().map(|s| s.location().start() as usize),
                     ),
                 };
                 let patterns = self.visit_all(conditions);
                 let body = n.statements().and_then(|s| self.visit(&s.as_node()));
                 self.builder
-                    .when(token(Some(n.keyword_loc())), patterns, then_t, body)
+                    .when(token(Some(n.when_keyword_loc())), patterns, then_t, body)
             }
             Node::XStringNode { .. } => {
                 let n = node.as_x_string_node().unwrap();
@@ -1562,7 +1566,7 @@ impl<'s> Compiler<'s> {
                             elements.extend(self.string_nodes_from_line_continuations(
                                 s.unescaped(),
                                 content.as_slice(),
-                                content.start_offset(),
+                                content.start() as usize,
                                 opening.as_ref().map(Location::as_slice),
                             ));
                         } else {
@@ -1574,7 +1578,8 @@ impl<'s> Compiler<'s> {
                     }
                     Node::InterpolatedStringNode { .. } => {
                         let s = element.as_interpolated_string_node().unwrap();
-                        let parts = self.string_nodes_from_interpolation(s.parts().iter(), opening);
+                        let parts =
+                            self.string_nodes_from_interpolation(s.parts().iter(), n.opening_loc());
                         elements.push(self.builder.string_compose(
                             token(s.opening_loc()),
                             parts,
@@ -1599,10 +1604,8 @@ impl<'s> Compiler<'s> {
         let implicit_rest = rest
             .as_ref()
             .is_some_and(|r| matches!(r, Node::ImplicitRestNode { .. }));
-        if let Some(rest) = &rest
-            && !implicit_rest
-        {
-            elements.push(*rest);
+        if !implicit_rest && let Some(rest) = n.rest() {
+            elements.push(rest);
         }
         elements.extend(n.posts().iter());
         let mut visited = self.visit_all(elements);
@@ -1649,7 +1652,7 @@ impl<'s> Compiler<'s> {
                             range(&key.location()),
                         ))));
                     }
-                    let value_loc = sym.value_loc().unwrap();
+                    let value_loc = Some(sym.content_loc()).unwrap();
                     let s = self
                         .builder
                         .string_internal_bytes(sym.unescaped(), range(&value_loc));
@@ -1668,7 +1671,7 @@ impl<'s> Compiler<'s> {
                 ));
             }
             let sym = key.as_symbol_node().unwrap();
-            let value_loc = sym.value_loc().unwrap();
+            let value_loc = Some(sym.content_loc()).unwrap();
             let inner = implicit.value();
             let implicit_value = match inner {
                 Node::CallNode { .. } => {
@@ -1728,7 +1731,7 @@ impl<'s> Compiler<'s> {
         let (opening, parts, closing) = if let Some(sym) = key.as_symbol_node() {
             let s = self
                 .builder
-                .string_internal_bytes(sym.unescaped(), range(&sym.value_loc().unwrap()));
+                .string_internal_bytes(sym.unescaped(), range(&Some(sym.content_loc()).unwrap()));
             (sym.opening_loc(), vec![s], sym.closing_loc())
         } else {
             let sym = key.as_interpolated_symbol_node().unwrap();
@@ -1753,14 +1756,14 @@ impl<'s> Compiler<'s> {
                 .map(|r| r.location())
                 .or_else(|| exceptions.last().map(Node::location))
                 .unwrap_or_else(|| clause.keyword_loc())
-                .end_offset();
+                .end() as usize;
             let find_end_offset = clause
                 .statements()
-                .map(|s| s.location().start_offset())
-                .or_else(|| clause.subsequent().map(|s| s.location().start_offset()))
-                .or_else(|| n.else_clause().map(|e| e.location().start_offset()))
-                .or_else(|| n.ensure_clause().map(|e| e.location().start_offset()))
-                .or_else(|| n.end_keyword_loc().map(|e| e.start_offset()))
+                .map(|s| s.location().start() as usize)
+                .or_else(|| clause.subsequent().map(|s| s.location().start() as usize))
+                .or_else(|| n.else_clause().map(|e| e.location().start() as usize))
+                .or_else(|| n.ensure_clause().map(|e| e.location().start() as usize))
+                .or_else(|| n.end_keyword_loc().map(|e| e.start() as usize))
                 .unwrap_or(find_start_offset + 1);
 
             let exc_list = if exceptions.is_empty() {
@@ -2024,16 +2027,16 @@ impl<'s> Compiler<'s> {
                     if_false,
                 ))
             }
-            Some(if_keyword) if if_keyword.start_offset() == node.location().start_offset() => {
+            Some(if_keyword) if if_keyword.start() as usize == node.location().start() as usize => {
                 let then_t = match n.then_keyword_loc() {
                     Some(then) => token(Some(then)),
                     None => {
                         let end = n
                             .statements()
-                            .map(|s| s.location().start_offset())
-                            .or_else(|| n.subsequent().map(|s| s.location().start_offset()))
-                            .or_else(|| n.end_keyword_loc().map(|e| e.start_offset()));
-                        self.srange_semicolon(predicate.location().end_offset(), end)
+                            .map(|s| s.location().start() as usize)
+                            .or_else(|| n.subsequent().map(|s| s.location().start() as usize))
+                            .or_else(|| n.end_keyword_loc().map(|e| e.start() as usize));
+                        self.srange_semicolon(predicate.location().end() as usize, end)
                     }
                 };
                 let cond = self.visit(&predicate)?;
@@ -2074,16 +2077,16 @@ impl<'s> Compiler<'s> {
     fn visit_unless_node(&mut self, node: &Node<'_>) -> Option<NodeId> {
         let n = node.as_unless_node().unwrap();
         let predicate = n.predicate();
-        if n.keyword_loc().start_offset() == node.location().start_offset() {
+        if n.unless_keyword_loc().start() as usize == node.location().start() as usize {
             let then_t = match n.then_keyword_loc() {
                 Some(then) => token(Some(then)),
                 None => {
                     let end = n
                         .statements()
-                        .map(|s| s.location().start_offset())
-                        .or_else(|| n.else_clause().map(|s| s.location().start_offset()))
-                        .or_else(|| n.end_keyword_loc().map(|e| e.start_offset()));
-                    self.srange_semicolon(predicate.location().end_offset(), end)
+                        .map(|s| s.location().start() as usize)
+                        .or_else(|| n.else_clause().map(|s| s.location().start() as usize))
+                        .or_else(|| n.end_keyword_loc().map(|e| e.start() as usize));
+                    self.srange_semicolon(predicate.location().end() as usize, end)
                 }
             };
             let cond = self.visit(&predicate)?;
@@ -2095,7 +2098,7 @@ impl<'s> Compiler<'s> {
             let else_t = token(else_clause.as_ref().map(|e| e.else_keyword_loc()));
             let if_false = n.statements().and_then(|s| self.visit(&s.as_node()));
             Some(self.builder.condition(
-                token(Some(n.keyword_loc())),
+                token(Some(n.unless_keyword_loc())),
                 cond,
                 then_t,
                 if_true,
@@ -2110,10 +2113,12 @@ impl<'s> Compiler<'s> {
                 .and_then(|s| self.visit(&s.as_node()));
             let if_false = n.statements().and_then(|s| self.visit(&s.as_node()));
             let cond = self.visit(&predicate)?;
-            Some(
-                self.builder
-                    .condition_mod(if_true, if_false, token(Some(n.keyword_loc())), cond),
-            )
+            Some(self.builder.condition_mod(
+                if_true,
+                if_false,
+                token(Some(n.unless_keyword_loc())),
+                cond,
+            ))
         }
     }
 
@@ -2138,25 +2143,28 @@ impl<'s> Compiler<'s> {
                 let predicate = self.visit(&p.predicate())?;
                 let guard = self.builder.guard(
                     NodeType::UnlessGuard,
-                    token(Some(p.keyword_loc())),
+                    token(Some(p.unless_keyword_loc())),
                     predicate,
                 );
                 (pattern, Some(guard))
             }
             _ => (self.with_pattern(true, |c| c.visit(&pattern_node))?, None),
         };
-        let then_t = match n.then_loc() {
+        let then_t = match n.then_keyword_loc() {
             Some(then) => token(Some(then)),
             None => self.srange_semicolon(
-                pattern_node.location().end_offset(),
-                n.statements().map(|s| s.location().start_offset()),
+                pattern_node.location().end() as usize,
+                n.statements().map(|s| s.location().start() as usize),
             ),
         };
         let body = n.statements().and_then(|s| self.visit(&s.as_node()));
-        Some(
-            self.builder
-                .in_pattern(token(Some(n.in_loc())), pattern, guard, then_t, body),
-        )
+        Some(self.builder.in_pattern(
+            token(Some(n.in_keyword_loc())),
+            pattern,
+            guard,
+            then_t,
+            body,
+        ))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2170,15 +2178,15 @@ impl<'s> Compiler<'s> {
         predicate: Node<'_>,
         statements: Option<ruby_prism::StatementsNode<'_>>,
     ) -> Option<NodeId> {
-        if node.location().start_offset() == keyword.start_offset() {
+        if node.location().start() as usize == keyword.start() as usize {
             let do_t = match do_keyword {
                 Some(do_loc) => token(Some(do_loc)),
                 None => {
                     let end = statements
                         .as_ref()
-                        .map(|s| s.location().start_offset())
-                        .or_else(|| closing.as_ref().map(Location::start_offset));
-                    self.srange_semicolon(predicate.location().end_offset(), end)
+                        .map(|s| s.location().start() as usize)
+                        .or_else(|| closing.as_ref().map(|l| l.start() as usize));
+                    self.srange_semicolon(predicate.location().end() as usize, end)
                 }
             };
             let cond = self.visit(&predicate)?;
@@ -2228,7 +2236,7 @@ impl<'s> Compiler<'s> {
             self.string_nodes_from_line_continuations(
                 n.unescaped(),
                 content.as_slice(),
-                content.start_offset(),
+                content.start() as usize,
                 opening_slice,
             )
         } else {
@@ -2253,7 +2261,7 @@ impl<'s> Compiler<'s> {
                 }
             }
             Some(closing) => {
-                let value = n.value_loc();
+                let value = Some(n.content_loc());
                 let value_slice = value.as_ref().map_or(&b""[..], Location::as_slice);
                 let parts = if value_slice.is_empty() {
                     Vec::new()
@@ -2262,7 +2270,7 @@ impl<'s> Compiler<'s> {
                     self.string_nodes_from_line_continuations(
                         n.unescaped(),
                         value_slice,
-                        value.start_offset(),
+                        value.start() as usize,
                         n.opening_loc().as_ref().map(Location::as_slice),
                     )
                 } else {
@@ -2292,7 +2300,7 @@ impl<'s> Compiler<'s> {
             self.string_nodes_from_line_continuations(
                 unescaped,
                 slice,
-                content.start_offset(),
+                content.start() as usize,
                 opening.as_ref().map(Location::as_slice),
             )
         } else {
@@ -2310,14 +2318,14 @@ impl<'s> Compiler<'s> {
         closing: Location<'_>,
     ) -> NodeId {
         let closing_slice = closing.as_slice();
-        let start = closing.start_offset();
+        let start = closing.start() as usize;
         let end_t = Some(Tok::new(
             lossy(&closing_slice[..1.min(closing_slice.len())]),
             Range::new(start, start + 1),
         ));
         let options = self.builder.regexp_options(Some(Tok::new(
             lossy(closing_slice.get(1..).unwrap_or_default()),
-            Range::new(start + 1, closing.end_offset()),
+            Range::new(start + 1, closing.end() as usize),
         )));
         self.builder
             .regexp_compose(token(Some(opening)), parts, end_t, options)
@@ -2364,7 +2372,7 @@ impl<'s> Compiler<'s> {
             params.extend(self.visit(&keyword_rest));
         }
         if let Some(block) = node.block() {
-            params.extend(self.visit(&block.as_node()));
+            params.extend(self.visit(&block));
         }
         params
     }
@@ -2413,15 +2421,15 @@ impl<'s> Compiler<'s> {
             && !matches!(first, Node::StringNode { .. })
         {
             let location = first.location();
-            let start = location.start_offset();
+            let start = location.start() as usize;
             let line_start = self.source()[..start]
                 .iter()
                 .rposition(|&b| b == b'\n')
                 .map_or(0, |i| i + 1);
-            let value = &self.source()[line_start..location.end_offset()];
+            let value = &self.source()[line_start..location.end() as usize];
             children.push(
                 self.builder
-                    .string_internal_bytes(value, Range::new(line_start, location.end_offset())),
+                    .string_internal_bytes(value, Range::new(line_start, location.end() as usize)),
             );
             indented = true;
         }
@@ -2437,7 +2445,7 @@ impl<'s> Compiler<'s> {
                         self.string_nodes_from_line_continuations(
                             unescaped,
                             content,
-                            location.start_offset(),
+                            location.start() as usize,
                             Some(opening_slice),
                         )
                     } else {
@@ -2454,7 +2462,7 @@ impl<'s> Compiler<'s> {
                         self.string_nodes_from_line_continuations(
                             s.unescaped(),
                             s.content_loc().as_slice(),
-                            node.location().start_offset(),
+                            node.location().start() as usize,
                             Some(opening_slice),
                         )
                     } else {
@@ -2506,7 +2514,7 @@ impl<'s> Compiler<'s> {
         let trailing = trailing_space_match(closing_slice);
         let closing_t = Some(Tok::new(
             lossy(chomp(closing_slice)),
-            Range::new(closing.start_offset(), closing.end_offset() - trailing),
+            Range::new(closing.start() as usize, closing.end() as usize - trailing),
         ));
         let composed = if ty == NodeType::Xstr {
             self.builder
@@ -2537,7 +2545,7 @@ impl<'s> Compiler<'s> {
                 out.extend(self.string_nodes_from_line_continuations(
                     s.unescaped(),
                     s.content_loc().as_slice(),
-                    s.content_loc().start_offset(),
+                    s.content_loc().start() as usize,
                     opening,
                 ));
             } else {
@@ -2708,7 +2716,9 @@ fn find_forwarding(node: Option<ruby_prism::ParametersNode<'_>>) -> Vec<&'static
         _ => {}
     }
     if let Some(block) = node.block()
-        && block.name().is_none()
+        && block
+            .as_block_parameter_node()
+            .is_some_and(|b| b.name().is_none())
     {
         forwarding.push("&");
     }
