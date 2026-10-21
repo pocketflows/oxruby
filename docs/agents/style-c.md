@@ -26,6 +26,17 @@
 - Style/PerlBackrefs 14
 - Style/PredicateWithKind 64
 - Style/PreferredHashMethods 9
+- Style/RandomWithOffset 29
+- Style/RedundantArrayConstructor 13
+- Style/RedundantArrayFlatten 10
+- Style/RedundantException 32
+- Style/RedundantFileExtensionInRequire 5
+- Style/RedundantFreeze 47
+- Style/RedundantMinMaxBy 33
+- Style/RedundantRegexpConstructor 11
+- Style/RedundantSortBy 8
+- Style/ReturnNil 5
+- Style/ReverseFind 14
 
 ## Left
 
