@@ -24,3 +24,7 @@ onig = { version = "6.5", default-features = false }
 regex = "1"
 rayon = "1"
 encoding_rs = "0.8"
+# The project index (`AllCops/UseProjectIndex`): Shopify's rubydex, unmodified,
+# pinned to the v0.4.2 tag, the first release built on our ruby-prism pin. Not
+# on crates.io at that version; switch to crates.io once it is.
+rubydex = { git = "https://github.com/Shopify/rubydex", rev = "c69a742c9097a2a5c13f97726abda55b0507121b" }

@@ -33,7 +33,10 @@ script/land                              # gate and land your branch on main
   Every crate root starts with `#![forbid(unsafe_code)]`. Use safe std APIs
   (`str::from_utf8`, `char_indices`, checked slicing). Crates.io dependencies
   are fine even though they use `unsafe` internally; call their safe APIs and
-  never write FFI glue. Prism comes from crates.io `ruby-prism` (pinned).
+  never write FFI glue. Prism comes from crates.io `ruby-prism` (pinned). The
+  only git dependencies are oxc (oxtree's oxfmt, at a tag) and Shopify's
+  `rubydex` (oxcop's project index, at a commit), both unmodified; don't add
+  others without asking the user.
 - `../rubocop` is checked out at the tracked tag (see `version.rs`). Read the
   Ruby source and its spec before porting a cop.
 

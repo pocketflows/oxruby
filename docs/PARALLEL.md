@@ -93,22 +93,13 @@ Each agent owns the paths listed for it. Outside them:
 
 ## Roster
 
+Round 2 (2026-10-21). The first round's 15 agents finished; their notes are
+in `docs/agents/` and their roster is in git history.
+
 | Name | Owns | Goal, in order |
 | --- | --- | --- |
-| `tokens` | `ast/token_builder.rs`, `ast/lexer.rs`, the token parts of `processed_source.rs`, `comment_config.rs`, `directive_comment.rs`, `magic_comment.rs`, `script/compare_ast`, `script/dump_*` | Safe token builder (ROADMAP "Left" item 1) until `script/compare_ast --tokens` matches RuboCop on `../code` and rubocop's `lib/` and `spec/`. Land it in stages as soon as it's useful: layout agents are waiting on it. Then the remaining token-text gaps. |
-| `runtime` | `cli.rs`, `config.rs`, `config_loader.rs`, `options.rs`, `runner.rs`, `target_finder.rs`, `target_ruby.rs`, `path_util.rs`, `formatter/`, `cop/team.rs`, `cop/commissioner.rs`, result cache, `gems/oxcop/`, `spec/oxcop/`, `spec/spec_helper.rb`, `script/compare_with_rubocop`, `script/land`, `Rakefile`, `.github/`; the cops Lint/RedundantCopDisableDirective, Lint/RedundantCopEnableDirective, Lint/MissingCopEnableDirective | 1. Make the spec run fast, because every landing's gate depends on it: aim for at least 5x, e.g. one binary process per spec file serving many requests, or parallel spec files. 2. Plugin default configs through the launcher, plus running `compare_with_rubocop` inside `../code`'s bundle (fixes the `bin/*` diff). 3. ERB in `.rubocop.yml`, `inherit_mode`, `inherit_gem`. 4. The three directive cops, the pending-cops warning, the remaining CLI options, the result cache, rayon parallel inspection. |
-| `layout-a` | Layout cops A–I | Port every Layout cop whose name starts A–I. Do the ones that don't need `processed_source.tokens` first; once `tokens` lands, do the rest. |
-| `layout-b` | Layout cops L–Z | The same, for L–Z. |
-| `lint-a` | Lint cops A–P (except the three directive cops) | Port them all. |
-| `lint-b` | Lint cops R–Z (except the directive cops), plus `cop/variable_force/` | VariableForce first (UselessAssignment, the Unused* and Shadowing* cops all need it), then the cops. |
-| `style-a` | Style cops A–E | Port them all. |
-| `style-b` | Style cops F–M | Port them all. |
-| `style-c` | Style cops N–R | Port them all. |
-| `style-d` | Style cops S–Z | Port them all. |
-| `depts` | Naming, Metrics (with `metrics/utils`), Security, Bundler, Gemspec, Migration | Port them all. |
-| `tree-cli` | `crates/oxtree/src/cli.rs`, `main.rs`, the stree_new mode, `script/compare_with_stree` | OXTREE "What's left" items 1 and 3: the `stree` drop-in CLI, the stree_new mode, and the differential script plus timing against `bin/rails stree_new:check`. |
-| `tree-pkg` | `gems/oxtree/`, `rakelib/oxtree.rake`, `crates/oxtree/tests/`, an additive oxtree line in CI | OXTREE items 2, 4 and 5: the gem and rake tasks, ERB and plugin tests wired into `cargo test`, and `rake oxtree:check`. |
-| `shim` | `spec/oxcop/`, `spec/spec_helper.rb`, `crates/oxcop/src/server.rs`, the auto-gen state in `runner.rs` | Spec-shim and binary-channel features that blocked ports need (auto-gen state, cop errors, `:lsp`, ExcludeLimit, file names, multi-file examples), then landing those ports from the finished agents' `*-wip` branches. Took these over from `runtime`. |
+| `utf8` | Source loading and encoding: `processed_source.rs`, the encoding parts of `magic_comment.rs` and `runner.rs` | A file with invalid UTF-8 and no encoding comment fails exactly as it does in RuboCop (measured, not guessed), instead of having its bytes replaced. |
+| `index` | `project_index*.rs`, `cop/mixin/project_index_help.rs`, `cop/mixin/indexed_method_arity.rs`, the project-index parts of `config.rs`, `runner.rs`, `server.rs` and `spec/oxcop/`; the cops Lint/ArgumentMismatch, Lint/DeprecatedReference, Lint/NameTypo, and the index-aware code paths in the existing cops whose specs have `:project_index` examples | `AllCops/UseProjectIndex` on top of the `rubydex` crate: build the graph, a shim hook so specs' `build_index` reaches the binary, the three cops, then every `:project_index` example passing. |
 
 The `cop/mixin/` files that already exist are listed in `ROADMAP.md`. The
 mixins most needed but not yet ported are Alignment, SurroundingSpace,
