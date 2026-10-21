@@ -46,6 +46,8 @@ module Oxcop
         "OXCOP_RUBY_PATCHLEVEL" => RUBY_PATCHLEVEL.to_s,
         "OXCOP_RUBY_PLATFORM" => RUBY_PLATFORM,
         "OXCOP_GEMS" => gems,
+        # `AllCops/ProjectIndexIncludesGems` indexes the gems only in a bundle.
+        "OXCOP_IN_BUNDLE" => defined?(Bundler) && Bundler::SharedHelpers.in_bundle? ? "1" : "",
         # Renders ERB in .rubocop.yml files.
         "OXCOP_RUBY" => RbConfig.ruby
       }

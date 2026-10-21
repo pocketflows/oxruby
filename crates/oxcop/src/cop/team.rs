@@ -48,6 +48,8 @@ pub struct Team<'a> {
     pub auto_gen: std::cell::RefCell<std::collections::BTreeMap<String, AutoGenState>>,
     /// Given to each mobilized cop (`set_offenses_to_check`).
     pub offenses_to_check: Option<Vec<OffenseToCheck>>,
+    /// `cop.project_index = @project_index` (`Runner#assemble_team`).
+    pub project_index: Option<std::sync::Arc<crate::project_index::ProjectIndex>>,
 }
 
 impl<'a> Team<'a> {
@@ -60,6 +62,7 @@ impl<'a> Team<'a> {
             persisted: std::cell::RefCell::new(None),
             auto_gen: std::cell::RefCell::default(),
             offenses_to_check: None,
+            project_index: None,
         }
     }
 
@@ -195,6 +198,7 @@ impl<'a> Team<'a> {
             &comment_config,
             self.options,
             &seed,
+            self.project_index.as_ref(),
         );
         let corrector = collate_corrections(&reports, processed_source);
         if corrector.is_none() {
@@ -205,6 +209,7 @@ impl<'a> Team<'a> {
                 &comment_config,
                 self.options,
                 &seed,
+                self.project_index.as_ref(),
             ));
         }
 

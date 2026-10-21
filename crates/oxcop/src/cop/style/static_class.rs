@@ -1,9 +1,7 @@
 //! Port of `lib/rubocop/cop/style/static_class.rb`.
-//!
-//! `subclassed_in_project?` needs the `rubydex` project index, which isn't
-//! supported; RuboCop behaves the same without one.
 
 use crate::ast::{Node, NodeType};
+use crate::cop::mixin::project_index_help::resolve_constant_in_index;
 use crate::cop::mixin::range_help::range_between;
 use crate::cop::mixin::visibility_help::node_visibility;
 use crate::cop::{Cop, Corrector, Investigation};
@@ -27,13 +25,37 @@ impl Cop for StaticClass {
     }
 
     fn on_node<'a>(&mut self, cx: &mut Investigation<'a, '_>, class_node: Node<'a>) {
-        if class_node.parent_class().is_some() || !class_convertible_to_module(class_node) {
+        if class_node.parent_class().is_some()
+            || !class_convertible_to_module(class_node)
+            || subclassed_in_project(cx, class_node)
+        {
             return;
         }
         cx.add_offense_with_correction(class_node.source_range(), MSG, |corrector| {
             autocorrect(corrector, class_node);
         });
     }
+}
+
+/// `subclassed_in_project?`: when `AllCops/UseProjectIndex` is enabled, a
+/// class with descendants anywhere in the project is not reported:
+/// converting it to a module would break its subclasses.
+fn subclassed_in_project(cx: &Investigation<'_, '_>, class_node: Node<'_>) -> bool {
+    let Some(index) = cx.project_index() else {
+        return false;
+    };
+    let Some(declaration) = class_node
+        .identifier()
+        .and_then(|identifier| resolve_constant_in_index(&index, identifier))
+        .filter(|declaration| declaration.is_class())
+    else {
+        return false;
+    };
+    let name = index.name(declaration);
+    index
+        .descendants(declaration)
+        .into_iter()
+        .any(|descendant| index.name(descendant) != name)
 }
 
 fn autocorrect(corrector: &mut Corrector, class_node: Node<'_>) {

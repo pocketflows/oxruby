@@ -91,12 +91,12 @@ module Oxcop
         # correcting (`autocorrect?` is true), but only once and without
         # keeping any correction.
         def offenses(source, path:, config:, cop_name:, priors: [], real_file: false, offenses_to_check: nil,
-                     warnings: true, autocorrect: false)
+                     warnings: true, autocorrect: false, project_index: nil)
           @investigations = investigations.to_i + 1
           correct = autocorrect ? ["-A", "--autocorrect-once"] : []
           stdout, = invoke(source, path: path, config: config, cop_name: cop_name, priors: priors,
                                    real_file: real_file, offenses_to_check: offenses_to_check,
-                                   warnings: warnings,
+                                   warnings: warnings, project_index: project_index,
                                    args: [*correct, "--format", "json", "--no-display-cop-names"])
           # A correction written to the real file is undone: the spec's file
           # keeps the source, as an in-memory correction would (a cop's side
@@ -109,9 +109,10 @@ module Oxcop
         # more changes are made, in the source's encoding (so it compares
         # equal to a spec's binary expected correction).
         def autocorrect(source, path:, config:, cop_name:, once: false, priors: [], real_file: false,
-                        offenses_to_check: nil)
+                        offenses_to_check: nil, project_index: nil)
           stdout, = invoke(source, path: path, config: config, cop_name: cop_name, priors: priors,
                                    real_file: real_file, offenses_to_check: offenses_to_check,
+                                   project_index: project_index,
                                    args: ["--persist-cops", "--quiet-first-pass",
                                           *("--autocorrect-once" if once), "-A",
                                           "--format", "quiet", "--stderr"])
@@ -123,10 +124,19 @@ module Oxcop
         end
 
         # `offenses_to_check`: Lint/RedundantCopDisableDirective's, as
-        # `[{"cop_name", "line", "last_line"}]`.
+        # `[{"cop_name", "line", "last_line"}]`. `project_index`: the
+        # `[uri, source]` pairs of the cop's `project_index`
+        # (spec/oxcop/project_index.rb).
         def invoke(source, path:, config:, cop_name:, priors:, real_file:, args:, offenses_to_check: nil,
-                   warnings: true)
+                   warnings: true, project_index: nil)
           input = real_file ? [path] : ["--stdin", path, "--keep-stdin-path"]
+          if project_index
+            return with_temp_files([JSON.generate(project_index)]) do |(index_path)|
+              invoke(source, path: path, config: config, cop_name: cop_name, priors: priors,
+                             real_file: real_file, args: [*args, "--project-index-sources", index_path],
+                             offenses_to_check: offenses_to_check, warnings: warnings)
+            end
+          end
           if offenses_to_check
             return with_temp_files([JSON.generate(offenses_to_check)]) do |(offenses_path)|
               invoke(source, path: path, config: config, cop_name: cop_name, priors: priors,

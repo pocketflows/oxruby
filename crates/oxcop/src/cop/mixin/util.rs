@@ -273,7 +273,7 @@ pub fn interpret_string_escapes(string: &str) -> String {
                 let oct: String = b[i - 1..]
                     .iter()
                     .take(3)
-                    .take_while(|c| ('0'..='7').contains(c))
+                    .take_while(|c| ('0'..='7').contains(*c))
                     .collect();
                 if let Some(ch) = u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32) {
                     out.push(ch);

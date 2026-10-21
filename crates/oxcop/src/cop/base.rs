@@ -279,6 +279,8 @@ pub struct Investigation<'a, 'src> {
     pub raised: Vec<CopError>,
     /// `--auto-gen-config` bookkeeping.
     pub auto_gen: AutoGenState,
+    /// `Base#project_index` (`AllCops/UseProjectIndex`).
+    pub project_index: Option<std::sync::Arc<crate::project_index::ProjectIndex>>,
 }
 
 impl<'a, 'src> Investigation<'a, 'src> {
@@ -305,7 +307,13 @@ impl<'a, 'src> Investigation<'a, 'src> {
             errors: Vec::new(),
             raised: Vec::new(),
             auto_gen: AutoGenState::default(),
+            project_index: None,
         }
+    }
+
+    /// `project_index`: the project-wide index, when the run built one.
+    pub fn project_index(&self) -> Option<std::sync::Arc<crate::project_index::ProjectIndex>> {
+        self.project_index.clone()
     }
 
     pub fn cop_name(&self) -> &'static str {

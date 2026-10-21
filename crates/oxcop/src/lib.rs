@@ -17,6 +17,8 @@ pub mod options;
 pub mod path_util;
 pub mod prism;
 pub mod processed_source;
+pub mod project_index;
+pub mod project_index_loader;
 pub mod regexp_parser;
 pub mod runner;
 pub mod server;

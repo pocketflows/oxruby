@@ -215,6 +215,12 @@ pub struct Options {
     #[arg(long = "offenses-to-check", hide = true, value_name = "FILE")]
     pub offenses_to_check: Option<PathBuf>,
 
+    /// The project index from in-memory sources (JSON: `[[uri, source],
+    /// ...]`), as the specs' `build_index(uri => source)` builds it, instead
+    /// of from the project's files.
+    #[arg(long = "project-index-sources", hide = true, value_name = "FILE")]
+    pub project_index_sources: Option<PathBuf>,
+
     /// No warnings from the first investigation (the spec shim's autocorrect
     /// run repeats one it already reported).
     #[arg(long = "quiet-first-pass", hide = true)]

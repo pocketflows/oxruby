@@ -97,6 +97,8 @@ struct Inspector<'a> {
     auto_gen_seed: std::collections::BTreeMap<String, AutoGenState>,
     /// `--offenses-to-check`.
     offenses_to_check: Option<Vec<OffenseToCheck>>,
+    /// `@project_index` (`AllCops/UseProjectIndex`).
+    project_index: Option<std::sync::Arc<crate::project_index::ProjectIndex>>,
 }
 
 /// What inspecting one file produced, reported in file order.
@@ -137,6 +139,7 @@ impl<'a> Runner<'a> {
                     .offenses_to_check
                     .as_deref()
                     .map(read_offenses_to_check),
+                project_index: None,
             },
             corrected_stdin: None,
             errors: Vec::new(),
@@ -205,6 +208,7 @@ impl<'a> Runner<'a> {
         stdin: &mut dyn Read,
     ) -> Result<bool, ConfigError> {
         let files = self.find_target_files()?;
+        self.build_project_index(&files)?;
         let stdin_source = match self.options.stdin {
             Some(_) => {
                 let mut source = Vec::new();
@@ -286,6 +290,63 @@ impl<'a> Runner<'a> {
         }
         formatter.finished(&inspected);
         Ok(all_passed)
+    }
+
+    /// `Runner#build_project_index`. RuboCop's specs (`--raw-config`) never
+    /// index the files on disk; they pass their sources
+    /// (`--project-index-sources`).
+    fn build_project_index(&mut self, target_files: &[PathBuf]) -> Result<(), ConfigError> {
+        if let Some(path) = &self.options.project_index_sources {
+            let sources = read_project_index_sources(path)?;
+            self.inspector.project_index =
+                crate::project_index_loader::build_index_from_sources(&sources);
+            return Ok(());
+        }
+        if self.options.raw_config || !self.project_index_enabled()? {
+            return Ok(());
+        }
+        let files = self.project_index_files(target_files)?;
+        self.inspector.project_index = crate::project_index_loader::build_index(&files);
+        Ok(())
+    }
+
+    /// `Runner#project_index_files`: the whole project (the files under the
+    /// directory of the configuration that enabled the index) plus the
+    /// target files, and with `ProjectIndexIncludesGems` the bundle's gems.
+    fn project_index_files(
+        &mut self,
+        target_files: &[PathBuf],
+    ) -> Result<Vec<PathBuf>, ConfigError> {
+        let root = self.config_store.for_pwd()?.base_dir().to_path_buf();
+        let mut files = TargetFinder::new(&mut self.config_store, self.options.force_exclusion)
+            .find(&[root])
+            .unwrap_or_default();
+        let mut seen: std::collections::HashSet<PathBuf> = files.iter().cloned().collect();
+        let gem_files = self.bundled_gem_files()?;
+        for file in target_files.iter().chain(&gem_files) {
+            if seen.insert(file.clone()) {
+                files.push(file.clone());
+            }
+        }
+        files.sort();
+        Ok(files)
+    }
+
+    /// `Runner#bundled_gem_files`.
+    fn bundled_gem_files(&mut self) -> Result<Vec<PathBuf>, ConfigError> {
+        let config = self.config_store.for_pwd()?;
+        if config.for_all_cops().get("ProjectIndexIncludesGems") != Some(&Value::Bool(true)) {
+            return Ok(Vec::new());
+        }
+        Ok(crate::project_index_loader::bundled_gem_source_files(
+            self.config_store.gems().bundle_dirs(),
+        ))
+    }
+
+    /// `Runner#project_index_enabled?`.
+    fn project_index_enabled(&mut self) -> Result<bool, ConfigError> {
+        let config = self.config_store.for_pwd()?;
+        Ok(config.for_all_cops().get("UseProjectIndex") == Some(&Value::Bool(true)))
     }
 
     /// `Runner#run_in_parallel?`. Parallel by default, as RuboCop is; the
@@ -529,6 +590,7 @@ impl Inspector<'_> {
         }
         *team.auto_gen.borrow_mut() = self.auto_gen_seed.clone();
         team.offenses_to_check = self.offenses_to_check.clone();
+        team.project_index = self.project_index.clone();
         let mut offenses_by_iteration: Vec<Vec<Offense>> = Vec::new();
         let mut seen_sources: Vec<String> = Vec::new();
         let mut corrected = false;
@@ -594,6 +656,13 @@ fn only_cops(options: &Options) -> Vec<String> {
         only.insert(0, "Lint/Syntax".to_owned());
     }
     only
+}
+
+/// Reads `--project-index-sources`: `[[uri, source], ...]`.
+fn read_project_index_sources(path: &Path) -> Result<Vec<(String, String)>, ConfigError> {
+    let json = std::fs::read_to_string(path)
+        .map_err(|e| ConfigError(format!("{}: {e}", path.display())))?;
+    serde_json::from_str(&json).map_err(|e| ConfigError(format!("{}: {e}", path.display())))
 }
 
 /// Reads `--auto-gen-state`: `{"config_to_allow_offenses": {cop: {...}},

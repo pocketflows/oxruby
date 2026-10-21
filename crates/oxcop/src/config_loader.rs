@@ -65,6 +65,9 @@ pub fn find_config_path(target_dir: &Path) -> Option<PathBuf> {
 pub struct Gems {
     /// `None` when the binary runs without the launcher.
     by_name: Option<HashMap<String, GemSpec>>,
+    /// The launcher ran inside a bundle (`Bundler::SharedHelpers.in_bundle?`,
+    /// `OXCOP_IN_BUNDLE`), so the gems are the bundle's.
+    in_bundle: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -77,9 +80,29 @@ impl Gems {
     pub const ENV: &'static str = "OXCOP_GEMS";
 
     pub fn from_env() -> Self {
-        std::env::var(Self::ENV)
+        let gems = std::env::var(Self::ENV)
             .map(|list| Self::parse(&list))
-            .unwrap_or_default()
+            .unwrap_or_default();
+        Self {
+            in_bundle: std::env::var_os("OXCOP_IN_BUNDLE").is_some_and(|v| v == "1"),
+            ..gems
+        }
+    }
+
+    /// The directories of the bundle's gems (`Bundler.load.specs`'
+    /// `full_gem_path`), or `None` outside a bundle.
+    pub fn bundle_dirs(&self) -> Option<Vec<PathBuf>> {
+        if !self.in_bundle {
+            return None;
+        }
+        let mut dirs: Vec<PathBuf> = self
+            .by_name
+            .as_ref()?
+            .values()
+            .map(|gem| gem.dir.clone())
+            .collect();
+        dirs.sort();
+        Some(dirs)
     }
 
     pub fn parse(list: &str) -> Self {
@@ -101,6 +124,7 @@ impl Gems {
             .collect();
         Self {
             by_name: Some(by_name),
+            in_bundle: false,
         }
     }
 
@@ -969,6 +993,11 @@ impl ConfigStore {
 
     pub fn for_file(&mut self, file: &Path) -> Result<Rc<Config>, ConfigError> {
         self.for_dir(file.parent().unwrap_or(Path::new(".")))
+    }
+
+    /// The gems the launcher found (`OXCOP_GEMS`).
+    pub fn gems(&self) -> &Gems {
+        &self.loader.gems
     }
 
     pub fn for_pwd(&mut self) -> Result<Rc<Config>, ConfigError> {

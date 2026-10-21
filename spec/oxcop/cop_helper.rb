@@ -42,7 +42,8 @@ module Oxcop
           # investigations, so the binary replays the earlier ones.
           priors: (@oxcop_priors ||= []).dup,
           real_file: real_file?(cop, processed_source),
-          offenses_to_check: offenses_to_check(cop)
+          offenses_to_check: offenses_to_check(cop),
+          project_index: project_index_sources(cop)
         }
         cop_options = cop.instance_variable_get(:@options) || {}
 
@@ -77,6 +78,12 @@ module Oxcop
         cop.offenses_to_check.map do |offense|
           { "cop_name" => offense.cop_name, "line" => offense.line, "last_line" => offense.last_line }
         end
+      end
+
+      # The sources behind `cop.project_index = build_index(...)`.
+      def project_index_sources(cop)
+        index = cop.project_index if cop.respond_to?(:project_index)
+        index.sources if index.is_a?(ProjectIndex)
       end
 
       # The spec wrote the source to a real file (`expect_offense(source,

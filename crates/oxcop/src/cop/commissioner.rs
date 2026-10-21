@@ -82,6 +82,7 @@ pub fn investigate(
     comment_config: &CommentConfig,
     options: CopOptions,
     auto_gen: &std::collections::BTreeMap<String, AutoGenState>,
+    project_index: Option<&std::sync::Arc<crate::project_index::ProjectIndex>>,
 ) -> Vec<CopReport> {
     let mut cxs: Vec<Investigation<'_, '_>> = cops
         .iter()
@@ -93,6 +94,7 @@ pub fn investigate(
                 comment_config,
                 options,
             );
+            cx.project_index = project_index.cloned();
             // Carried over from earlier investigations; exclude limits are
             // reported per investigation.
             if let Some(state) = auto_gen.get(cop.name()) {

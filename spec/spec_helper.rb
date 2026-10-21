@@ -18,6 +18,7 @@ Dir["#{__dir__}/support/**/*.rb"].sort.each { |f| require f }
 
 require_relative "oxcop/binary"
 require_relative "oxcop/cop_helper"
+require_relative "oxcop/project_index"
 
 RSpec.configure do |config|
   config.include FileHelper
