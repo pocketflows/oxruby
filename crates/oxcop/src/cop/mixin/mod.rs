@@ -26,6 +26,7 @@ pub mod integer_node;
 pub mod interpolation;
 pub mod line_length_help;
 pub mod method_preference;
+pub mod min_body_length;
 pub mod min_branches_count;
 pub mod multiline_element_indentation;
 pub mod multiline_element_line_breaks;
