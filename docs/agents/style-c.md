@@ -20,14 +20,17 @@
 - Style/NumericPredicate 37
 - Style/ObjectThen 22
 - Style/OneClassPerFile 21
+- Style/OneLineConditional 104
 - Style/OperatorMethodCall 202
 - Style/OptionalArguments 13
 - Style/OptionalBooleanParameter 8
+- Style/ParallelAssignment 91
 - Style/PartitionInsteadOfDoubleSelect 37
 - Style/PercentQLiterals 21
 - Style/PerlBackrefs 14
 - Style/PredicateWithKind 64
 - Style/PreferredHashMethods 9
+- Style/QuotedSymbols 97
 - Style/RaiseArgs 35
 - Style/RandomWithOffset 29
 - Style/ReduceToHash 23
@@ -37,6 +40,7 @@
 - Style/RedundantBegin 62
 - Style/RedundantCapitalW 13
 - Style/RedundantCondition 102
+- Style/RedundantConditional 11
 - Style/RedundantConstantBase 11 (3 pending: need the `rubydex` project index, as upstream without it)
 - Style/RedundantCurrentDirectoryInPath 13
 - Style/RedundantEach 36
@@ -74,32 +78,17 @@
 
 ## Pending / WIP branches (local, not on main)
 
-`style-c-pending` holds green cops waiting on a landing window (main's full
-gate) or on another agent's mixin. Each mixin it needs but doesn't own is a
-`TEMP:` commit copying the owner's file from their branch; when the owner
-lands it, drop that commit (`git rebase --onto main <TEMP-sha>
-style-c-pending`; `-i` isn't available). Commits, oldest first:
-
-1. `TEMP` style-d's ReparsedEquivalence; Style/RedundantParentheses (337).
-2. (landed: Style/RescueStandardError + RescueNode.)
-3. `TEMP` layout-b's Alignment indentation helpers and MatchRange;
-   Style/RedundantConditional (11), Style/ParallelAssignment (91),
-   Style/RedundantStringEscape (328).
-4. `TEMP` lint-a's PercentLiteral and Utils::FormatString (both now on main:
-   drop those two files from the TEMP commit when rebasing), style-b's
-   MinBodyLength, OnNormalIfUnless, IfThenCorrector; `TEMP` style-d's
-   PreferredDelimiters; Style/RedundantCapitalW (13), Style/PercentQLiterals
-   (21), Style/RedundantInterpolation (29) and Style/RedundantFormat (306)
-   are landed (their mixins reached main); Style/OneLineConditional (104)
-   is left.
-5. `TEMP` lint-b's SymbolHelp; Style/QuotedSymbols (97).
-
-All of these pass their whole spec on `style-c-pending` and clippy is clean.
+`style-c-pending` now only matters for Style/RedundantStringEscape (328,
+green): it needs layout-b's `mixin/match_range.rs`, which isn't on main yet
+(the branch carries a `TEMP` copy). Once it lands, cherry-pick
+`Port Style/RedundantStringEscape` onto `style-c` and land it. Everything
+else on that branch has landed.
 
 `style-c-wip` holds cops that pass all but a few examples blocked on the
-shim or runner (see below); some also need the pending branch's mixins:
-Style/NumberedParametersLimit, Style/NumericLiterals, Style/RedundantArgument,
-Style/RescueModifier, Style/Next, Style/PercentLiteralDelimiters.
+shim or runner (see below): Style/NumberedParametersLimit,
+Style/NumericLiterals, Style/RedundantArgument, Style/RescueModifier,
+Style/Next, Style/PercentLiteralDelimiters (the last also needs style-d's
+`mixin/preferred_delimiters.rs`, not on main yet).
 
 ## Left
 
