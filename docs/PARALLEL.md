@@ -108,6 +108,7 @@ Each agent owns the paths listed for it. Outside them:
 | `depts` | Naming, Metrics (with `metrics/utils`), Security, Bundler, Gemspec, Migration | Port them all. |
 | `tree-cli` | `crates/oxtree/src/cli.rs`, `main.rs`, the stree_new mode, `script/compare_with_stree` | OXTREE "What's left" items 1 and 3: the `stree` drop-in CLI, the stree_new mode, and the differential script plus timing against `bin/rails stree_new:check`. |
 | `tree-pkg` | `gems/oxtree/`, `rakelib/oxtree.rake`, `crates/oxtree/tests/`, an additive oxtree line in CI | OXTREE items 2, 4 and 5: the gem and rake tasks, ERB and plugin tests wired into `cargo test`, and `rake oxtree:check`. |
+| `shim` | `spec/oxcop/`, `spec/spec_helper.rb`, `crates/oxcop/src/server.rs`, the auto-gen state in `runner.rs` | Spec-shim and binary-channel features that blocked ports need (auto-gen state, cop errors, `:lsp`, ExcludeLimit, file names, multi-file examples), then landing those ports from the finished agents' `*-wip` branches. Took these over from `runtime`. |
 
 The `cop/mixin/` files that already exist are listed in `ROADMAP.md`. The
 mixins most needed but not yet ported are Alignment, SurroundingSpace,
