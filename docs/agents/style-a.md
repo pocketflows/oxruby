@@ -7,7 +7,13 @@ BlockComments 5, CharacterLiteral 5, ClassMethods 5, ClassVars 5,
 ColonMethodCall 11, ColonMethodDefinition 3, Dir 4, EmptyBlockParameter 9,
 EmptyLambdaParameter 3, EndBlock 2, CollectionMethods 68, DigChain 24,
 CollectionCompact 28, EmptyStringInsideInterpolation 30, EmptyHeredoc 8,
-EmptyLiteral 52.
+EmptyLiteral 52, ArrayCoercion 5, ArrayFirstLast 18,
+ArrayIntersectWithSingleElement 5, BitwisePredicate 15, CaseEquality 27,
+ClassCheck 4, ComparableBetween 15, DateTime 14, DirEmpty 11,
+EachForSimpleLoop 20, EnvHome 8, EvenOdd 21, ExactRegexpMatch 15.
+
+ExactRegexpMatch checks `\A<literal>\z` directly instead of through a
+`regexp_parser` port (none exists yet); the spec passes in full.
 
 ## Mixins owned (claimed in .coord/claims)
 
