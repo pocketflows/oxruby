@@ -201,6 +201,9 @@ fn run_options(args: impl IntoIterator<Item = OsString>, io: &mut Io) -> i32 {
         }
         return STATUS_SUCCESS;
     }
+    if options.show_resolved_cops {
+        return show_resolved_cops(&options, io);
+    }
 
     // `OptionArgumentError`: the message alone.
     if let Err(message) = validate_compatibility(&options) {
@@ -213,6 +216,75 @@ fn run_options(args: impl IntoIterator<Item = OsString>, io: &mut Io) -> i32 {
             let _ = writeln!(io.stderr, "Error: {message}");
             STATUS_ERROR
         }
+    }
+}
+
+/// Hidden `--show-resolved-cops`: `config_store.for_pwd.for_cop(name)` for
+/// every ported cop, with `Enabled` replaced by `Registry#enabled_cop_name?`
+/// (whether the cop runs without `--only`).
+fn show_resolved_cops(options: &Options, io: &mut Io) -> i32 {
+    let mut store = crate::config_loader::ConfigStore::new(options.config.clone());
+    store.pending_cops_option = if options.disable_pending_cops {
+        Some(false)
+    } else if options.enable_pending_cops {
+        Some(true)
+    } else {
+        None
+    };
+    let config = match store.for_pwd() {
+        Ok(config) => config,
+        Err(e) => {
+            let _ = writeln!(io.stderr, "Error: {e}");
+            return STATUS_ERROR;
+        }
+    };
+    let mut cops = serde_json::Map::new();
+    for name in registry::names() {
+        let mut params = config.for_cop(name).clone();
+        params.insert(
+            "Enabled".into(),
+            serde_yaml_ng::Value::Bool(config.cop_enabled(name)),
+        );
+        cops.insert(name.to_owned(), yaml_to_json(&serde_yaml_ng::Value::Mapping(params)));
+    }
+    let _ = writeln!(io.stdout, "{}", serde_json::Value::Object(cops));
+    STATUS_SUCCESS
+}
+
+/// JSON for `--show-resolved-cops`. JSON has no infinity (`Max: .inf`), so
+/// non-finite floats become the strings `Infinity`, `-Infinity` and `NaN`,
+/// as the compare script's Ruby side writes them.
+fn yaml_to_json(value: &serde_yaml_ng::Value) -> serde_json::Value {
+    use serde_json::Value as Json;
+    use serde_yaml_ng::Value as Yaml;
+    match value {
+        Yaml::Null => Json::Null,
+        Yaml::Bool(b) => Json::Bool(*b),
+        Yaml::Number(n) => match n.as_f64() {
+            Some(f) if f.is_nan() => Json::String("NaN".to_owned()),
+            Some(f) if f.is_infinite() => {
+                Json::String(if f > 0.0 { "Infinity" } else { "-Infinity" }.to_owned())
+            }
+            _ => serde_json::to_value(n).unwrap_or(Json::Null),
+        },
+        Yaml::String(s) => Json::String(s.clone()),
+        Yaml::Sequence(items) => Json::Array(items.iter().map(yaml_to_json).collect()),
+        Yaml::Mapping(mapping) => Json::Object(
+            mapping
+                .iter()
+                .map(|(k, v)| {
+                    let key = match k {
+                        Yaml::String(s) => s.clone(),
+                        other => serde_yaml_ng::to_string(other)
+                            .unwrap_or_default()
+                            .trim_end()
+                            .to_owned(),
+                    };
+                    (key, yaml_to_json(v))
+                })
+                .collect(),
+        ),
+        Yaml::Tagged(tagged) => yaml_to_json(&tagged.value),
     }
 }
 

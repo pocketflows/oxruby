@@ -7,14 +7,26 @@
 #
 #   script/compare_with_rubocop [PROJECT_DIR] [-- extra args for both tools]
 #   ONLY=Style/Foo,Layout/Bar script/compare_with_rubocop   # just these cops
+#   REAL_CONFIG=1 script/compare_with_rubocop               # the project's own config
 #
 # PROJECT_DIR defaults to ../code, the sibling checkout used as our corpus.
 # ONLY restricts the comparison to the given ported cops (script/land uses it
 # for landings that only add or change cops).
+#
+# By default both tools run with `--only <every ported cop>`, which
+# force-enables each cop whatever the configuration says. REAL_CONFIG=1 runs
+# them with the project's configuration as is (no `--only`), so it checks
+# which cops the configuration enables (DisabledByDefault, department
+# `Enabled`, plugin defaults, ...). Plugin and custom cops only run in
+# RuboCop, so both reports are filtered to the ported cops; for
+# Lint/RedundantCopDisableDirective, whose verdict depends on every cop's
+# offenses, offenses that name an unported cop, a department or all cops are
+# dropped too.
 
 require "json"
 require "open3"
 require "bundler"
+require "set"
 
 root = File.expand_path("..", __dir__)
 args = ARGV.dup
@@ -25,6 +37,7 @@ abort "oxcop binary not found at #{oxcop}; run `cargo build --release`" unless F
 
 ported, status = Open3.capture2(oxcop, "--show-ported-cops")
 abort "could not list ported cops" unless status.success?
+PORTED = ported.lines(chomp: true).to_set.freeze
 # RuboCop refuses `--only Lint/RedundantCopDisableDirective`; that cop only
 # runs without `--only`, after the others.
 cops = ported.lines(chomp: true) - ["Lint/RedundantCopDisableDirective"]
@@ -42,33 +55,110 @@ unless ENV["ONLY"].to_s.empty?
   end
   warn "comparing only #{cops.join(", ")}"
 end
-only = ["--only", cops.join(","), "--format", "json", "--cache", "false", *extra]
+real_config = !ENV["REAL_CONFIG"].to_s.empty?
+if real_config
+  # Every ported cop, the slow and directive ones included: the project's
+  # configuration decides which of them run.
+  compared = PORTED
+  compared &= ENV["ONLY"].split(",").map(&:strip) unless ENV["ONLY"].to_s.empty?
+  warn "comparing with the project's own configuration"
+  only = ["--format", "json", "--cache", "false", *extra]
+else
+  only = ["--only", cops.join(","), "--format", "json", "--cache", "false", *extra]
+end
 
-def report(label, command, dir)
-  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-  # Undo the version manager's per-process pins (rbenv puts the running
-  # Ruby's bin directory first on PATH) so the project's .ruby-version applies.
+# REAL_CONFIG: keep the offenses of ported cops only (see the header).
+def comparable?(offense, compared)
+  name = offense["cop_name"]
+  return false unless compared.include?(name)
+  return true unless name == "Lint/RedundantCopDisableDirective"
+
+  message = offense["message"]
+  return false if message.include?("all cops") || message.include?("` department")
+
+  message.scan(/`([^`]+)`/).flatten.all? { PORTED.include?(_1) }
+end
+
+# Undo the version manager's per-process pins (rbenv puts the running Ruby's
+# bin directory first on PATH) so the project's .ruby-version applies.
+def project_env
   path = ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).grep_v(%r{/\.rbenv/versions/[^/]+/bin\z})
-  env = { "PATH" => path.join(File::PATH_SEPARATOR), "RBENV_VERSION" => nil, "RBENV_DIR" => nil,
-          "GEM_HOME" => nil, "GEM_PATH" => nil }
-  stdout, stderr, status = Open3.capture3(env, *command, chdir: dir)
+  { "PATH" => path.join(File::PATH_SEPARATOR), "RBENV_VERSION" => nil, "RBENV_DIR" => nil,
+    "GEM_HOME" => nil, "GEM_PATH" => nil }
+end
+
+def report(label, command, dir, filter)
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  stdout, stderr, status = Open3.capture3(project_env, *command, chdir: dir)
   elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
   if status.exitstatus.nil? || status.exitstatus > 1 || stdout.empty?
     abort "#{label} failed (#{status}):\n#{stderr}"
   end
   warn format("%-8s %6.2fs", label, elapsed)
   json = JSON.parse(stdout)
-  json["files"].to_h { |file| [file["path"], file["offenses"].map { |o| o.except("corrected") }] }
+  json["files"].to_h do |file|
+    offenses = file["offenses"].map { |o| o.except("corrected") }
+    offenses.select! { comparable?(_1, filter) } if filter
+    [file["path"], offenses]
+  end
 end
 
-expected = Bundler.with_unbundled_env { report("rubocop", ["bundle", "exec", "rubocop", *only], project) }
+expected = Bundler.with_unbundled_env { report("rubocop", ["bundle", "exec", "rubocop", *only], project, real_config && compared) }
 # oxcop runs through its Ruby launcher inside the project's bundle, as
 # `bundle exec oxcop` would, so `plugins:` resolve to the bundle's gems. The
 # launcher isn't in the project's Gemfile, so it's run as a plain script.
 launcher = File.join(root, "gems", "oxcop", "exe", "oxcop")
 actual = Bundler.with_unbundled_env do
   ENV["OXCOP_BINARY"] = oxcop
-  report("oxcop", ["bundle", "exec", "ruby", launcher, *only], project)
+  report("oxcop", ["bundle", "exec", "ruby", launcher, *only], project, real_config && compared)
+end
+
+# REAL_CONFIG: the offenses only show the cops that fire on this project, so
+# compare what each tool resolves for every ported cop as well: whether it
+# runs (`Registry#enabled_cop_name?`) and its parameters (`Config#for_cop`).
+config_diffs = []
+if real_config
+  resolver = <<~'RUBY'
+    require "rubocop"
+    require "json"
+    names = JSON.parse($stdin.read)
+    config = RuboCop::ConfigStore.new.for_pwd
+    registry = RuboCop::Cop::Registry.global
+    # As oxcop writes them: JSON has no infinity, and oxcop keeps YAML's
+    # `!ruby/regexp /.../` and `:symbol` scalars as their source text.
+    finite = lambda do |value|
+      case value
+      when Hash then value.to_h { |k, v| [finite.(k).to_s, finite.(v)] }
+      when Array then value.map(&finite)
+      when Float then value.nan? ? "NaN" : value.infinite? ? (value.positive? ? "Infinity" : "-Infinity") : value
+      when Symbol then ":#{value}"
+      when Regexp then value.inspect
+      else value
+      end
+    end
+    puts JSON.generate(names.to_h { |name|
+      params = config.for_cop(name).to_h.dup
+      params["Enabled"] = registry.send(:enabled_cop_name?, name, config)
+      [name, finite.(params)]
+    })
+  RUBY
+  resolved = lambda do |label, command, stdin|
+    stdout, stderr, status = Bundler.with_unbundled_env do
+      ENV["OXCOP_BINARY"] = oxcop
+      Open3.capture3(project_env, *command, stdin_data: stdin, chdir: project)
+    end
+    abort "#{label} --show-resolved-cops failed (#{status}):\n#{stderr}" unless status.success?
+    JSON.parse(stdout)
+  end
+  names = compared.to_a.sort
+  want = resolved.("rubocop", ["bundle", "exec", "ruby", "-e", resolver], JSON.generate(names))
+  got = resolved.("oxcop", ["bundle", "exec", "ruby", launcher, "--show-resolved-cops", *extra], "")
+  names.each do |name|
+    next if want[name] == got[name]
+
+    keys = ((want[name] || {}).keys | (got[name] || {}).keys).reject { want.dig(name, _1) == got.dig(name, _1) }
+    config_diffs << [name, keys.to_h { [_1, [want.dig(name, _1), got.dig(name, _1)]] }]
+  end
 end
 
 only_rubocop = expected.keys - actual.keys
@@ -83,5 +173,10 @@ mismatched.first(20).each do |path|
   puts "  rubocop: #{JSON.generate(expected[path])}"
   puts "  oxcop:   #{JSON.generate(actual[path])}"
 end
+config_diffs.first(20).each do |name, keys|
+  puts "configuration differs for #{name}:"
+  keys.each { |key, (want, got)| puts "  #{key}: rubocop=#{JSON.generate(want)} oxcop=#{JSON.generate(got)}" }
+end
+puts "cops configured differently: #{config_diffs.size}" if real_config
 puts "mismatched files: #{mismatched.size}"
-exit(only_rubocop.empty? && only_oxcop.empty? && mismatched.empty? ? 0 : 1)
+exit(only_rubocop.empty? && only_oxcop.empty? && mismatched.empty? && config_diffs.empty? ? 0 : 1)

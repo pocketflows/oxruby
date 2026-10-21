@@ -206,6 +206,12 @@ pub struct Options {
     /// Print the names of cops that have been ported to oxcop, then exit.
     #[arg(long = "show-ported-cops", hide = true)]
     pub show_ported_cops: bool,
+
+    /// Print each ported cop's resolved configuration for the working
+    /// directory as JSON, with `Enabled` as whether the cop runs, then exit
+    /// (`script/compare_with_rubocop`'s REAL_CONFIG check).
+    #[arg(long = "show-resolved-cops", hide = true)]
+    pub show_resolved_cops: bool,
 }
 
 /// `--fail-level`.
