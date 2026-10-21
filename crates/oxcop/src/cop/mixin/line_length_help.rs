@@ -11,6 +11,7 @@ use std::ops::Range as CharRange;
 use serde_yaml_ng::{Mapping, Value};
 
 use crate::cop::Investigation;
+use crate::cop::mixin::ruby_regex;
 use crate::directive_comment::{DIRECTIVE_COMMENT_REGEXP, DirectiveComment};
 use crate::regex;
 
@@ -258,12 +259,7 @@ pub fn uri_regexp(cx: &Investigation<'_, '_>) -> Option<onig::Regex> {
         }
         _ => format!("(?x-mi:{X_ABS_URI})"),
     };
-    onig::Regex::with_options(
-        &pattern,
-        onig::RegexOptions::REGEX_OPTION_NONE,
-        onig::Syntax::ruby(),
-    )
-    .ok()
+    ruby_regex(&pattern)
 }
 
 /// `valid_uri?`: `URI.parse` succeeds. Every match of `uri_regexp` is an
