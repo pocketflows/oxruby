@@ -114,6 +114,9 @@ Committed on `lint-b`, waiting for the full gate:
 - Lint/RedundantSafeNavigation 118, SymbolConversion 46,
   RedundantRegexpQuantifiers 22, UnescapedBracketInRegexp 51,
   UnreachableCode 267
+- Lint/SafeNavigationChain 69, SafeNavigationConsistency 43 (with
+  style-d's `cop/mixin/nil_methods.rs`, copied unchanged from `style-d`;
+  if style-d lands it first, the file is identical)
 
 SuperArgumentMismatch and UnusedPrivateMethod need the `rubydex` project
 index, which oxcop doesn't have; like RuboCop without one they never fire.
@@ -122,8 +125,6 @@ UselessElseWithoutRescue only applies to Ruby <= 2.5 (`parser`'s
 
 ## Cops left
 
-- Lint/SafeNavigationChain, SafeNavigationConsistency: need style-d's
-  NilMethods mixin (`cop/mixin/nil_methods.rs`, on `style-d`, not on main).
 - Lint/ScriptPermission: see below.
 
 ## Principled failures and decisions
