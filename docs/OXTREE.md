@@ -180,26 +180,24 @@ so this isn't yet the `stree_new:check` comparison. That needs the CLI.
    - nested `MLHSParen` locations;
    - lambda-local line numbers.
 
-## Known gaps and open decisions
+## Known gaps and decisions
 
-- **Parse errors.** Prism and Ripper disagree on error *messages*, and very
-  rarely on what counts as an error. Output for valid code is unaffected.
-  The `[error] file: SyntaxTree::Parser::ParseError: <msg>` lines will name
-  the same files but with different message text. Decide whether that's
-  acceptable.
+Decided by the user (2026-10-21):
+
+- **Parse errors:** acceptable. Files that fail to parse are the same, but
+  the message text is Prism's, not Ripper's.
+- **Bug-for-bug parity:** kept for now. syntax_tree 6.3.0 drops `&blk`
+  after a heredoc argument, and inserts `**` into a later hash pattern after
+  `a**b`. oxtree reproduces both.
+- **Tailwind without oxfmt:** warn and use the library's unsorted output
+  (`tree-cli` is implementing this). If oxfmt is present but fails, that is
+  still an error.
+- **Executable name:** the gem ships `oxtree` only, with no `stree`-named
+  executable.
+
+Still open:
+
 - **Target Ruby.** Prism 2.0 parses with its default version, not
   `TargetRubyVersion`. syntax_tree on code/ runs on Ruby 3.3's Ripper. No
-  difference was seen on any corpus. `parse_with_options` could pin 3.3
-  later.
-- **Tailwind sorting.** The pure-Rust path never sorts Tailwind classes; it
-  hands those inputs to the oxfmt executable. On code/ no embedded snippet
-  reaches the sorter. If one ever does and node_modules isn't installed,
-  oxtree errors as the rake task would. Decide whether a missing oxfmt
-  should instead fall back to the unsorted library output with a warning.
-- **`stree` executable name.** Shipping one from the oxtree gem would shadow
-  syntax_tree's when both are bundled. The suggestion is to opt in via an
-  env var or a separate `oxtree-stree` gem.
-- **Dropped `&blk`.** syntax_tree 6.3.0 drops `&blk` after a heredoc
-  argument, and `a**b` followed by a hash pattern inserts `**`. Both change
-  the program, and oxtree reproduces both for byte-parity. Decide whether to
-  keep that parity or deliberately diverge and fix them.
+  difference has been seen on any corpus. `parse_with_options` could pin
+  3.3 later.
