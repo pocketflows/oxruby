@@ -207,6 +207,40 @@ impl Config {
         self.for_all_cops().get("NewCops").and_then(Value::as_str) == Some("enable")
     }
 
+    /// `Config#cop_enabled?` alone: `!!for_cop(name)['Enabled']`, where
+    /// `for_cop` computes `Enabled` with `enable_cop?` (so `pending` is
+    /// truthy here).
+    pub fn cop_enabled_in_config(&self, cop_name: &str) -> bool {
+        let enabled = self.for_cop(cop_name).get("Enabled");
+        if enabled == Some(&Value::Bool(true)) || cop_name == "Lint/Syntax" {
+            return true;
+        }
+        if enabled.and_then(Value::as_str) == Some("override_department") {
+            return true;
+        }
+        if let Some((department, _)) = cop_name.split_once('/')
+            && self.for_department(department).get("Enabled") == Some(&Value::Bool(false))
+        {
+            return false;
+        }
+        match enabled {
+            None => !self.all_cops_bool("DisabledByDefault", false),
+            Some(Value::Bool(b)) => *b,
+            Some(Value::Null) => false,
+            Some(_) => true,
+        }
+    }
+
+    /// `Config#for_enabled_cop`: the cop's configuration if
+    /// `cop_enabled?`, else an empty one.
+    pub fn for_enabled_cop(&self, cop_name: &str) -> &Mapping {
+        if self.cop_enabled_in_config(cop_name) {
+            self.for_cop(cop_name)
+        } else {
+            &EMPTY
+        }
+    }
+
     /// Port of `Config#cop_enabled?` combined with `Registry#enabled?`.
     pub fn cop_enabled(&self, cop_name: &str) -> bool {
         let options = self.for_cop(cop_name);
