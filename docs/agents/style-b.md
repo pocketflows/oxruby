@@ -25,8 +25,14 @@ ModuleMemberExistenceCheck 69, MultilineBlockChain 11, MultilineIfThen 14,
 MultilineInPatternThen 13, MultilineMethodSignature 21,
 MultilineTernaryOperator 15, MultilineWhenThen 13, MultipleComparison 36.
 
-61 cops. Not landed yet: main's full gate was red (rubocop-rails config,
-`runtime`'s fix) when these were ready, and the branch has shared changes.
+61 cops. 43 of them (the ones needing no new shared helper) are on main
+(b6c30e6, landed from a cop-only branch while main's full gate was red). The
+other 18 need the full gate because they come with shared changes: FileRead,
+FileWrite, For, HashExcept, HashLikeCase, HashSlice, HashTransformKeys,
+HashTransformValues, IfInsideElse, IfUnlessModifier, IfWithSemicolon,
+KeywordArgumentsMerging, Lambda, MapIntoArray, MethodCallWithArgsParentheses,
+MissingElse, MultilineIfThen, MultilineMethodSignature. Land `style-b` with
+`script/land` once main is green.
 
 ## Left
 
