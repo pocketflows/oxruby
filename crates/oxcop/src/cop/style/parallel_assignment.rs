@@ -19,6 +19,9 @@ enum Rhs<'a> {
     SelfGetter(&'a str),
 }
 
+/// A `(lhs, rhs)` pair of the sorter.
+type Assignment<'a> = (Node<'a>, Rhs<'a>);
+
 #[derive(Default)]
 pub struct ParallelAssignment {
     ignored: IgnoredNodes,
@@ -155,7 +158,7 @@ fn same_pair(a: &(Node<'_>, Rhs<'_>), b: &(Node<'_>, Rhs<'_>)) -> bool {
 /// structurally equal pairs, so equal pairs collapse into one entry.
 fn tsort<'a>(assignments: &[(Node<'a>, Rhs<'a>)]) -> Option<Vec<(Node<'a>, Rhs<'a>)>> {
     // `@assignments.to_h`: a later equal key replaces the value in place.
-    let mut dependencies: Vec<((Node<'a>, Rhs<'a>), Vec<(Node<'a>, Rhs<'a>)>)> = Vec::new();
+    let mut dependencies: Vec<(Assignment<'a>, Vec<Assignment<'a>>)> = Vec::new();
     for assignment in assignments {
         let edges = dependencies_for_assignment(assignments, assignment);
         match dependencies.iter_mut().find(|(k, _)| same_pair(k, assignment)) {
