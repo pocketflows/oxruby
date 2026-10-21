@@ -25,6 +25,7 @@ pub mod rational_literal;
 pub mod safe_assignment;
 pub mod string_help;
 pub mod string_literals_help;
+pub mod symbol_help;
 pub mod uncommunicative_name;
 pub mod unused_argument;
 pub mod util;
