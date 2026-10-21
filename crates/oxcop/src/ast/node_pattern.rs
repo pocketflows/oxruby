@@ -693,11 +693,15 @@ struct Matcher<'m, 'a, 'c, 'p> {
     captures: Vec<Option<Capture<'a>>>,
     unified: HashMap<String, Val<'a>>,
     regexes: &'m HashMap<(String, String), onig::Regex>,
+    /// The element being matched: `%0`.
+    root: Val<'a>,
 }
 
 impl<'a> Matcher<'_, 'a, '_, '_> {
     fn param(&self, pat: &Pat) -> Option<Param<'_>> {
         match pat {
+            // `%0` is the matched node itself.
+            Pat::Positional(0) => self.root.node().map(Param::Node),
             Pat::Positional(n) => self.ctx.params.get(n - 1).copied(),
             Pat::Named(name) => self
                 .ctx
@@ -1333,6 +1337,7 @@ impl NodePattern {
             captures: Vec::new(),
             unified: HashMap::new(),
             regexes: &compiled.regexes,
+            root: val,
         };
         if matcher.match_one(&compiled.root, val, None) {
             Some(

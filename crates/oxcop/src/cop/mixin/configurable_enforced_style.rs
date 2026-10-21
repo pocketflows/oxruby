@@ -11,8 +11,11 @@ pub fn style<'a>(cx: &Investigation<'a, '_>) -> &'a str {
 }
 
 /// `style` for another style parameter name.
+/// Ruby's `to_sym` makes a symbol value (`:annotated`, as a spec's config
+/// is dumped to YAML) the same as its string.
 pub fn style_for<'a>(cx: &Investigation<'a, '_>, parameter: &str) -> &'a str {
-    cx.cop_config_str(parameter).unwrap_or("")
+    let value = cx.cop_config_str(parameter).unwrap_or("");
+    value.strip_prefix(':').unwrap_or(value)
 }
 
 /// `supported_styles`.
