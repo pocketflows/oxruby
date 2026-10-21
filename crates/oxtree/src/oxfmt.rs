@@ -173,6 +173,17 @@ mod tests {
         assert_eq!(out.as_deref(), Some("const b = 1;\n"));
         assert!(!take_tailwind_unsorted());
 
+        // An oxfmt that is present but can't run is still an error.
+        let broken = dir.join("broken-oxfmt");
+        std::fs::write(&broken, "not a program").unwrap();
+        let present = Oxfmt::new(&dir, Some(broken), Backend::Library);
+        assert!(
+            present
+                .format("const a = cn( \"p-4 flex\" )\n", Language::Js)
+                .is_err()
+        );
+        assert!(!take_tailwind_unsorted());
+
         // The executable backend still requires the executable.
         let process = Oxfmt::new(&dir, Some(dir.join("missing-oxfmt")), Backend::Process);
         assert!(process.format("const b = 1\n", Language::Js).is_err());

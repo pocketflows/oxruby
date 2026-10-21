@@ -98,7 +98,10 @@ config_file_nonexistent_path, and plugins (with syntax_tree's own plugins).
   to stderr; it doesn't count as a failure. A present oxfmt that rejects
   the code still leaves it verbatim, as the rake task does. The executable
   backend (`--oxfmt-backend=process`, or `--no-default-features`) still
-  errors with OxfmtMissingError.
+  errors with OxfmtMissingError. An oxfmt that exists but can't be run is
+  still an error (tested); its message still says "not found; run `npm ci`"
+  because `run_process` has one error for every spawn failure (the rake task
+  would raise `Errno::EACCES` there). A one-line fix if anyone cares.
 
 Note: `.streerc`'s `--ignore-files=db/**/*.rb` uses plain fnmatch, so it
 needs a `/` after `db/x`: `db/schema.rb` and `db/seeds.rb` are *not*
@@ -125,7 +128,9 @@ Results on code/ (9bf6841d2, 4,515 files: 3,933 Ruby-handler files, 582 ERB):
 | 40 | 4,515 | 4,515 | identical (4,013 `[warn]` lines) |
 
 No parse errors on code/, so the Prism-vs-Ripper message difference didn't
-come up.
+come up. `--modified` selection also matches: `StreeNew.modified_files` and
+`oxtree stree-new --list --modified` give the same 508 files on code/'s
+`rubocop-rs` branch (checked by hand; the script compares `all_files`).
 
 Timing (`--time 3`, fastest of 3, release build, machine load average ~25
 on 14 cores from the other agents, so absolute numbers are inflated):
