@@ -15,6 +15,7 @@ use crate::formatter::Formatter;
 use crate::options::{AutocorrectMode, Options};
 use crate::path_util;
 use crate::processed_source::ProcessedSource;
+use crate::source_encoding;
 use crate::target_finder::TargetFinder;
 use crate::target_ruby::target_ruby_version;
 
@@ -25,7 +26,7 @@ pub struct Runner<'a> {
     config_store: ConfigStore,
     inspector: Inspector<'a>,
     /// With `--stdin` and autocorrect, the corrected source to echo back.
-    pub corrected_stdin: Option<String>,
+    pub corrected_stdin: Option<Vec<u8>>,
     pub errors: Vec<String>,
     /// `--spec-report`: what the spec shim needs besides the offenses.
     pub spec_report: SpecReport,
@@ -89,9 +90,11 @@ struct FileResult {
     cop_errors: Vec<String>,
     /// Errors reading or writing the file (`Runner#errors`).
     errors: Vec<String>,
-    corrected_stdin: Option<String>,
+    corrected_stdin: Option<Vec<u8>>,
     raised: Vec<CopError>,
     auto_gen: Vec<(&'static str, AutoGenState)>,
+    /// A `RuboCop::ValidationError`, which stops the run.
+    validation_error: Option<CopError>,
 }
 
 impl<'a> Runner<'a> {
@@ -132,9 +135,9 @@ impl<'a> Runner<'a> {
         let files = self.find_target_files()?;
         let stdin_source = match self.options.stdin {
             Some(_) => {
-                let mut source = String::new();
+                let mut source = Vec::new();
                 stdin
-                    .read_to_string(&mut source)
+                    .read_to_end(&mut source)
                     .map_err(|e| ConfigError(format!("reading stdin: {e}")))?;
                 Some(source)
             }
@@ -148,6 +151,11 @@ impl<'a> Runner<'a> {
             |runner: &mut Self, formatter: &mut dyn Formatter, file: &Path, result: FileResult| {
                 for error in &result.cop_errors {
                     let _ = writeln!(crate::cli::stderr(), "{error}");
+                }
+                if let Some(error) = result.validation_error {
+                    let message = error.message.clone();
+                    runner.spec_report.raised.push(error);
+                    return Err(ConfigError(message));
                 }
                 runner.errors.extend(result.errors);
                 runner.spec_report.raised.extend(result.raised);
@@ -221,31 +229,33 @@ impl Inspector<'_> {
     fn file_offenses(
         &self,
         file: &Path,
-        stdin_source: Option<&str>,
+        stdin_source: Option<&[u8]>,
         config: &Config,
     ) -> FileResult {
         let mut result = FileResult::default();
-        let source = match stdin_source {
-            Some(source) => source.to_owned(),
+        let bytes = match stdin_source {
+            Some(source) => std::borrow::Cow::Borrowed(source),
             None => match std::fs::read(file) {
-                Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                Ok(bytes) => std::borrow::Cow::Owned(bytes),
                 Err(e) => {
                     result.errors.push(format!("{}: {e}", file.display()));
                     return result;
                 }
             },
         };
+        let (source, encoding) = source_encoding::decode(&bytes);
         let (corrected_source, offenses) =
             self.do_inspection_loop(file, source, config, &mut result);
 
         if let Some(corrected) = corrected_source {
+            let corrected = source_encoding::encode(&corrected, encoding);
             if stdin_source.is_some() {
                 result.corrected_stdin = Some(corrected);
             } else if let Err(e) = std::fs::write(file, corrected) {
                 result.errors.push(format!("{}: {e}", file.display()));
             }
-        } else if stdin_source.is_some() {
-            result.corrected_stdin = Some(source_for_stdin(stdin_source));
+        } else if let Some(source) = stdin_source {
+            result.corrected_stdin = Some(source.to_vec());
         }
 
         let mut offenses: Vec<Offense> = offenses.into_iter().flatten().collect();
@@ -294,6 +304,10 @@ impl Inspector<'_> {
                 let processed_source =
                     ProcessedSource::new(&source, &buffer_source, ruby_version, file);
                 let report = team.investigate(&processed_source);
+                if report.validation_error.is_some() {
+                    result.validation_error = report.validation_error;
+                    break;
+                }
                 result.cop_errors.extend(report.errors);
                 result.raised.extend(report.raised);
                 for (cop, state) in report.auto_gen {
@@ -317,8 +331,4 @@ impl Inspector<'_> {
 
         (corrected.then_some(source), offenses_by_iteration)
     }
-}
-
-fn source_for_stdin(stdin_source: Option<&str>) -> String {
-    stdin_source.unwrap_or_default().to_owned()
 }

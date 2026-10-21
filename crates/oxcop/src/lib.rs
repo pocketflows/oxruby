@@ -20,6 +20,7 @@ pub mod processed_source;
 pub mod regexp_parser;
 pub mod runner;
 pub mod server;
+pub mod source_encoding;
 pub mod target_finder;
 pub mod target_ruby;
 pub mod version;

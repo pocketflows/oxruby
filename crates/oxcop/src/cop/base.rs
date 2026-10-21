@@ -70,6 +70,14 @@ pub trait Cop {
     /// Called instead of the AST callbacks when the file has syntax errors.
     fn on_other_file(&mut self, _cx: &mut Investigation<'_, '_>) {}
 
+    /// `validate_config`: `Err(message)` is `raise ValidationError, message`.
+    /// The team checks it before investigating each file, and the run stops
+    /// with `Error: message` (in specs the shim raises
+    /// `RuboCop::ValidationError`).
+    fn validate_config(&self, _cx: &Investigation<'_, '_>) -> Result<(), String> {
+        Ok(())
+    }
+
     /// `self.joining_forces` returning `VariableForce`: the force's hooks
     /// below are called before the AST walk.
     fn joins_variable_force(&self) -> bool {

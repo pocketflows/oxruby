@@ -102,7 +102,9 @@ module Oxcop
                             *("--autocorrect-once" if once),
                             "--only", cop_name, "-A", "--format", "quiet", "--stderr",
                             "--spec-report", report_path, stdin: source)
-              stdout
+              # In the source's encoding, so it compares equal to the spec's
+              # expected (e.g. binary) correction.
+              stdout.force_encoding(source.encoding)
             end
           end
         end
@@ -114,11 +116,17 @@ module Oxcop
         def with_report(apply: true)
           path = File.join(Dir.tmpdir, "oxcop-spec-report-#{Process.pid}.json")
           File.delete(path) if File.exist?(path)
-          result = yield path
+          begin
+            result = yield path
+          rescue Error => e
+            failed = e
+          end
           report = File.exist?(path) ? JSON.parse(File.read(path)) : {}
           if (error = report.fetch("raised", []).first)
             raise error_class(error.fetch("class")), error.fetch("message")
           end
+          raise failed if failed
+
           apply_auto_gen_state(report) if apply
           result
         end

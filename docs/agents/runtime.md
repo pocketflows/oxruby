@@ -78,6 +78,16 @@ Owner: `runtime` (see the roster in `docs/PARALLEL.md`).
 - **`exclude_limit`** setters (`self.max = n`): `cx.set_exclude_limit("Max",
   n)` where upstream calls the setter. The shim appends to
   `ExcludeLimit.tmp_dir`, so `read_exclude_limit(cop, 'Max')` works.
+- **`validate_config`**: implement `Cop::validate_config(&self, cx) ->
+  Result<(), String>`; `Err(message)` is `raise ValidationError, message`.
+  The team checks it before each file; the run stops with `Error: message`
+  (exit 2) and the shim raises `RuboCop::ValidationError`.
+- **Source encodings** (`source_encoding.rs`): files and stdin are read as
+  bytes. A magic `encoding:` comment is honoured as
+  `Parser::Source::Buffer` does: `BINARY` keeps one character per byte
+  (U+00XX, written back as those bytes), other encodings are transcoded to
+  UTF-8 (encoding_rs). No comment means UTF-8 (invalid bytes are replaced;
+  RuboCop reports such files as unparsable instead).
 - Plumbing: hidden `--spec-report FILE` writes `{config_to_allow_offenses,
   detected_styles, exclude_limits, raised}` as JSON (`runner::SpecReport`).
 

@@ -5,7 +5,7 @@ use crate::comment_config::CommentConfig;
 use crate::config::Config;
 use crate::cop::base::{AutoGenState, CopError, CopOptions};
 use crate::cop::commissioner::{self, CopReport};
-use crate::cop::{Cop, Corrector, Offense, registry};
+use crate::cop::{Cop, Corrector, Investigation, Offense, registry};
 use crate::options::AutocorrectMode;
 use crate::processed_source::ProcessedSource;
 
@@ -25,6 +25,8 @@ pub struct InvestigationReport {
     /// Each cop's `--auto-gen-config` state, when it has any.
     pub auto_gen: Vec<(&'static str, AutoGenState)>,
     pub comment_config: CommentConfig,
+    /// A cop's `validate_config` failed: nothing was investigated.
+    pub validation_error: Option<CopError>,
 }
 
 pub struct Team<'a> {
@@ -119,6 +121,30 @@ impl<'a> Team<'a> {
             Some(cops) => cops,
             None => self.mobilize_cops(processed_source, &comment_config),
         };
+        // `Team#validate_config`, which upstream runs when the team is set up.
+        for cop in &cops {
+            let cx = Investigation::new(
+                cop.as_ref(),
+                processed_source,
+                self.config,
+                &comment_config,
+                self.options,
+            );
+            if let Err(message) = cop.validate_config(&cx) {
+                return InvestigationReport {
+                    offenses: Vec::new(),
+                    corrector: None,
+                    errors: Vec::new(),
+                    raised: Vec::new(),
+                    auto_gen: Vec::new(),
+                    comment_config,
+                    validation_error: Some(CopError {
+                        class: "RuboCop::ValidationError".to_owned(),
+                        message,
+                    }),
+                };
+            }
+        }
         let (mut autocorrect_cops, mut other_cops): (Vec<_>, Vec<_>) = cops
             .into_iter()
             .partition(|cop| self.autocorrects(cop.as_ref()));
@@ -166,6 +192,7 @@ impl<'a> Team<'a> {
             raised,
             auto_gen,
             comment_config,
+            validation_error: None,
         }
     }
 }

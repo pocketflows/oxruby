@@ -217,19 +217,18 @@ fn execute_runner(options: &Options, io: &mut Io) -> Result<i32, String> {
     };
     let mut formatter = formatter::build(&format, output, formatter_options)?;
 
-    let all_passed = runner
-        .run(formatter.as_mut(), &mut io.stdin)
-        .map_err(|e| e.to_string())?;
+    let run = runner.run(formatter.as_mut(), &mut io.stdin);
     drop(formatter);
+    if let Some(path) = &options.spec_report {
+        std::fs::write(path, runner.spec_report.to_json().to_string())
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+    }
+    let all_passed = run.map_err(|e| e.to_string())?;
 
     maybe_print_corrected_source(options, &format, runner.corrected_stdin.as_deref(), io);
 
     for error in &runner.errors {
         let _ = writeln!(io.stderr, "{error}");
-    }
-    if let Some(path) = &options.spec_report {
-        std::fs::write(path, runner.spec_report.to_json().to_string())
-            .map_err(|e| format!("{}: {e}", path.display()))?;
     }
     Ok(if !runner.errors.is_empty() {
         STATUS_ERROR
@@ -243,7 +242,7 @@ fn execute_runner(options: &Options, io: &mut Io) -> Result<i32, String> {
 fn maybe_print_corrected_source(
     options: &Options,
     format: &str,
-    corrected: Option<&str>,
+    corrected: Option<&[u8]>,
     io: &mut Io,
 ) {
     if formatter::INTEGRATION_FORMATTERS.contains(&format) {
@@ -258,7 +257,7 @@ fn maybe_print_corrected_source(
     } else {
         let _ = writeln!(io.stdout, "{separator}");
     }
-    let _ = write!(io.stdout, "{}", corrected.unwrap_or_default());
+    let _ = io.stdout.write_all(corrected.unwrap_or_default());
     let _ = io.stdout.flush();
 }
 
@@ -272,7 +271,7 @@ fn dump_ast(options: &Options, io: &mut Io) -> i32 {
                 return STATUS_ERROR;
             }
         };
-        let source = String::from_utf8_lossy(&bytes);
+        let (source, _) = crate::source_encoding::decode(&bytes);
         let buffer = crate::processed_source::normalize_newlines(&source);
         let processed = crate::processed_source::ProcessedSource::new(
             &source,
