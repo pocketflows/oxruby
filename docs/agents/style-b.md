@@ -93,3 +93,9 @@ MissingElse, MultilineIfThen, MultilineMethodSignature. Land `style-b` with
 - `IgnoredNodes`: cops whose Ruby code only uses `ignored_node?` (identity)
   reset it in `on_new_investigation`; cops using `part_of_ignored_node?`
   keep it across the spec's correction loop, as Ruby does.
+- `style_for` strips a leading `:` but `supported_styles`/`alternative_styles`
+  don't; a cop comparing `style(cx)` with `supported_styles(cx)` under a spec
+  that passes symbols would mismatch. Nothing fails from it today.
+- Checked before handing off: full `bundle exec rspec` green (15331
+  examples) and `script/compare_with_rubocop ../code` over every ported cop:
+  0 mismatched files, with this branch's shared changes.
