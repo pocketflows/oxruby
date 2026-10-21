@@ -276,7 +276,7 @@ fn dump_ast(options: &Options, io: &mut Io) -> i32 {
                     out,
                     "{} {} {}..{}",
                     token.ty,
-                    escape_text(&token.text),
+                    escape_text(token.raw.as_deref().unwrap_or(token.text.as_bytes())),
                     token.range.begin_pos,
                     token.range.end_pos
                 );
@@ -290,9 +290,9 @@ fn dump_ast(options: &Options, io: &mut Io) -> i32 {
     STATUS_SUCCESS
 }
 
-fn escape_text(text: &str) -> String {
+fn escape_text(text: &[u8]) -> String {
     let mut out = String::from("\"");
-    for byte in text.bytes() {
+    for &byte in text {
         if (0x20..=0x7e).contains(&byte) && byte != b'"' && byte != b'\\' {
             out.push(byte as char);
         } else {

@@ -63,13 +63,27 @@ fn build(ps: &ProcessedSource<'_>) -> (Vec<RawToken>, Vec<usize>) {
         src,
         toks: Vec::new(),
         heredocs: Vec::new(),
+        binary_prefix: Vec::new(),
         parents: Vec::new(),
         marker: std::marker::PhantomData,
     };
     collector.visit(&ps.prism_ast());
     let Collector {
-        mut toks, heredocs, ..
+        mut toks,
+        heredocs,
+        binary_prefix,
+        ..
     } = collector;
+    for tok in &mut toks {
+        if binary_prefix.contains(&tok.start) {
+            tok.ty = match tok.ty {
+                "USTAR" => "STAR",
+                "USTAR_STAR" => "STAR_STAR",
+                "UAMPERSAND" => "AMPERSAND",
+                other => other,
+            };
+        }
+    }
 
     let result = ps.parse_result();
     for comment in result.comments() {
@@ -192,6 +206,8 @@ struct Collector<'s, 'pr> {
     src: &'s [u8],
     toks: Vec<Tok>,
     heredocs: Vec<Heredoc>,
+    /// Where a paren-less `def`'s parameters start.
+    binary_prefix: Vec<usize>,
     /// For each enclosing node, whether it is an `ArrayNode`.
     parents: Vec<bool>,
     marker: std::marker::PhantomData<&'pr ()>,
@@ -228,8 +244,14 @@ impl<'pr> Collector<'_, 'pr> {
         }
     }
 
+    /// An `end`. (An `ElseNode` before `ensure` ends at the `ensure`, which
+    /// is the `EnsureNode`'s token.)
     fn end_keyword(&mut self, loc: Option<Location<'_>>) {
-        self.push_opt("KEYWORD_END", loc, St::Set(END));
+        if let Some(loc) = loc
+            && self.text(&loc) == b"end"
+        {
+            self.push("KEYWORD_END", &loc, St::Set(END));
+        }
     }
 
     /// A method or symbol name, typed as Prism's lexer types it.
@@ -632,6 +654,14 @@ impl<'pr> Collector<'_, 'pr> {
             Node::DefNode { .. } => {
                 let n = node.as_def_node().unwrap();
                 self.keyword(Some(n.def_keyword_loc()), FNAME);
+                // Without parentheses the first parameter is lexed right
+                // after the name (`ENDFN`), where `*`, `**` and `&` are
+                // binary operators: `def each &block`.
+                if n.lparen_loc().is_none()
+                    && let Some(params) = n.parameters()
+                {
+                    self.binary_prefix.push(params.location().start() as usize);
+                }
                 if let Some(op) = n.operator_loc() {
                     let ty = if self.text(&op) == b"::" {
                         "COLON_COLON"
@@ -1942,6 +1972,18 @@ mod tests {
         assert_eq!(
             text,
             "KEYWORD_DEF 0..3;IDENTIFIER 4..7;PARENTHESIS_LEFT 7..8;IDENTIFIER 8..9;COMMA 9..10;USTAR 11..12;IDENTIFIER 12..13;COMMA 13..14;LABEL 15..17;INTEGER 18..19;COMMA 19..20;USTAR_STAR 21..23;IDENTIFIER 23..24;COMMA 24..25;UAMPERSAND 26..27;IDENTIFIER 27..28;PARENTHESIS_RIGHT 28..29;IGNORED_NEWLINE 29..30;IDENTIFIER 32..33;EQUAL 34..35;PERCENT_LOWER_W 36..39;WORDS_SEP 39..40;STRING_CONTENT 40..41;WORDS_SEP 41..42;STRING_CONTENT 42..46;WORDS_SEP 46..47;STRING_END 47..48;NEWLINE 48..49;IDENTIFIER 51..55;PARENTHESIS_LEFT_PARENTHESES 56..57;INTEGER 57..58;PARENTHESIS_RIGHT 58..59;PLUS 60..61;UMINUS_NUM 62..63;INTEGER 63..64;NEWLINE 64..65;IDENTIFIER 67..68;EQUAL 69..70;BRACE_LEFT 71..72;LABEL 73..75;COMMA 75..76;STRING_BEGIN 77..78;STRING_CONTENT 78..79;LABEL_END 79..81;INTEGER 82..83;COMMA 83..84;IDENTIFIER 85..86;EQUAL_GREATER 87..89;SYMBOL_BEGIN 90..91;GLOBAL_VARIABLE 91..93;COMMA 93..94;LABEL 95..97;SYMBOL_BEGIN 98..99;KEYWORD_END 99..102;BRACE_RIGHT 103..104;NEWLINE 104..105;KEYWORD_CASE 107..111;IDENTIFIER 112..113;NEWLINE 113..114;KEYWORD_IN 116..118;BRACE_LEFT 119..120;LABEL 120..122;BRACKET_LEFT_ARRAY 123..124;USTAR 124..125;COMMA 125..126;INTEGER 127..128;PIPE 129..130;INTEGER 131..132;EQUAL_GREATER 133..135;IDENTIFIER 136..137;COMMA 137..138;USTAR 139..140;BRACKET_RIGHT 140..141;BRACE_RIGHT 141..142;KEYWORD_IF_MODIFIER 143..145;IDENTIFIER 146..147;NEWLINE 147..148;MINUS_GREATER 152..154;PARENTHESIS_LEFT 154..155;IDENTIFIER 155..156;PARENTHESIS_RIGHT 156..157;LAMBDA_BEGIN 158..159;IDENTIFIER 160..161;QUESTION_MARK 162..163;INTEGER 164..165;COLON 166..167;INTEGER 168..169;BRACE_RIGHT 170..171;NEWLINE 171..172;KEYWORD_END 174..177;NEWLINE 177..178;KEYWORD_END 178..181;NEWLINE 181..182;EMBDOC_BEGIN 182..189;EMBDOC_LINE 189..193;EMBDOC_END 193..198;__END__ 198..211;"
+        );
+        assert!(unknown.is_empty());
+    }
+
+    #[test]
+    fn paren_less_def_and_else_before_ensure() {
+        let (text, unknown) = stream(
+            "def each &block\n  begin\n    x\n  rescue E\n  else\n    y\n  ensure\n    z\n  end\nend\n",
+        );
+        assert_eq!(
+            text,
+            "KEYWORD_DEF 0..3;IDENTIFIER 4..8;AMPERSAND 9..10;IDENTIFIER 10..15;NEWLINE 15..16;KEYWORD_BEGIN 18..23;IGNORED_NEWLINE 23..24;IDENTIFIER 28..29;NEWLINE 29..30;KEYWORD_RESCUE 32..38;CONSTANT 39..40;NEWLINE 40..41;KEYWORD_ELSE 43..47;IGNORED_NEWLINE 47..48;IDENTIFIER 52..53;NEWLINE 53..54;KEYWORD_ENSURE 56..62;IGNORED_NEWLINE 62..63;IDENTIFIER 67..68;NEWLINE 68..69;KEYWORD_END 71..74;NEWLINE 74..75;KEYWORD_END 75..78;NEWLINE 78..79;"
         );
         assert!(unknown.is_empty());
     }

@@ -37,25 +37,26 @@ the token parts of `processed_source.rs`, `comment_config.rs`,
 
 | corpus | `--prism-tokens` (vs `Prism.lex`) | `--tokens` (vs RuboCop) |
 | --- | --- | --- |
-| `../code` (5676 files) | 0 differ | 6 differ |
-| rubocop `lib/` (946) | 0 differ | 2 differ |
-| rubocop `spec/` (827) | 0 differ | 7 differ |
+| `../code` (5676 files) | 0 differ | 0 differ |
+| rubocop `lib/` (946) | 0 differ | 0 differ |
+| rubocop `spec/` (827) | 0 differ | 0 differ |
 
-Every remaining `--tokens` difference is the known gap below (token text of
-strings that aren't valid UTF-8).
+Also checked with `--prism-tokens` on ~6,500 files of installed gems
+(rails, brakeman, rbs, yard, sorbet-runtime, rspec, rubygems, ...): 0
+differ; `--tokens` on ~1,000 of them: 0 differ.
+
+`Token#text` of strings that aren't valid UTF-8 has U+FFFD; the raw bytes
+are in `Token::raw` (what `--dump-tokens` prints). Rational and imaginary
+token text is `Rational#to_s`/`Complex#to_s`, as in RuboCop.
 
 ## Known gaps
 
-- `Token#text` is a Rust `String`, so string tokens whose value isn't valid
-  UTF-8 (`"\xFF"`, `"\x89PNG"`) get U+FFFD where RuboCop has the raw bytes.
-  Positions and types are right. Fixing it means making `Token::text`
-  bytes, which touches every cop that reads token text.
-- Not seen in the corpora, so not handled: a string literal that spans lines
-  on the same line as a heredoc start (`foo(<<A, "x\ny")`, where Prism splits
-  the string's content around the heredoc body), and `\` line continuations
-  on a heredoc start line.
+Not seen in any corpus, so not handled: a string literal that spans lines
+on the same line as a heredoc start (`foo(<<A, "x\ny")`, where Prism splits
+the string's content around the heredoc body), and `\` line continuations on
+a heredoc start line.
 
 ## Left
 
-- Run the corpora diff on more Ruby (installed gems) to find rarer
-  constructs.
+- Land (blocked while main's full gate is red on the rubocop-rails config;
+  `layout-b` has cherry-picked the first commit).

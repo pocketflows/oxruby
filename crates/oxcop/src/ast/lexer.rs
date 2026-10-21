@@ -12,6 +12,9 @@ pub struct Token {
     /// The token's value as `Token#text` (`value.to_s`).
     pub text: String,
     pub range: Range,
+    /// The text's bytes, when they aren't valid UTF-8 (`text` then has
+    /// U+FFFD in their place; RuboCop's token holds the raw bytes).
+    pub raw: Option<Vec<u8>>,
 }
 
 /// A Prism token (as `Prism.lex` reports it): its type name, byte offsets
@@ -297,14 +300,30 @@ impl<'s> Lexer<'s> {
         let mut comment_newline_location: Option<Range> = None;
 
         let push =
-            |tokens: &mut Vec<Token>, ty: &'static str, text: Option<String>, range: Range| {
+            |tokens: &mut Vec<Token>, ty: &'static str, bytes: Option<Vec<u8>>, range: Range| {
+                let mut raw = None;
+                let text = bytes.map(|bytes| match String::from_utf8(bytes) {
+                    Ok(text) => text,
+                    Err(e) => {
+                        let text = s(e.as_bytes());
+                        raw = Some(e.into_bytes());
+                        text
+                    }
+                });
                 let text = match (ty, text) {
                     (_, None) => String::new(),
                     ("tINTEGER" | "tNTH_REF", Some(text)) => parse_integer(&text),
                     ("tFLOAT", Some(text)) => parse_float(&text),
+                    ("tRATIONAL", Some(text)) => parse_rational(&text),
+                    ("tIMAGINARY", Some(text)) => parse_complex(&text),
                     (_, Some(text)) => text,
                 };
-                tokens.push(Token { ty, text, range });
+                tokens.push(Token {
+                    ty,
+                    text,
+                    range,
+                    raw,
+                });
             };
 
         while index < length {
@@ -374,7 +393,7 @@ impl<'s> Lexer<'s> {
                         let next_is_continuation =
                             next_token.is_some_and(|n| COMMENT_CONTINUATION_TYPES.contains(&n.ty));
                         if is_inline_comment && !is_at_eol && !next_is_continuation {
-                            push(&mut tokens, "tCOMMENT", Some(s(&v)), location);
+                            push(&mut tokens, "tCOMMENT", Some(v.to_vec()), location);
                             push(
                                 &mut tokens,
                                 "tNL",
@@ -388,7 +407,7 @@ impl<'s> Lexer<'s> {
                         } else if let Some(nl) = comment_newline_location
                             && !next_is_continuation
                         {
-                            push(&mut tokens, "tCOMMENT", Some(s(&v)), location);
+                            push(&mut tokens, "tCOMMENT", Some(v.to_vec()), location);
                             push(&mut tokens, "tNL", None, nl);
                             comment_newline_location = None;
                             continue;
@@ -408,7 +427,7 @@ impl<'s> Lexer<'s> {
                         push(
                             &mut tokens,
                             "tUNARY_NUM",
-                            Some("+".to_owned()),
+                            Some(b"+".to_vec()),
                             Range::new(token.start, token.start + 1),
                         );
                         location = Range::new(token.start + 1, token.end);
@@ -478,7 +497,7 @@ impl<'s> Lexer<'s> {
                                 push(
                                     &mut tokens,
                                     "tSTRING",
-                                    Some(s(&value)),
+                                    Some(value.to_vec()),
                                     Range::new(token.start, next_next.end),
                                 );
                                 continue;
@@ -554,7 +573,7 @@ impl<'s> Lexer<'s> {
                                 push(
                                     &mut tokens,
                                     "tSTRING_CONTENT",
-                                    Some(s(&current_string)),
+                                    Some(current_string.to_vec()),
                                     Range::new(start_offset, start_offset + current_length),
                                 );
                                 break;
@@ -600,7 +619,7 @@ impl<'s> Lexer<'s> {
                                 push(
                                     &mut tokens,
                                     "tSTRING_CONTENT",
-                                    Some(s(&unescaped)),
+                                    Some(unescaped.to_vec()),
                                     Range::new(start_offset, end_offset),
                                 );
                                 start_offset = end_offset;
@@ -687,13 +706,13 @@ impl<'s> Lexer<'s> {
                 _ => {}
             }
 
-            push(&mut tokens, ty, value.map(|v| s(&v)), location);
+            push(&mut tokens, ty, value, location);
 
             if token.ty == "REGEXP_END" {
                 push(
                     &mut tokens,
                     "tREGEXP_OPT",
-                    Some(s(token.value.get(1..).unwrap_or_default())),
+                    Some(token.value.get(1..).unwrap_or_default().to_vec()),
                     Range::new(token.start + 1, token.end),
                 );
             }
@@ -1134,6 +1153,66 @@ fn parse_integer(value: &str) -> String {
         Ok(v) => (if negative { -v } else { v }).to_string(),
         Err(_) => "0".to_owned(),
     }
+}
+
+fn has_base_prefix(value: &str) -> bool {
+    let b = value.as_bytes();
+    b.len() > 1
+        && b[0] == b'0'
+        && matches!(b[1], b'B' | b'b' | b'O' | b'o' | b'D' | b'd' | b'X' | b'x')
+}
+
+fn gcd(a: u128, b: u128) -> u128 {
+    if b == 0 { a } else { gcd(b, a % b) }
+}
+
+/// `Rational(value)` for a decimal literal (`1.5`, `1e2`), as `n/d`.
+fn decimal_rational(value: &str) -> Option<(u128, u128)> {
+    let cleaned: String = value.chars().filter(|&c| c != '_').collect();
+    let (mantissa, exponent) = match cleaned.find(['e', 'E']) {
+        Some(i) => (&cleaned[..i], cleaned[i + 1..].parse::<i32>().ok()?),
+        None => (cleaned.as_str(), 0),
+    };
+    let (int, frac) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let mut numerator: u128 = format!("{int}{frac}").parse().ok()?;
+    let mut denominator: u128 = 10u128.checked_pow(u32::try_from(frac.len()).ok()?)?;
+    if exponent >= 0 {
+        numerator = numerator.checked_mul(10u128.checked_pow(exponent.unsigned_abs())?)?;
+    } else {
+        denominator = denominator.checked_mul(10u128.checked_pow(exponent.unsigned_abs())?)?;
+    }
+    let divisor = gcd(numerator, denominator).max(1);
+    Some((numerator / divisor, denominator / divisor))
+}
+
+/// `parse_rational(value).to_s`: `"3/2"` for `1.5r`.
+fn parse_rational(value: &str) -> String {
+    let value = value.strip_suffix('r').unwrap_or(value);
+    if has_base_prefix(value) {
+        return format!("{}/1", parse_integer(value));
+    }
+    match decimal_rational(value) {
+        Some((n, d)) => format!("{n}/{d}"),
+        None => "0/1".to_owned(),
+    }
+}
+
+/// `parse_complex(value).to_s`: `"0+1i"` for `1i`.
+fn parse_complex(value: &str) -> String {
+    let value = value.strip_suffix('i').unwrap_or(value);
+    let imaginary = if value.ends_with('r') {
+        parse_rational(value)
+    } else if has_base_prefix(value) {
+        parse_integer(value)
+    } else if value.contains(['.', 'e', 'E']) {
+        parse_float(value)
+    } else {
+        let cleaned: String = value.chars().filter(|&c| c != '_').collect();
+        cleaned
+            .parse::<i128>()
+            .map_or_else(|_| "0".to_owned(), |v| v.to_string())
+    };
+    format!("0+{imaginary}i")
 }
 
 /// `Float(value).to_s`, approximately (Ruby's shortest round-trip format).
