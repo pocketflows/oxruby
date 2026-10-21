@@ -53,7 +53,7 @@ files):
   `cop/mixin/preceding_following_alignment.rs` (a struct holding the Ruby
   mixin's memoized line sets; ExtraSpacing in layout-a's range will want
   `alignment_lines` from it).
-- Claimed, not written yet: `check_line_breakable` (LineLength).
+- `cop/mixin/check_line_breakable.rs` (on `layout-b-wip` with LineLength).
 - Copied verbatim from their owners (identical files, so rebases merge
   cleanly): `punctuation_corrector.rs` (style-d), `rational_literal.rs`
   (lint-a), `check_assignment.rs` and `end_keyword_alignment.rs` (layout-a).
@@ -64,9 +64,6 @@ files):
 
 ## Left
 
-- LineLength: needs LineLengthHelp (style-b, on their branch only),
-  EndlessMethodRewriter (claimed by style-a, not written) and my
-  CheckLineBreakable.
 - SpaceInsideArrayPercentLiteral, SpaceInsidePercentLiteralDelimiters: need
   PercentLiteral (claimed by lint-a, not written yet) and my MatchRange.
 - RedundantLineBreak: needs CheckSingleLineSuitability and
@@ -81,6 +78,14 @@ shim can't see. Parked (the files are on `layout-b-wip`):
   `cop.config_to_allow_offenses` (the `--auto-gen-config` bookkeeping) and 1
   expects the cop to raise `Unknown EnforcedStyleForEmptyBraces selected!`.
 - Layout/SpaceInsideBlockBraces: 42 of 43 pass; 1 expects the same raise.
+- Layout/LineLength: 205 of 209 pass. 3 examples read
+  `read_exclude_limit(cop)` (the `self.max = ...` exclude_limit, i.e.
+  `config_to_allow_offenses`). 1 more (`LDAP::CONST` with `URISchemes:
+  [LDAP]`) needs style-b's `LineLengthHelp#valid_uri` to reject what
+  `URI.parse` rejects (it returns `true` for every match; Ruby's
+  `URI::LDAP` raises NoMethodError on that opaque URI). Uses a local copy of
+  `EndlessMethodRewriter#correct_to_multiline` until style-a lands that
+  mixin.
 
 What the shim would need: (1) the binary reports a cop's raised error
 message for the investigation and the shim re-raises it as a RuntimeError
