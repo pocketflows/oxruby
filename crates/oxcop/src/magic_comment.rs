@@ -1,5 +1,9 @@
 //! Port of `lib/rubocop/magic_comment.rb`.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use crate::regex;
 
 const TOKEN: &str = r"(?<token>[[:alnum:]\-_]+)";
@@ -38,13 +42,28 @@ pub enum FrozenValue {
     Other(String),
 }
 
-fn ci_regex(pattern: &str) -> onig::Regex {
-    onig::Regex::with_options(
-        pattern,
-        onig::RegexOptions::REGEX_OPTION_IGNORECASE,
-        onig::Syntax::ruby(),
-    )
-    .unwrap()
+fn ci_regex(pattern: &str) -> Rc<onig::Regex> {
+    cached_regex(pattern, onig::RegexOptions::REGEX_OPTION_IGNORECASE)
+}
+
+thread_local! {
+    static REGEX_CACHE: RefCell<HashMap<(String, bool), Rc<onig::Regex>>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Compiling an Oniguruma regex is slow, and cops ask about magic comments
+/// once per node (e.g. Style/RedundantFreeze), so the few patterns built
+/// here are compiled once per thread.
+fn cached_regex(pattern: &str, options: onig::RegexOptions) -> Rc<onig::Regex> {
+    let key = (
+        pattern.to_owned(),
+        options == onig::RegexOptions::REGEX_OPTION_IGNORECASE,
+    );
+    REGEX_CACHE.with(|cache| {
+        Rc::clone(cache.borrow_mut().entry(key).or_insert_with(|| {
+            Rc::new(onig::Regex::with_options(pattern, options, onig::Syntax::ruby()).unwrap())
+        }))
+    })
 }
 
 impl<'a> MagicComment<'a> {
@@ -205,11 +224,6 @@ impl<'a> MagicComment<'a> {
     }
 }
 
-fn regex_from(pattern: &str) -> onig::Regex {
-    onig::Regex::with_options(
-        pattern,
-        onig::RegexOptions::REGEX_OPTION_NONE,
-        onig::Syntax::ruby(),
-    )
-    .unwrap()
+fn regex_from(pattern: &str) -> Rc<onig::Regex> {
+    cached_regex(pattern, onig::RegexOptions::REGEX_OPTION_NONE)
 }
