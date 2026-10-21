@@ -218,6 +218,49 @@ impl<'a> MagicComment<'a> {
             || self.typed().is_some()
     }
 
+    /// `encoding_specified?`
+    pub fn encoding_specified(&self) -> bool {
+        self.encoding().is_some()
+    }
+
+    /// `without(type)`: the comment rewritten without the token of `type`
+    /// (`"encoding"`, `"frozen_string_literal"`, ...).
+    pub fn without(&self, type_: &str) -> String {
+        let keyword = if self.kind == Kind::Vim && type_ == "encoding" {
+            "fileencoding"
+        } else {
+            keyword(type_)
+        };
+        match self.kind {
+            Kind::Simple => {
+                if ci_regex(&format!(r"\A#\s*{keyword}"))
+                    .find(self.comment)
+                    .is_some()
+                {
+                    String::new()
+                } else {
+                    self.comment.to_owned()
+                }
+            }
+            Kind::Emacs | Kind::Vim => {
+                let pattern = regex_from(&format!(r"\A{keyword}"));
+                let remaining: Vec<String> = self
+                    .editor_tokens()
+                    .into_iter()
+                    .filter(|t| pattern.find(t).is_none())
+                    .collect();
+                if remaining.is_empty() {
+                    return String::new();
+                }
+                if self.kind == Kind::Emacs {
+                    format!("# -*- {} -*-", remaining.join(";"))
+                } else {
+                    format!("# vim: {}", remaining.join(", "))
+                }
+            }
+        }
+    }
+
     /// `valid?`
     pub fn valid(&self) -> bool {
         self.comment.starts_with('#') && self.any()
