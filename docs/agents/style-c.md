@@ -31,12 +31,19 @@
 - Style/RedundantArrayConstructor 13
 - Style/RedundantArrayFlatten 10
 - Style/RedundantAssignment 12
+- Style/RedundantCurrentDirectoryInPath 13
+- Style/RedundantEach 36
 - Style/RedundantException 32
 - Style/RedundantFileExtensionInRequire 5
+- Style/RedundantFilterChain 45
 - Style/RedundantFreeze 47
+- Style/RedundantHeredocDelimiterQuotes 17
+- Style/RedundantInterpolationUnfreeze 16
 - Style/RedundantMinMaxBy 33
 - Style/RedundantRegexpConstructor 11
+- Style/RedundantSelfAssignmentBranch 22
 - Style/RedundantSortBy 8
+- Style/RedundantStructKeywordInit 12
 - Style/ReturnNil 5
 - Style/ReverseFind 14
 
