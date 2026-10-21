@@ -24,15 +24,36 @@ module Oxcop
         end
       end
 
+      # `expect_correction(loop: false)` checks a single correction pass.
+      def expect_correction(correction, loop: true, source: nil)
+        @oxcop_single_pass = !loop
+        super
+      ensure
+        @oxcop_single_pass = false
+      end
+
       def _investigate(cop, processed_source)
         source = processed_source.raw_source
         options = {
           path: processed_source.path || RuboCop::AST::ProcessedSource::STRING_SOURCE_NAME,
-          config: configuration,
+          config: cop.config,
           cop_name: cop.cop_name
         }
 
-        @last_corrector = Corrector.new(source) { Binary.autocorrect(source, **options) }
+        # oxcop runs the whole correction loop itself (with `--persist-cops`, as
+        # the `expect_correction` loop keeps the same cop instance). When
+        # `expect_correction` re-investigates oxcop's final source, the loop
+        # already reached its fixed point there, so there is nothing left to
+        # correct.
+        @oxcop_corrected_sources ||= []
+        @last_corrector = if @oxcop_corrected_sources.include?(source)
+                            Corrector.new(source) { source }
+                          else
+                            Corrector.new(source) do
+                              Binary.autocorrect(source, once: @oxcop_single_pass, **options)
+                                    .tap { |s| @oxcop_corrected_sources << s }
+                            end
+                          end
         Binary.offenses(source, **options).map { |offense| to_offense(offense, processed_source, cop) }
       end
 

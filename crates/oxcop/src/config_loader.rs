@@ -246,6 +246,9 @@ fn warn_once(message: &str) {
 #[derive(Default)]
 pub struct ConfigStore {
     options_config: Option<PathBuf>,
+    /// `--raw-config`: use the `-c` file as the complete configuration, like
+    /// `RuboCop::Config.new(hash)` in RuboCop's own specs (no defaults merged).
+    pub raw: bool,
     by_path: HashMap<Option<PathBuf>, Rc<Config>>,
     by_dir: HashMap<PathBuf, Option<PathBuf>>,
 }
@@ -276,7 +279,17 @@ impl ConfigStore {
                 .clone(),
         };
         if !self.by_path.contains_key(&config_path) {
-            let config = configuration_from_file(config_path.as_deref())?;
+            let config = if self.raw
+                && let Some(path) = &config_path
+            {
+                let contents = std::fs::read_to_string(path)
+                    .map_err(|e| ConfigError(format!("{}: {e}", path.display())))?;
+                let hash: Mapping = serde_yaml_ng::from_str(&contents)
+                    .map_err(|e| ConfigError(format!("{}: {e}", path.display())))?;
+                Config::new(hash, Some(path.clone()))
+            } else {
+                configuration_from_file(config_path.as_deref())?
+            };
             self.by_path.insert(config_path.clone(), Rc::new(config));
         }
         Ok(Rc::clone(&self.by_path[&config_path]))

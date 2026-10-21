@@ -140,11 +140,15 @@ impl<'a, 'src> Investigation<'a, 'src> {
         self.cop_config.get(key)
     }
 
+    /// A parameter's Ruby truthiness (`cop_config.fetch(key, default)`):
+    /// absent gives `default`, `false`/`nil` are false, anything else true.
     pub fn cop_config_bool(&self, key: &str, default: bool) -> bool {
-        self.cop_config
-            .get(key)
-            .and_then(Value::as_bool)
-            .unwrap_or(default)
+        match self.cop_config.get(key) {
+            None => default,
+            Some(Value::Bool(b)) => *b,
+            Some(Value::Null) => false,
+            Some(_) => true,
+        }
     }
 
     pub fn cop_config_str(&self, key: &str) -> Option<&'a str> {
@@ -173,6 +177,11 @@ impl<'a, 'src> Investigation<'a, 'src> {
         self.processed_source.slice(range)
     }
 
+    /// `current_offense_locations.include?(range)`.
+    pub fn has_offense_at(&self, range: Range) -> bool {
+        self.offense_ranges.contains(&range)
+    }
+
     pub fn add_offense(&mut self, range: Range, message: &str) {
         self.register(range, message, None, None::<fn(&mut Corrector)>);
     }
@@ -188,6 +197,30 @@ impl<'a, 'src> Investigation<'a, 'src> {
         correct: impl FnOnce(&mut Corrector),
     ) {
         self.register(range, message, None, Some(correct));
+    }
+
+    /// Like `add_offense_with_correction`, with read access to the
+    /// investigation inside the correction (Ruby blocks see the cop).
+    pub fn add_offense_cx(
+        &mut self,
+        range: Range,
+        message: &str,
+        correct: impl FnOnce(&mut Corrector, &Investigation<'a, 'src>),
+    ) {
+        if !self.offense_ranges.insert(range) {
+            return;
+        }
+        self.offense_ranges.remove(&range);
+        let mut corrector = Corrector::new(self.processed_source.buffer_source().len());
+        if self.enabled_lines(range) {
+            correct(&mut corrector, self);
+        }
+        self.register(
+            range,
+            message,
+            None,
+            Some(move |c: &mut Corrector| *c = corrector),
+        );
     }
 
     pub fn add_offense_full(

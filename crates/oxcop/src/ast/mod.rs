@@ -11,9 +11,11 @@
 //! descendants are the ids right after it, up to `subtree_end`.
 
 mod builder;
+pub mod comment_associator;
 mod compiler;
 pub mod lexer;
 pub mod node;
+pub mod node_pattern;
 pub mod node_type;
 
 use std::fmt::Write as _;
@@ -211,6 +213,9 @@ pub struct NodeData {
 #[derive(Debug, Default)]
 pub struct Ast {
     nodes: Vec<NodeData>,
+    /// The (newline-normalized) source, for `node.source` and line numbers.
+    source: String,
+    line_starts: Vec<usize>,
 }
 
 impl Ast {
@@ -220,10 +225,34 @@ impl Ast {
         let mut compiler = compiler::Compiler::new(source, file_name);
         let root = compiler.compile(&result.node());
         let tree = compiler.into_tree();
-        match root {
+        let mut ast = match root {
             Some(root) => Self::layout(tree, root),
             None => Self::default(),
+        };
+        ast.source = source.to_owned();
+        ast.line_starts = std::iter::once(0)
+            .chain(source.match_indices('\n').map(|(i, _)| i + 1))
+            .collect();
+        ast
+    }
+
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// 1-based line of a byte offset.
+    pub fn line_of(&self, pos: usize) -> usize {
+        match self.line_starts.binary_search(&pos) {
+            Ok(i) => i + 1,
+            Err(i) => i,
         }
+    }
+
+    /// 0-based column (in characters) of a byte offset.
+    pub fn column_of(&self, pos: usize) -> usize {
+        let line = self.line_of(pos);
+        let start = self.line_starts[line - 1];
+        self.source[start..pos].chars().count()
     }
 
     /// Re-lays the nodes reachable from `root` out in pre-order.
@@ -260,7 +289,10 @@ impl Ast {
             id
         }
         visit(&mut tree, &mut nodes, root, None);
-        Self { nodes }
+        Self {
+            nodes,
+            ..Default::default()
+        }
     }
 
     pub fn root(&self) -> Option<Node<'_>> {

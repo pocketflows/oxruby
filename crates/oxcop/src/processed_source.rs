@@ -164,24 +164,16 @@ pub struct ProcessedSource<'src> {
     ast: Ast,
     comments: Vec<Comment<'src>>,
     tokens: OnceCell<Vec<Token>>,
+    sorted_tokens: OnceCell<Vec<Token>>,
+    comment_index: OnceCell<std::collections::HashMap<usize, usize>>,
+    ast_with_comments: OnceCell<std::collections::HashMap<crate::ast::NodeId, Vec<usize>>>,
 }
 
 impl<'src> ProcessedSource<'src> {
     /// `raw_source` is the file as read; `source` the same with `\r\n`
     /// normalized (see [`normalize_newlines`]).
     pub fn new(raw_source: &'src str, source: &'src str, ruby_version: f64, path: &Path) -> Self {
-        let version = (
-            ruby_version.trunc() as u8,
-            ((ruby_version * 10.0).round() as u8) % 10,
-        );
-        let parse_result = ruby_prism::parse_with_options(
-            source.as_bytes(),
-            &ruby_prism::ParseOptions {
-                version: Some(version),
-                lex: true,
-                marker: std::marker::PhantomData,
-            },
-        );
+        let parse_result = crate::prism::parse(source, ruby_version);
         let diagnostics: Vec<Diagnostic> = parse_result
             .errors()
             .map(|d| Diagnostic {
@@ -232,7 +224,127 @@ impl<'src> ProcessedSource<'src> {
             ruby_version,
             comments,
             tokens: OnceCell::new(),
+            sorted_tokens: OnceCell::new(),
+            comment_index: OnceCell::new(),
+            ast_with_comments: OnceCell::new(),
         }
+    }
+
+    /// `file_path` (`buffer.name`).
+    pub fn file_path(&self) -> String {
+        self.path.to_string_lossy().into_owned()
+    }
+
+    /// `blank?`: no AST.
+    pub fn is_blank(&self) -> bool {
+        self.ast.is_empty()
+    }
+
+    /// `start_with?`: whether the first line starts with `string`.
+    pub fn starts_with(&self, string: &str) -> bool {
+        self.lines.first().is_some_and(|l| l.starts_with(string))
+    }
+
+    /// Line (1-based) to the index of the comment that starts on it (the last
+    /// one wins, as in rubocop-ast's `comment_index`).
+    fn comment_index(&self) -> &std::collections::HashMap<usize, usize> {
+        self.comment_index.get_or_init(|| {
+            self.comments
+                .iter()
+                .enumerate()
+                .map(|(i, c)| (self.line_of(c.range.begin_pos), i))
+                .collect()
+        })
+    }
+
+    /// `comment_at_line(line)`.
+    pub fn comment_at_line(&self, line: usize) -> Option<&Comment<'src>> {
+        self.comment_index().get(&line).map(|&i| &self.comments[i])
+    }
+
+    /// `line_with_comment?(line)`.
+    pub fn line_with_comment(&self, line: usize) -> bool {
+        self.comment_index().contains_key(&line)
+    }
+
+    /// `each_comment_in_lines(first..=last)`.
+    pub fn comments_in_lines(&self, first: usize, last: usize) -> Vec<&Comment<'src>> {
+        (first..=last)
+            .filter_map(|l| self.comment_at_line(l))
+            .collect()
+    }
+
+    /// `contains_comment?(range)`.
+    pub fn contains_comment(&self, range: Range) -> bool {
+        let first = self.line_of(range.begin_pos);
+        let last = self.line_of(range.end_pos);
+        (first..=last).any(|l| self.line_with_comment(l))
+    }
+
+    /// `line_indentation(line)`: leading whitespace length.
+    pub fn line_indentation(&self, line: usize) -> usize {
+        self.lines.get(line - 1).map_or(0, |l| {
+            l.chars()
+                .take_while(|c| matches!(c, ' ' | '\t' | '\n' | '\r' | '\x0b' | '\x0c'))
+                .count()
+        })
+    }
+
+    /// `sorted_tokens`: tokens sorted by position (stable).
+    pub fn sorted_tokens(&self) -> &[Token] {
+        self.sorted_tokens.get_or_init(|| {
+            let mut tokens = self.tokens().to_vec();
+            tokens.sort_by_key(|t| t.range.begin_pos);
+            tokens
+        })
+    }
+
+    fn first_token_index(&self, range: Range) -> usize {
+        self.sorted_tokens()
+            .partition_point(|t| t.range.begin_pos < range.begin_pos)
+    }
+
+    fn last_token_index(&self, range: Range) -> Option<usize> {
+        let idx = self
+            .sorted_tokens()
+            .partition_point(|t| t.range.end_pos <= range.end_pos);
+        idx.checked_sub(1)
+    }
+
+    /// `tokens_within(range)`.
+    pub fn tokens_within(&self, range: Range) -> &[Token] {
+        let begin = self.first_token_index(range);
+        match self.last_token_index(range) {
+            Some(end) if end >= begin => &self.sorted_tokens()[begin..=end],
+            _ => &[],
+        }
+    }
+
+    /// `first_token_of(range)`.
+    pub fn first_token_of(&self, range: Range) -> Option<&Token> {
+        self.sorted_tokens().get(self.first_token_index(range))
+    }
+
+    /// `last_token_of(range)`.
+    pub fn last_token_of(&self, range: Range) -> Option<&Token> {
+        self.last_token_index(range)
+            .and_then(|i| self.sorted_tokens().get(i))
+    }
+
+    /// `ast_with_comments`: comments associated with each node
+    /// (`Parser::Source::Comment.associate_by_identity`).
+    pub fn ast_with_comments(&self) -> &std::collections::HashMap<crate::ast::NodeId, Vec<usize>> {
+        self.ast_with_comments.get_or_init(|| {
+            crate::ast::comment_associator::associate(self.ast(), &self.comments, self)
+        })
+    }
+
+    /// The comments associated with `node`.
+    pub fn node_comments(&self, node: crate::ast::Node<'_>) -> Vec<&Comment<'src>> {
+        self.ast_with_comments()
+            .get(&node.id())
+            .map(|ids| ids.iter().map(|&i| &self.comments[i]).collect())
+            .unwrap_or_default()
     }
 
     pub fn path(&self) -> &Path {
@@ -288,7 +400,7 @@ impl<'src> ProcessedSource<'src> {
             if !self.valid_syntax() {
                 return Vec::new();
             }
-            Lexer::new(self.source, self.parse_result.tokens()).tokens()
+            Lexer::new(self.source, &crate::prism::tokens(&self.parse_result)).tokens()
         })
     }
 

@@ -1,14 +1,23 @@
 //! Port of `lib/rubocop/cop/registry.rb`. Every ported cop is listed here.
 
-use crate::cop::{Cop, layout, lint};
+use std::sync::LazyLock;
+
+use crate::cop::{CONSTRUCTORS, Cop};
 
 pub type CopConstructor = fn() -> Box<dyn Cop>;
 
+/// Every ported cop, sorted by name like RuboCop's registry (departments in
+/// alphabetical order, cops alphabetically within them).
 pub fn all() -> &'static [CopConstructor] {
-    &[
-        || Box::new(layout::TrailingWhitespace),
-        || Box::new(lint::Syntax),
-    ]
+    static SORTED: LazyLock<Vec<CopConstructor>> = LazyLock::new(|| {
+        let mut cops: Vec<(String, CopConstructor)> = CONSTRUCTORS
+            .iter()
+            .map(|new| (new().name().to_owned(), *new))
+            .collect();
+        cops.sort_by(|a, b| a.0.cmp(&b.0));
+        cops.into_iter().map(|(_, new)| new).collect()
+    });
+    &SORTED
 }
 
 pub fn names() -> Vec<&'static str> {

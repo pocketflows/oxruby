@@ -7,6 +7,7 @@ use crate::cop::{Cop, Investigation};
 use crate::processed_source::Range;
 use crate::target_ruby::format_version;
 
+#[derive(Default)]
 pub struct Syntax;
 
 impl Cop for Syntax {

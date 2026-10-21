@@ -31,9 +31,11 @@ pub struct Runner<'a> {
 
 impl<'a> Runner<'a> {
     pub fn new(options: &'a Options, cop_options: CopOptions) -> Self {
+        let mut config_store = ConfigStore::new(options.config.clone());
+        config_store.raw = options.raw_config;
         Self {
             options,
-            config_store: ConfigStore::new(options.config.clone()),
+            config_store,
             selection: Selection {
                 only: options.only.clone(),
                 except: options.except.clone(),
@@ -141,12 +143,18 @@ impl<'a> Runner<'a> {
         config: &Config,
     ) -> (Option<String>, Vec<Vec<Offense>>) {
         let ruby_version = target_ruby_version(config);
-        let team = Team::new(config, &self.selection, self.cop_options);
+        let mut team = Team::new(config, &self.selection, self.cop_options);
+        team.persist_cops = self.options.persist_cops;
         let mut offenses_by_iteration: Vec<Vec<Offense>> = Vec::new();
         let mut seen_sources: Vec<String> = Vec::new();
         let mut corrected = false;
 
-        for _ in 0..MAX_ITERATIONS {
+        let max_iterations = if self.options.autocorrect_once {
+            1
+        } else {
+            MAX_ITERATIONS
+        };
+        for _ in 0..max_iterations {
             // Uncorrected offenses will be found again, so only the corrected
             // ones from the previous iteration are kept.
             if let Some(last) = offenses_by_iteration.last_mut() {

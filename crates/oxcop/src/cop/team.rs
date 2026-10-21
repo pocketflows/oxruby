@@ -27,6 +27,9 @@ pub struct Team<'a> {
     config: &'a Config,
     selection: &'a Selection,
     options: CopOptions,
+    /// `--persist-cops`: reuse the cops mobilized for the first source.
+    pub persist_cops: bool,
+    persisted: std::cell::RefCell<Option<Vec<Box<dyn Cop>>>>,
 }
 
 impl<'a> Team<'a> {
@@ -35,6 +38,8 @@ impl<'a> Team<'a> {
             config,
             selection,
             options,
+            persist_cops: false,
+            persisted: std::cell::RefCell::new(None),
         }
     }
 
@@ -97,7 +102,11 @@ impl<'a> Team<'a> {
     pub fn investigate(&self, processed_source: &ProcessedSource<'_>) -> InvestigationReport {
         let comment_config =
             CommentConfig::new(processed_source, self.config, self.config.known_cops());
-        let cops = self.mobilize_cops(processed_source, &comment_config);
+        let persisted = self.persisted.borrow_mut().take();
+        let cops = match persisted {
+            Some(cops) => cops,
+            None => self.mobilize_cops(processed_source, &comment_config),
+        };
         let (mut autocorrect_cops, mut other_cops): (Vec<_>, Vec<_>) = cops
             .into_iter()
             .partition(|cop| self.autocorrects(cop.as_ref()));
@@ -118,6 +127,12 @@ impl<'a> Team<'a> {
                 &comment_config,
                 self.options,
             ));
+        }
+
+        if self.persist_cops {
+            let mut cops = autocorrect_cops;
+            cops.extend(other_cops);
+            *self.persisted.borrow_mut() = Some(cops);
         }
 
         let mut offenses = Vec::new();

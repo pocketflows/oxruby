@@ -411,7 +411,7 @@ pub struct Lexer<'s> {
 }
 
 impl<'s> Lexer<'s> {
-    pub fn new(source: &'s str, tokens: &[ruby_prism::LexToken]) -> Self {
+    pub fn new(source: &'s str, tokens: &[crate::prism::RawToken]) -> Self {
         let source = source.as_bytes();
         let lexed = tokens
             .iter()

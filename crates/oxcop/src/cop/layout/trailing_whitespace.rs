@@ -7,6 +7,7 @@ use crate::processed_source::{ProcessedSource, Range};
 
 const MSG: &str = "Trailing whitespace detected.";
 
+#[derive(Default)]
 pub struct TrailingWhitespace;
 
 impl Cop for TrailingWhitespace {
