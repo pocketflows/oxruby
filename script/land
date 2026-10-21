@@ -109,7 +109,8 @@ gate() {
     done <<<"$changed"
 
     if $shared || [[ -n "${FULL:-}" ]]; then
-      bundle exec rspec
+      # Every spec, as SPEC_JOBS (default 4) parallel rspec processes.
+      script/parallel_rspec
       compare ""
     elif ((${#cop_files[@]})); then
       if ((${#specs[@]})); then

@@ -1,0 +1,59 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Runs the spec suite as SPEC_JOBS (default 4) rspec processes over balanced
+# groups of spec files, each with its own `oxcop --server`, and fails if any
+# group fails. script/land's full gate uses it.
+#
+#   script/parallel_rspec [rspec args...]
+#
+# Files are weighed by size, with specs of unported cops (whose examples
+# are filtered out) counting for little. Each group's output is printed when
+# it finishes; the per-group scoreboards are partial.
+
+require "open3"
+require "set"
+
+root = File.expand_path("..", __dir__)
+Dir.chdir(root)
+jobs = Integer(ENV.fetch("SPEC_JOBS", "4"))
+binary = ENV.fetch("OXCOP_BINARY") { File.join(root, "target", "debug", "oxcop") }
+
+ported, status = Open3.capture2(binary, "--show-ported-cops")
+abort "parallel_rspec: could not list ported cops from #{binary}" unless status.success?
+snake = ->(s) { s.gsub(/([A-Z]+)([A-Z][a-z])/, '\1_\2').gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase }
+ported_specs = ported.lines(chomp: true).to_set { |name| "spec/rubocop/cop/#{snake.(name)}_spec.rb" }
+
+files = Dir["spec/**/*_spec.rb"].sort
+weight = ->(file) { File.size(file) / (ported_specs.include?(file) ? 1 : 50) + 1 }
+groups = Array.new(jobs) { [] }
+loads = Array.new(jobs, 0)
+files.sort_by { |file| -weight.(file) }.each do |file|
+  i = loads.index(loads.min)
+  groups[i] << file
+  loads[i] += weight.(file)
+end
+groups.reject!(&:empty?)
+
+started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+threads = groups.each_with_index.map do |group, i|
+  Thread.new do
+    output, status = Open3.capture2e("bundle", "exec", "rspec", *ARGV, *group.sort)
+    [i, output, status]
+  end
+end
+
+failed = false
+threads.each do |thread|
+  i, output, status = thread.value
+  summary = output.lines.grep(/\A\d+ examples?, /).last&.strip
+  if status.success?
+    puts "parallel_rspec: group #{i + 1}/#{groups.size}: #{summary}"
+  else
+    failed = true
+    puts "parallel_rspec: group #{i + 1}/#{groups.size} FAILED: #{summary}", output
+  end
+end
+elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+puts format("parallel_rspec: %d groups in %.1fs%s", groups.size, elapsed, failed ? ", FAILED" : "")
+exit(failed ? 1 : 0)

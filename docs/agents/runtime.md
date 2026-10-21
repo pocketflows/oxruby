@@ -24,6 +24,10 @@ Owner: `runtime` (see the roster in `docs/PARALLEL.md`).
     `eprintln!` from cops; report errors through the investigation's
     `errors`, or write to `crate::cli::stderr()`.
 
+- **Parallel spec files**: `script/parallel_rspec` runs SPEC_JOBS (default
+  4) rspec processes over size-balanced groups (unported specs weigh
+  little); script/land's full gate uses it. 28,572 examples: 85 s serial,
+  33 s parallel.
 - **`--only`** enables a cop the config disables, only when named exactly
   (not by department), as `Registry#enabled_cop_name?` does.
 - **Gate:** cop-only landings run `compare_with_rubocop` restricted to the
