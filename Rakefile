@@ -110,6 +110,8 @@ namespace :vendor do
       FileUtils.rm_rf(File.join(ROOT, "spec/rubocop/cop", department))
       FileUtils.cp_r(File.join(upstream, "spec/rubocop/cop", department), File.join(ROOT, "spec/rubocop/cop"))
     end
+    # Unit tests of RuboCop's Ruby helpers rather than of cop behavior.
+    FileUtils.rm_rf(File.join(ROOT, "spec/rubocop/cop/metrics/utils"))
     puts "synced from rubocop #{tag}; update RUBOCOP_VERSION in version.rs/version.rb and the Gemfile to match"
   end
 end

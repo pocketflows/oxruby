@@ -14,6 +14,10 @@ module Oxcop
       class Error < StandardError; end
 
       class << self
+        # Investigations sent to the binary; lets the spec helper spot examples
+        # that never reach oxcop (e.g. ones driving RuboCop's Commissioner).
+        attr_reader :investigations
+
         def path
           @path ||= ENV.fetch("OXCOP_BINARY") { File.join(ROOT, "target", "debug", "oxcop") }
         end
@@ -28,6 +32,7 @@ module Oxcop
 
         # Offenses for `source` as RuboCop's JSON formatter would report them.
         def offenses(source, path:, config:, cop_name:)
+          @investigations = investigations.to_i + 1
           with_config(config) do |config_path|
             stdout, = run("--stdin", path, "-c", config_path, "--only", cop_name,
                           "--format", "json", "--no-display-cop-names", stdin: source)

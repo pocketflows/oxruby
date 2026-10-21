@@ -29,8 +29,11 @@ Rust binary, so `plugins:`/`require:` entries (rubocop-rails, rubocop-rspec,
 custom cops) are ignored with a warning. The intended use is running oxcop for
 the core cops and RuboCop with `--only` for the rest, or plugin ports later.
 
-Ported cops so far: `Layout/TrailingWhitespace`, `Lint/Syntax`
-(`oxcop --show-ported-cops` prints the current list). Every other cop is
+Ported cops so far: `Layout/TrailingWhitespace`, which passes its full
+upstream spec, and `Lint/Syntax`, which is implemented but not verified: its
+upstream spec drives RuboCop's Commissioner directly, so it never reaches
+oxcop, and its messages come from Prism rather than the `parser` gem.
+`oxcop --show-ported-cops` prints the current list. Every other cop is
 skipped.
 
 ## Layout

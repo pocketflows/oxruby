@@ -40,7 +40,25 @@ RSpec.configure do |config|
   end
   config.filter_run_excluding :unported unless ENV["OXCOP_RUN_UNPORTED"]
 
+  # Some upstream specs drive RuboCop's own Commissioner or cop methods
+  # instead of expect_offense; those pass without testing oxcop at all.
+  bypassed = Hash.new(0)
+  config.around do |example|
+    before = Oxcop::Spec::Binary.investigations.to_i
+    example.run
+    cop_class = example.metadata[:described_class]
+    if cop_class.is_a?(Class) && cop_class < RuboCop::Cop::Base && Oxcop::Spec::Binary.investigations.to_i == before
+      bypassed[cop_class.cop_name] += 1
+    end
+  end
+
   config.after(:suite) do
+    if bypassed.any?
+      details = bypassed.map { |cop, count| "#{cop}: #{count}" }.join(", ")
+      puts "\noxcop: #{bypassed.values.sum} examples passed without invoking oxcop, so they verify " \
+           "nothing about it (#{details})."
+    end
+
     examples = RSpec.world.example_groups.flat_map(&:descendants).flat_map(&:examples)
     unported = examples.select { |example| example.metadata[:unported] }
     next if unported.empty?

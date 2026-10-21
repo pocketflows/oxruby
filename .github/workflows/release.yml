@@ -31,7 +31,8 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.4"
-      - run: rake "gem:native[${{ matrix.platform }}]"
+          bundler-cache: true
+      - run: bundle exec rake "gem:native[${{ matrix.platform }}]"
         env:
           BINARY: target/${{ matrix.target }}/release/oxcop
       - uses: actions/upload-artifact@v4
@@ -50,7 +51,8 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.4"
-      - run: rake gem:ruby
+          bundler-cache: true
+      - run: bundle exec rake gem:ruby
       - uses: actions/download-artifact@v4
         with:
           pattern: gem-*
