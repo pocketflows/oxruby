@@ -237,6 +237,12 @@ impl<'a, 'src> Investigation<'a, 'src> {
         self.offense_ranges.contains(&range)
     }
 
+    /// The locations of the offenses registered so far
+    /// (`@current_offenses.map(&:location)`), in no particular order.
+    pub fn current_offense_ranges(&self) -> impl Iterator<Item = Range> + '_ {
+        self.offense_ranges.iter().copied()
+    }
+
     pub fn add_offense(&mut self, range: Range, message: &str) {
         self.register(range, message, None, None::<fn(&mut Corrector)>);
     }

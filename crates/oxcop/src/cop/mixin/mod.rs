@@ -2,6 +2,7 @@
 //! helpers shared by cops. Mixin methods that need the cop's state take the
 //! `Investigation` (`cx`) as their first argument.
 
+pub mod alignment;
 pub mod allowed_methods;
 pub mod allowed_pattern;
 pub mod allowed_receivers;
@@ -18,6 +19,8 @@ pub mod ignored_node;
 pub mod integer_node;
 pub mod interpolation;
 pub mod method_preference;
+pub mod multiline_element_line_breaks;
+pub mod multiline_literal_brace_layout;
 pub mod negative_conditional;
 pub mod nil_methods;
 pub mod parentheses;
