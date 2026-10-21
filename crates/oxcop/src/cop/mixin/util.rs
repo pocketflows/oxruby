@@ -286,8 +286,8 @@ pub fn symbol_inspect(name: &str) -> String {
 /// `rb_enc_symname_p`: whether a symbol prints without quotes.
 fn symbol_name_is_simple(name: &str) -> bool {
     const OPERATORS: &[&str] = &[
-        "[]", "[]=", "+", "-", "*", "/", "%", "**", "==", "===", "!=", "=~", "!~", "!", "<=>",
-        "<", "<=", ">", ">=", "<<", ">>", "&", "|", "^", "~", "+@", "-@", "`",
+        "[]", "[]=", "+", "-", "*", "/", "%", "**", "==", "===", "!=", "=~", "!~", "!", "<=>", "<",
+        "<=", ">", ">=", "<<", ">>", "&", "|", "^", "~", "+@", "-@", "`",
     ];
     if OPERATORS.contains(&name) {
         return true;
