@@ -28,8 +28,11 @@ fn options(ruby_version: f64) -> &'static ParseOptions {
     OPTIONS.with(|cache| {
         *cache.borrow_mut().entry(key).or_insert_with(|| {
             Box::leak(Box::new(
+                // `Prism::Translation::Parser#prism_options` parses with
+                // `partial_script: true` (top-level `yield` is allowed).
                 Options::default()
                     .version(version_for(ruby_version))
+                    .partial_script(true)
                     .build(),
             ))
         })
