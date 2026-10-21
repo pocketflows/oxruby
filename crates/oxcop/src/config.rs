@@ -39,7 +39,15 @@ pub struct KnownCops {
 }
 
 impl KnownCops {
-    fn from_config(hash: &Mapping) -> Self {
+    /// Add `other`'s cops and departments.
+    pub fn extend(&mut self, other: &KnownCops) {
+        self.names.extend(other.names.iter().cloned());
+        self.names.sort();
+        self.names.dedup();
+        self.departments.extend(other.departments.iter().cloned());
+    }
+
+    pub fn from_config(hash: &Mapping) -> Self {
         let mut names: Vec<String> = hash
             .keys()
             .filter_map(Value::as_str)
@@ -69,6 +77,11 @@ pub fn core_cops() -> &'static KnownCops {
 }
 
 impl KnownCops {
+    /// `Registry#names`, sorted.
+    pub fn cop_names(&self) -> &[String] {
+        &self.names
+    }
+
     /// `Registry#names.include?` / `find_by_cop_name`.
     pub fn contains(&self, cop_name: &str) -> bool {
         self.names

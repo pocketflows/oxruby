@@ -17,10 +17,11 @@ use std::sync::LazyLock;
 
 use serde_yaml_ng::{Mapping, Value};
 
-use crate::config::Config;
-use crate::path_util;
+use crate::config::{Config, KnownCops};
+use crate::{file_finder, path_util};
 
 pub const DOTFILE: &str = ".rubocop.yml";
+const XDG_CONFIG: &str = "config.yml";
 
 const DEFAULT_YML: &str = include_str!("../../../vendor/rubocop/config/default.yml");
 
@@ -41,21 +42,52 @@ pub fn default_configuration() -> &'static Mapping {
     &DEFAULT_CONFIGURATION
 }
 
-/// Port of `ConfigFinder.find_config_path`.
+/// Port of `ConfigFinder.find_config_path`: the nearest `.rubocop.yml` up
+/// to the project root, then the project's `.config/`, then the user's.
+/// `None` stands for `DEFAULT_FILE`.
 pub fn find_config_path(target_dir: &Path) -> Option<PathBuf> {
-    for dir in target_dir.ancestors() {
-        let candidate = dir.join(DOTFILE);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
+    find_config_path_in(target_dir, project_root().as_deref())
+}
+
+fn find_config_path_in(target_dir: &Path, project_root: Option<&Path>) -> Option<PathBuf> {
+    file_finder::find_file_upwards(DOTFILE, target_dir, project_root)
+        .or_else(|| find_project_root_dot_config(project_root))
+        .or_else(find_user_dotfile)
+        .or_else(find_user_xdg_config)
+}
+
+/// `ConfigFinder.project_root`: the directory of the topmost `Gemfile` (or
+/// `gems.rb`) above the working directory. No file search goes past it.
+pub fn project_root() -> Option<PathBuf> {
+    let pwd = path_util::pwd();
+    let gems_file = file_finder::find_last_file_upwards("Gemfile", &pwd, None)
+        .or_else(|| file_finder::find_last_file_upwards("gems.rb", &pwd, None))?;
+    gems_file.parent().map(Path::to_path_buf)
+}
+
+fn find_project_root_dot_config(project_root: Option<&Path>) -> Option<PathBuf> {
+    let project_root = project_root?;
+    let dotfile = project_root.join(".config").join(DOTFILE);
+    if dotfile.exists() {
+        return Some(dotfile);
     }
-    let home = std::env::home_dir()?;
-    let xdg = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.join(".config"));
-    [home.join(DOTFILE), xdg.join("rubocop/config.yml")]
-        .into_iter()
-        .find(|path| path.is_file())
+    let xdg_config = project_root.join(".config/rubocop").join(XDG_CONFIG);
+    xdg_config.exists().then_some(xdg_config)
+}
+
+fn find_user_dotfile() -> Option<PathBuf> {
+    std::env::var_os("HOME")?;
+    let file = std::env::home_dir()?.join(DOTFILE);
+    file.exists().then_some(file)
+}
+
+fn find_user_xdg_config() -> Option<PathBuf> {
+    let xdg_config_home = match std::env::var_os("XDG_CONFIG_HOME") {
+        Some(dir) => path_util::expand_path(Path::new(&dir)),
+        None => std::env::home_dir()?.join(".config"),
+    };
+    let xdg_config = xdg_config_home.join("rubocop").join(XDG_CONFIG);
+    xdg_config.exists().then_some(xdg_config)
 }
 
 /// The gems the launcher (`gems/oxcop/lib/oxcop.rb`) found: under Bundler
@@ -159,6 +191,10 @@ pub struct ConfigLoader {
     pub disabled_by_default: Option<bool>,
     /// `ConfigLoader.preview` (`--[no-]preview`).
     pub preview: Option<bool>,
+    /// `ConfigLoader.ignore_parent_exclusion` (`--ignore-parent-exclusion`).
+    pub ignore_parent_exclusion: bool,
+    /// `ConfigFinder.project_root`, found once per run.
+    project_root: std::cell::OnceCell<Option<PathBuf>>,
 }
 
 impl ConfigLoader {
@@ -190,9 +226,84 @@ impl ConfigLoader {
             return Ok(Config::new(self.apply_default_overrides(&defaults), None));
         };
         let config_file = path_util::expand_path(config_file);
-        let hash = self.load_file(&config_file)?;
+        let mut hash = self.load_file(&config_file)?;
+        if !self.ignore_parent_exclusion {
+            self.add_excludes_from_files(&mut hash, &config_file)?;
+        }
         let merged = self.merge_with_default(hash, true);
         Ok(Config::new(merged, Some(config_file)))
+    }
+
+    /// `ConfigFinder.project_root`, cached for the run.
+    pub fn project_root(&self) -> Option<&Path> {
+        self.project_root.get_or_init(project_root).as_deref()
+    }
+
+    /// Port of `ConfigLoader.add_excludes_from_files`: the `AllCops: Exclude`
+    /// of the topmost `.rubocop.yml` up to the project root applies too.
+    fn add_excludes_from_files(
+        &mut self,
+        config: &mut Mapping,
+        config_file: &Path,
+    ) -> Result<(), ConfigError> {
+        let project_root = self.project_root().map(Path::to_path_buf);
+        let Some(exclusion_file) =
+            file_finder::find_last_file_upwards(DOTFILE, config_file, project_root.as_deref())
+        else {
+            return Ok(());
+        };
+        if path_util::expand_path(&exclusion_file) == path_util::expand_path(config_file) {
+            return Ok(());
+        }
+        let highest = self.load_file(&exclusion_file)?;
+        add_excludes_from_higher_level(config, &highest, &exclusion_file);
+        Ok(())
+    }
+
+    /// Port of `ConfigLoader.add_missing_namespaces`: cop names given
+    /// without their department (or with the wrong one) are qualified, with
+    /// `Registry.qualified_cop_name`'s warnings. The registry is every core
+    /// cop plus the plugin cops in the default configuration. Not ported:
+    /// skipping `ConfigObsoletion`'s deprecated names.
+    fn add_missing_namespaces(
+        &mut self,
+        path: &Path,
+        hash: &mut Mapping,
+    ) -> Result<(), ConfigError> {
+        let core = crate::config::core_cops();
+        let mut registry = KnownCops::from_config(self.default_configuration());
+        registry.extend(core);
+        // Plugin and custom cops are registered by the time upstream gets
+        // here (a plugin's own default.yml included); oxcop only knows them
+        // from configuration keys, so take this file's keys outside the
+        // core departments as registered.
+        let own: Mapping = hash
+            .keys()
+            .filter(|key| {
+                key.as_str()
+                    .and_then(|k| k.rsplit_once('/'))
+                    .is_some_and(|(dept, _)| {
+                        !crate::directive_comment::CopRegistry::is_department(core, dept)
+                    })
+            })
+            .map(|key| (key.clone(), Value::Null))
+            .collect();
+        registry.extend(&KnownCops::from_config(&own));
+        let keys: Vec<String> = hash
+            .keys()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect();
+        for key in keys {
+            let qualified = qualified_cop_name(&registry, &key, path)?;
+            if qualified == key {
+                continue;
+            }
+            if let Some(value) = hash.shift_remove(key.as_str()) {
+                hash.insert(qualified.into(), value);
+            }
+        }
+        Ok(())
     }
 
     /// Port of `ConfigLoader.load_file`: reads one file and resolves its
@@ -211,6 +322,10 @@ impl ConfigLoader {
         self.resolve_inheritance_from_gems(&mut hash)?;
         self.resolve_inheritance(path, &mut hash)?;
         hash.shift_remove("inherit_from");
+
+        // Adding missing namespaces only after resolving requires & inheritance,
+        // since both can introduce new cops that need to be considered here.
+        self.add_missing_namespaces(path, &mut hash)?;
 
         if check {
             let mut own = Config::new(hash, Some(path.to_path_buf()));
@@ -628,6 +743,112 @@ fn with_preview_exclude_merge(mut mode: Mapping, preview: bool) -> Mapping {
     mode
 }
 
+/// `Config#add_excludes_from_higher_level`.
+fn add_excludes_from_higher_level(config: &mut Mapping, highest: &Mapping, highest_path: &Path) {
+    let Some(Value::Sequence(highest_excludes)) = highest
+        .get("AllCops")
+        .and_then(Value::as_mapping)
+        .and_then(|all_cops| all_cops.get("Exclude"))
+    else {
+        return;
+    };
+    let all_cops = config
+        .entry("AllCops".into())
+        .or_insert_with(|| Value::Mapping(Mapping::new()));
+    let Some(all_cops) = all_cops.as_mapping_mut() else {
+        return;
+    };
+    let excludes = all_cops
+        .entry("Exclude".into())
+        .or_insert_with(|| Value::Sequence(Vec::new()));
+    let Some(excludes) = excludes.as_sequence_mut() else {
+        return;
+    };
+    let highest_dir = highest_path.parent().unwrap_or(Path::new("."));
+    for path in highest_excludes {
+        let path = match path {
+            // `!ruby/regexp` values stay as they are.
+            Value::String(p) if !p.starts_with('/') => {
+                Value::String(highest_dir.join(p).to_string_lossy().into_owned())
+            }
+            other => other.clone(),
+        };
+        if !excludes.contains(&path) {
+            excludes.push(path);
+        }
+    }
+}
+
+/// `Registry#qualified_cop_name` (with `warn: true`), over `registry`.
+fn qualified_cop_name(
+    registry: &KnownCops,
+    name: &str,
+    path: &Path,
+) -> Result<String, ConfigError> {
+    // `Badge.parse`: the department is everything before the last `/`.
+    let (department, cop_name) = match name.rsplit_once('/') {
+        Some((department, cop_name)) => (Some(department), cop_name),
+        None => (None, name),
+    };
+    let basename = |full: &str| full.rsplit('/').next().unwrap_or(full).to_owned();
+    if department.is_none()
+        && (name == "RedundantCopDisableDirective"
+            || registry
+                .cop_names()
+                .iter()
+                .any(|known| basename(known) == name))
+    {
+        emit_warning(path, &format!("no department given for {name}."));
+    }
+    if registry.contains(name) {
+        return Ok(name.to_owned());
+    }
+    let mut departments: Vec<&str> = registry
+        .cop_names()
+        .iter()
+        .filter_map(|known| known.rsplit_once('/').map(|(dept, _)| dept))
+        .collect();
+    departments.sort_unstable();
+    departments.dedup();
+    let potential: Vec<String> = departments
+        .iter()
+        .map(|dept| format!("{dept}/{cop_name}"))
+        .filter(|candidate| registry.contains(candidate))
+        .collect();
+    match potential.as_slice() {
+        [] => Ok(name.to_owned()),
+        [real] => {
+            // `resolve_badge`: a qualified name in the wrong department.
+            if let Some(department) = department {
+                let real_department = real.rsplit_once('/').map_or("", |(dept, _)| dept);
+                if department != real_department {
+                    emit_warning(
+                        path,
+                        &format!(
+                            "{name} has the wrong namespace - replace it with \
+                             {real_department}/{cop_name}"
+                        ),
+                    );
+                }
+            }
+            Ok(real.clone())
+        }
+        _ => Err(ConfigError(format!(
+            "Ambiguous cop name `{name}` used in {} needs department qualifier. Did you mean {}?",
+            path.display(),
+            potential.join(" or ")
+        ))),
+    }
+}
+
+/// `Registry#emit_warning`.
+fn emit_warning(path: &Path, message: &str) {
+    warn(&format!(
+        "{}: Warning: {message}",
+        path_util::smart_path(path)
+    ));
+}
+
 fn plugin_load_error(name: &str) -> String {
     format!(
         "Failed to load plugin `{name}` because the corresponding plugin class could not be \
@@ -988,6 +1209,7 @@ impl ConfigStore {
         store.loader.enabled_by_default = options.enable_all_cops.then_some(true);
         store.loader.disabled_by_default = options.disable_all_cops.then_some(true);
         store.loader.preview = options.preview_option();
+        store.loader.ignore_parent_exclusion = options.ignore_parent_exclusion;
         store
     }
 
@@ -1007,11 +1229,13 @@ impl ConfigStore {
     pub fn for_dir(&mut self, dir: &Path) -> Result<Rc<Config>, ConfigError> {
         let config_path = match &self.options_config {
             Some(path) => Some(path.clone()),
-            None => self
-                .by_dir
-                .entry(dir.to_path_buf())
-                .or_insert_with(|| find_config_path(dir))
-                .clone(),
+            None => {
+                if !self.by_dir.contains_key(dir) {
+                    let found = find_config_path_in(dir, self.loader.project_root());
+                    self.by_dir.insert(dir.to_path_buf(), found);
+                }
+                self.by_dir[dir].clone()
+            }
         };
         if !self.by_path.contains_key(&config_path) {
             let config = if self.raw
@@ -1422,6 +1646,124 @@ mod tests {
         assert_eq!(config.for_cop("Fake/Configured")["Max"], Value::from(2));
         assert!(enabled(&config, "Style/HashSyntax"));
         assert!(!enabled(&config, "Style/Alias"));
+    }
+
+    // config_loader_spec.rb: ".configuration_file_for"
+    #[test]
+    fn config_files_are_found_up_to_the_project_root_then_in_its_dot_config() {
+        let dir = project(
+            "finder",
+            &[
+                ("outside/.rubocop.yml", ""),
+                ("outside/app/Gemfile", ""),
+                ("outside/app/dir/example.rb", ""),
+            ],
+        );
+        let root = dir.join("outside/app");
+        // A spurious config outside of the project is ignored.
+        let found = find_config_path_in(&root.join("dir"), Some(&root));
+        assert_ne!(found, Some(dir.join("outside/.rubocop.yml")));
+        std::fs::create_dir_all(root.join(".config/rubocop")).unwrap();
+        std::fs::write(root.join(".config/rubocop/config.yml"), "").unwrap();
+        assert_eq!(
+            find_config_path_in(&root.join("dir"), Some(&root)),
+            Some(root.join(".config/rubocop/config.yml"))
+        );
+        std::fs::write(root.join(".config/.rubocop.yml"), "").unwrap();
+        assert_eq!(
+            find_config_path_in(&root.join("dir"), Some(&root)),
+            Some(root.join(".config/.rubocop.yml"))
+        );
+        std::fs::write(root.join("dir/.rubocop.yml"), "").unwrap();
+        assert_eq!(
+            find_config_path_in(&root.join("dir"), Some(&root)),
+            Some(root.join("dir/.rubocop.yml"))
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // config_loader_spec.rb: "when multiple config files exist in ancestor
+    // directories" and "ignores parent AllCops/Exclude if
+    // ignore_parent_exclusion is true".
+    #[test]
+    fn all_cops_exclude_comes_from_the_highest_directory_level_too() {
+        let dir = project(
+            "parent-exclusion",
+            &[
+                (".rubocop.yml", "AllCops:\n  Exclude:\n    - vendor/**\n"),
+                ("dir/.rubocop.yml", "AllCops:\n  Exclude: []\n"),
+                ("vendor/.rubocop.yml", "AllCops:\n  Exclude:\n    - 'foo'\n"),
+            ],
+        );
+        let loader = || {
+            let loader = ConfigLoader::default();
+            loader.project_root.set(Some(dir.clone())).unwrap();
+            loader
+        };
+        let excludes = |config: &Config| config.for_all_cops()["Exclude"].clone();
+        let config = loader()
+            .configuration_from_file(Some(&dir.join("dir/.rubocop.yml")))
+            .unwrap();
+        let vendor = Value::from(dir.join("vendor/**").to_string_lossy().into_owned());
+        assert_eq!(excludes(&config), Value::Sequence(vec![vendor.clone()]));
+
+        let mut ignoring = loader();
+        ignoring.ignore_parent_exclusion = true;
+        let config = ignoring
+            .configuration_from_file(Some(&dir.join("vendor/.rubocop.yml")))
+            .unwrap();
+        let excludes = excludes(&config);
+        let excludes = excludes.as_sequence().unwrap();
+        assert!(!excludes.contains(&vendor));
+        assert!(excludes.contains(&Value::from(
+            dir.join("vendor/foo").to_string_lossy().into_owned()
+        )));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // `ConfigLoader.add_missing_namespaces`
+    #[test]
+    fn cop_names_without_their_department_are_qualified() {
+        let dir = project(
+            "namespaces",
+            &[(
+                ".rubocop.yml",
+                "LineLength:\n  Max: 100\nStyle/IndentationWidth:\n  Width: 4\n\
+                 Rails/SafeNavigation:\n  Enabled: true\nStyle/PreferSomething:\n  Enabled: true\n",
+            )],
+        );
+        let hash = ConfigLoader::default()
+            .load_file(&dir.join(".rubocop.yml"))
+            .unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        let keys: Vec<&str> = hash.keys().filter_map(Value::as_str).collect();
+        assert_eq!(
+            keys,
+            [
+                "Rails/SafeNavigation",
+                "Style/PreferSomething",
+                "Layout/LineLength",
+                "Layout/IndentationWidth"
+            ]
+        );
+        assert_eq!(hash["Layout/LineLength"]["Max"], Value::from(100));
+        let registry = crate::config::core_cops();
+        let error = qualified_cop_name(
+            &{
+                let mut known = registry.clone();
+                let extra: Mapping = yaml("Foo/LineLength: {}");
+                known.extend(&KnownCops::from_config(&extra));
+                known
+            },
+            "LineLength",
+            Path::new(".rubocop.yml"),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.0,
+            "Ambiguous cop name `LineLength` used in .rubocop.yml needs department qualifier. \
+             Did you mean Foo/LineLength or Layout/LineLength?"
+        );
     }
 
     #[test]

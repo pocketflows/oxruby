@@ -110,6 +110,10 @@ pub struct Options {
     #[arg(long = "enable-pending-cops")]
     pub enable_pending_cops: bool,
 
+    /// Don't apply the `AllCops: Exclude` of parent folders' configuration.
+    #[arg(long = "ignore-parent-exclusion")]
+    pub ignore_parent_exclusion: bool,
+
     /// Run with all cops disabled by default, except `Lint/Syntax`.
     /// Overrides `AllCops/EnabledByDefault` and `AllCops/DisabledByDefault`
     /// in config files.
