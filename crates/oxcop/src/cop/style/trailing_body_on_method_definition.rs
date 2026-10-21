@@ -1,0 +1,49 @@
+//! Port of `lib/rubocop/cop/style/trailing_body_on_method_definition.rb`.
+
+use crate::ast::{Node, NodeType};
+use crate::cop::correctors::line_break_corrector;
+use crate::cop::mixin::trailing_body::{first_part_of, last_child, trailing_body};
+use crate::cop::{Cop, Investigation};
+
+const MSG: &str = "Place the first line of a multi-line method definition's body on its own line.";
+
+#[derive(Default)]
+pub struct TrailingBodyOnMethodDefinition;
+
+impl Cop for TrailingBodyOnMethodDefinition {
+    fn name(&self) -> &'static str {
+        "Style/TrailingBodyOnMethodDefinition"
+    }
+
+    fn support_autocorrect(&self) -> bool {
+        true
+    }
+
+    fn node_types(&self) -> &'static [NodeType] {
+        &[NodeType::Def, NodeType::Defs]
+    }
+
+    fn on_node<'a>(&mut self, cx: &mut Investigation<'a, '_>, node: Node<'a>) {
+        if !trailing_body(node) || node.is_endless() {
+            return;
+        }
+        let range = first_part_of(last_child(node).unwrap());
+        let width = configured_indentation_width(cx);
+        let ps = cx.processed_source;
+        cx.add_offense_with_correction(range, MSG, |corrector| {
+            line_break_corrector::correct_trailing_body(width, corrector, node, ps);
+        });
+    }
+}
+
+/// `Alignment#configured_indentation_width`.
+fn configured_indentation_width(cx: &Investigation<'_, '_>) -> usize {
+    cx.cop_config_int("IndentationWidth")
+        .or_else(|| {
+            cx.config
+                .for_cop("Layout/IndentationWidth")
+                .get("Width")
+                .and_then(serde_yaml_ng::Value::as_i64)
+        })
+        .unwrap_or(2) as usize
+}
