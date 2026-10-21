@@ -48,6 +48,7 @@
 - Style/RedundantInitialize 23
 - Style/RedundantPercentQ 27
 - Style/RedundantMinMaxBy 33
+- Style/RedundantRegexpArgument 50
 - Style/RedundantRegexpConstructor 11
 - Style/RedundantSelfAssignmentBranch 22
 - Style/RedundantSelfAssignment 14
