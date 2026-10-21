@@ -54,6 +54,17 @@ Owner: `runtime` (see the roster in `docs/PARALLEL.md`).
   when the file contains `<%`. **`inherit_gem`** resolves through
   `OXCOP_GEMS`; without the launcher it warns and is skipped.
 
+## Pending cops (done)
+
+The pending-cops warning (`PendingCopsReporter`) is printed to stderr as
+RuboCop prints it (same text, checked against rubocop for AllCops and
+per-department `NewCops`, including version pins). `Config` ports
+`enabled_new_cop?`, `new_cops_covered?`, `pending_cops` and
+`Registry#enabled_pending_cop?`; `--enable-pending-cops` and
+`--disable-pending-cops` are accepted. `Enabled: preview` follows
+`AllCops: Preview`. Not ported: ConfigValidator (RuboCop rejects e.g. a
+version in `AllCops: NewCops`; oxcop accepts it).
+
 ## Directive cops (done)
 
 Lint/MissingCopEnableDirective 16/16, Lint/RedundantCopEnableDirective

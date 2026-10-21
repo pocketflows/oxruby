@@ -20,6 +20,9 @@ pub struct Config {
     base_dir_for_path_parameters: PathBuf,
     known_cops: OnceLock<KnownCops>,
     badge_configs: OnceLock<std::collections::HashMap<String, Mapping>>,
+    /// `--enable-pending-cops` / `--disable-pending-cops` (the registry's
+    /// options upstream).
+    pub pending_cops_option: Option<bool>,
 }
 
 /// The cops RuboCop's registry would know about for this configuration:
@@ -143,6 +146,7 @@ impl Config {
             base_dir_for_path_parameters,
             known_cops: OnceLock::new(),
             badge_configs: OnceLock::new(),
+            pending_cops_option: None,
         }
     }
 
@@ -252,6 +256,83 @@ impl Config {
         self.for_all_cops().get("NewCops").and_then(Value::as_str) == Some("enable")
     }
 
+    /// `department_of`: the department's configuration.
+    fn department_of(&self, cop_name: &str) -> Option<&Mapping> {
+        let (department, _) = cop_name.rsplit_once('/')?;
+        self.hash.get(department).and_then(Value::as_mapping)
+    }
+
+    /// `new_cops_setting_for`: the department's `NewCops`, else `AllCops`'.
+    fn new_cops_setting_for(&self, cop_name: &str) -> String {
+        let setting = self
+            .department_of(cop_name)
+            .and_then(|d| d.get("NewCops"))
+            .or_else(|| self.for_all_cops().get("NewCops"));
+        setting.map(ruby_to_s).unwrap_or_default()
+    }
+
+    /// `enabled_new_cop?`.
+    pub fn enabled_new_cop(&self, cop_name: &str) -> bool {
+        match self.new_cops_setting_for(cop_name).as_str() {
+            "enable" => true,
+            "" | "pending" | "disable" => false,
+            setting => self.new_cops_version_covers(setting, cop_name),
+        }
+    }
+
+    /// `new_cops_covered?`: the pending status is settled by `NewCops`.
+    pub fn new_cops_covered(&self, cop_name: &str) -> bool {
+        match self.new_cops_setting_for(cop_name).as_str() {
+            "enable" | "disable" => true,
+            "" | "pending" => false,
+            setting => self.new_cops_version_covers(setting, cop_name),
+        }
+    }
+
+    fn new_cops_version_covers(&self, pinned: &str, cop_name: &str) -> bool {
+        let added = self.for_cop(cop_name).get("VersionAdded").map(ruby_to_s);
+        match (
+            added.as_deref().and_then(comparable_version),
+            comparable_version(pinned),
+        ) {
+            (Some(added), Some(pinned)) => added <= pinned,
+            _ => false,
+        }
+    }
+
+    /// `Registry#enabled_pending_cop?`.
+    pub fn enabled_pending_cop(&self, cop_name: &str) -> bool {
+        match self.pending_cops_option {
+            Some(false) => false,
+            Some(true) => true,
+            None => self.enabled_new_cop(cop_name),
+        }
+    }
+
+    /// `Config#pending_cops`: cops still `Enabled: pending` that no
+    /// `NewCops` setting covers, in configuration order.
+    pub fn pending_cops(&self) -> Vec<(&str, &Mapping)> {
+        self.hash
+            .iter()
+            .filter_map(|(key, value)| {
+                let name = key.as_str()?;
+                let params = value.as_mapping()?;
+                if self
+                    .department_of(name)
+                    .is_some_and(|d| d.get("Enabled") == Some(&Value::Bool(false)))
+                {
+                    return None;
+                }
+                if params.get("Enabled").and_then(Value::as_str) != Some("pending")
+                    || self.new_cops_covered(name)
+                {
+                    return None;
+                }
+                Some((name, params))
+            })
+            .collect()
+    }
+
     /// `Config#cop_enabled?` alone: `!!for_cop(name)['Enabled']`, where
     /// `for_cop` computes `Enabled` with `enable_cop?` (so `pending` is
     /// truthy here).
@@ -296,13 +377,16 @@ impl Config {
         if enabled.and_then(Value::as_str) == Some("override_department") {
             return true;
         }
-        if let Some((department, _)) = cop_name.split_once('/')
-            && self.for_department(department).get("Enabled") == Some(&Value::Bool(false))
+        if self
+            .department_of(cop_name)
+            .is_some_and(|d| d.get("Enabled") == Some(&Value::Bool(false)))
         {
             return false;
         }
         match enabled {
-            Some(Value::String(s)) if s == "pending" => self.enabled_new_cops(),
+            Some(Value::String(s)) if s == "pending" => self.enabled_pending_cop(cop_name),
+            // `enabled_preview_cop?`
+            Some(Value::String(s)) if s == "preview" => self.all_cops_bool("Preview", false),
             Some(Value::Bool(b)) => *b,
             Some(_) => true,
             None => !self.all_cops_bool("DisabledByDefault", false),
@@ -416,4 +500,30 @@ fn base_dir_for_path_parameters(loaded_path: Option<&Path>) -> PathBuf {
         }
     }
     path_util::pwd()
+}
+
+/// Ruby's `to_s` for a YAML scalar (`1.19` -> "1.19").
+fn ruby_to_s(value: &Value) -> String {
+    match value {
+        Value::String(s) => s.clone(),
+        Value::Number(n) => n.to_string(),
+        Value::Bool(b) => b.to_string(),
+        _ => String::new(),
+    }
+}
+
+/// `comparable_version`: `Gem::Version` for values like `1.19`, `None` for
+/// `N/A` or `<<next>>`. Compared segment by segment (numeric segments only).
+fn comparable_version(value: &str) -> Option<Vec<u64>> {
+    if !value.starts_with(|c: char| c.is_ascii_digit()) {
+        return None;
+    }
+    let mut segments: Vec<u64> = value
+        .split('.')
+        .map(|s| s.parse().ok())
+        .collect::<Option<_>>()?;
+    while segments.len() > 1 && segments.last() == Some(&0) {
+        segments.pop();
+    }
+    Some(segments)
 }

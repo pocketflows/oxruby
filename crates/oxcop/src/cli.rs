@@ -254,6 +254,13 @@ fn execute_runner(options: &Options, io: &mut Io) -> Result<i32, String> {
         lsp: options.lsp,
     };
     let mut runner = Runner::new(options, cop_options);
+    // `report_pending_cops` (not for RuboCop's specs, which don't run the CLI).
+    if !options.raw_config
+        && !options.list_target_files
+        && let Some(warning) = runner.pending_cops_warning().map_err(|e| e.to_string())?
+    {
+        let _ = write!(io.stderr, "{warning}");
+    }
 
     if options.list_target_files {
         for file in runner.find_target_files().map_err(|e| e.to_string())? {

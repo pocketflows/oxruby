@@ -799,6 +799,8 @@ pub struct ConfigStore {
     by_path: HashMap<Option<PathBuf>, Rc<Config>>,
     by_dir: HashMap<PathBuf, Option<PathBuf>>,
     loader: ConfigLoader,
+    /// `--enable-pending-cops` (`Some(true)`) / `--disable-pending-cops`.
+    pub pending_cops_option: Option<bool>,
 }
 
 impl ConfigStore {
@@ -840,6 +842,8 @@ impl ConfigStore {
                 self.loader
                     .configuration_from_file(config_path.as_deref())?
             };
+            let mut config = config;
+            config.pending_cops_option = self.pending_cops_option;
             self.by_path.insert(config_path.clone(), Rc::new(config));
         }
         Ok(Rc::clone(&self.by_path[&config_path]))

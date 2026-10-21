@@ -21,6 +21,15 @@ use crate::target_ruby::target_ruby_version;
 
 pub const MAX_ITERATIONS: usize = 200;
 
+/// `PendingCopsReporter::PENDING_BANNER`.
+const PENDING_BANNER: &str = "The following cops were added to RuboCop, but are not configured. \
+Please set Enabled to either `true` or `false` in your `.rubocop.yml` file.
+
+Please also note that you can opt-in to new cops by default by adding this to your config:
+  AllCops:
+    NewCops: enable
+";
+
 pub struct Runner<'a> {
     options: &'a Options,
     config_store: ConfigStore,
@@ -109,6 +118,14 @@ impl<'a> Runner<'a> {
     pub fn new(options: &'a Options, cop_options: CopOptions) -> Self {
         let mut config_store = ConfigStore::new(options.config.clone());
         config_store.raw = options.raw_config;
+        // `Registry#enabled_pending_cop?` checks `--disable-pending-cops` first.
+        config_store.pending_cops_option = if options.disable_pending_cops {
+            Some(false)
+        } else if options.enable_pending_cops {
+            Some(true)
+        } else {
+            None
+        };
         Self {
             options,
             config_store,
@@ -134,6 +151,37 @@ impl<'a> Runner<'a> {
             errors: Vec::new(),
             spec_report: SpecReport::default(),
         }
+    }
+
+    /// `PendingCopsReporter.warn_if_needed(config_store.for_pwd)`.
+    pub fn pending_cops_warning(&mut self) -> Result<Option<String>, ConfigError> {
+        if self.options.disable_pending_cops || self.options.enable_pending_cops {
+            return Ok(None);
+        }
+        let config = self.config_store.for_pwd()?;
+        let known = config.known_cops();
+        let pending: Vec<(&str, &Mapping)> = config
+            .pending_cops()
+            .into_iter()
+            .filter(|(name, _)| known.contains(name))
+            .collect();
+        if pending.is_empty() {
+            return Ok(None);
+        }
+        let mut out = String::from(PENDING_BANNER);
+        for (name, params) in pending {
+            let version = params
+                .get("VersionAdded")
+                .map(|v| match v {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    _ => "N/A".to_owned(),
+                })
+                .unwrap_or_else(|| "N/A".to_owned());
+            out.push_str(&format!("{name}: # new in {version}\n  Enabled: true\n"));
+        }
+        out.push_str("For more information: https://docs.rubocop.org/rubocop/versioning.html\n");
+        Ok(Some(out))
     }
 
     pub fn find_target_files(&mut self) -> Result<Vec<PathBuf>, ConfigError> {

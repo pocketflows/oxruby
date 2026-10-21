@@ -79,6 +79,14 @@ pub struct Options {
     #[arg(short = 'L', long = "list-target-files")]
     pub list_target_files: bool,
 
+    /// Run without pending cops.
+    #[arg(long = "disable-pending-cops")]
+    pub disable_pending_cops: bool,
+
+    /// Run with pending cops.
+    #[arg(long = "enable-pending-cops")]
+    pub enable_pending_cops: bool,
+
     /// Display version.
     #[arg(short = 'v', long = "version")]
     pub version: bool,

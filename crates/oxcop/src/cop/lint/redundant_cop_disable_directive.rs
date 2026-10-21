@@ -167,7 +167,7 @@ impl<'s> Checker<'_, '_, 's> {
             return false;
         }
         let enabled = self.cx.config.for_cop(cop).get("Enabled");
-        enabled.and_then(Value::as_str) == Some("pending") && !self.cx.config.enabled_new_cops()
+        enabled.and_then(Value::as_str) == Some("pending") && !self.cx.config.enabled_pending_cop(cop)
     }
 
     fn each_line_range(
