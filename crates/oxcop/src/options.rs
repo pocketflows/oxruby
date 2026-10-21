@@ -104,6 +104,10 @@ pub struct Options {
     #[arg(long = "dump-ast", hide = true)]
     pub dump_ast: bool,
 
+    /// Print the `parser`-gem tokens of the given files.
+    #[arg(long = "dump-tokens", hide = true)]
+    pub dump_tokens: bool,
+
     /// The Ruby version `--dump-ast` parses as.
     #[arg(long = "dump-ast-version", hide = true, default_value_t = 3.3)]
     pub dump_ast_version: f64,

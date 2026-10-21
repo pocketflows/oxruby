@@ -12,6 +12,7 @@
 
 mod builder;
 mod compiler;
+pub mod lexer;
 pub mod node;
 pub mod node_type;
 

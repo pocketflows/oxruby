@@ -33,7 +33,7 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> i32 {
         println!("{VERSION}");
         return STATUS_SUCCESS;
     }
-    if options.dump_ast {
+    if options.dump_ast || options.dump_tokens {
         return dump_ast(&options);
     }
     if options.show_ported_cops {
@@ -72,6 +72,7 @@ fn execute_runner(options: &Options) -> Result<i32, String> {
         autocorrect: options.autocorrect_mode(),
         display_cop_names: options.display_cop_names(),
         json_format: matches!(format.as_str(), "json" | "j"),
+        ignore_disable_comments: false,
     };
     let mut runner = Runner::new(options, cop_options);
 
@@ -138,14 +139,43 @@ fn dump_ast(options: &Options) -> i32 {
             }
         };
         let source = String::from_utf8_lossy(&bytes);
-        let processed =
-            crate::processed_source::ProcessedSource::new(&source, options.dump_ast_version, path);
+        let buffer = crate::processed_source::normalize_newlines(&source);
+        let processed = crate::processed_source::ProcessedSource::new(
+            &source,
+            &buffer,
+            options.dump_ast_version,
+            path,
+        );
         let _ = writeln!(out, "== {}", path.display());
-        if processed.valid_syntax() {
+        if processed.valid_syntax() && options.dump_tokens {
+            for token in processed.tokens() {
+                let _ = writeln!(
+                    out,
+                    "{} {} {}..{}",
+                    token.ty,
+                    escape_text(&token.text),
+                    token.range.begin_pos,
+                    token.range.end_pos
+                );
+            }
+        } else if processed.valid_syntax() {
             let _ = write!(out, "{}", processed.tree().dump());
         } else {
             let _ = writeln!(out, "syntax error");
         }
     }
     STATUS_SUCCESS
+}
+
+fn escape_text(text: &str) -> String {
+    let mut out = String::from("\"");
+    for byte in text.bytes() {
+        if (0x20..=0x7e).contains(&byte) && byte != b'"' && byte != b'\\' {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("\\x{byte:02X}"));
+        }
+    }
+    out.push('"');
+    out
 }

@@ -125,7 +125,9 @@ impl<'a> Runner<'a> {
         }
 
         let mut offenses: Vec<Offense> = offenses.into_iter().flatten().collect();
+        offenses.retain(|offense| !offense.disabled());
         offenses.sort();
+        offenses.dedup();
         Ok(offenses)
     }
 
@@ -151,12 +153,17 @@ impl<'a> Runner<'a> {
                 last.retain(Offense::corrected);
             }
             let new_source = {
-                let processed_source = ProcessedSource::new(&source, ruby_version, file);
+                let buffer_source = crate::processed_source::normalize_newlines(&source);
+                let processed_source =
+                    ProcessedSource::new(&source, &buffer_source, ruby_version, file);
                 let report = team.investigate(&processed_source);
+                for error in &report.errors {
+                    eprintln!("{error}");
+                }
                 offenses_by_iteration.push(report.offenses);
                 match report.corrector {
                     Some(corrector) if self.cop_options.autocorrect != AutocorrectMode::Off => {
-                        corrector.rewrite(&source)
+                        corrector.rewrite(&buffer_source)
                     }
                     _ => break,
                 }

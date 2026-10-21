@@ -22,7 +22,7 @@ impl Cop for Syntax {
                 "{}\n(Using Ruby {ruby_version} parser; configure using `TargetRubyVersion` parameter, under `AllCops`)",
                 diagnostic.message
             );
-            let range = diagnostic_location(diagnostic.range, processed_source.raw_source());
+            let range = diagnostic_location(diagnostic.range, processed_source.buffer_source());
             cx.add_offense(range, &message);
         }
     }

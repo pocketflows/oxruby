@@ -1,7 +1,8 @@
 //! Port of `lib/rubocop/config.rb`.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 
 use serde_yaml_ng::{Mapping, Value};
 
@@ -17,6 +18,60 @@ pub struct Config {
     hash: Mapping,
     loaded_path: Option<PathBuf>,
     base_dir_for_path_parameters: PathBuf,
+    known_cops: OnceLock<KnownCops>,
+    badge_configs: OnceLock<std::collections::HashMap<String, Mapping>>,
+}
+
+/// The cops RuboCop's registry would know about for this configuration:
+/// every cop in the merged configuration (core cops from `default.yml`,
+/// plus plugin and custom cops the configuration mentions).
+#[derive(Debug, Clone, Default)]
+pub struct KnownCops {
+    names: Vec<String>,
+    departments: HashSet<String>,
+}
+
+impl KnownCops {
+    fn from_config(hash: &Mapping) -> Self {
+        let mut names: Vec<String> = hash
+            .keys()
+            .filter_map(Value::as_str)
+            .filter(|key| key.contains('/'))
+            .map(str::to_owned)
+            .collect();
+        names.sort();
+        names.dedup();
+        let mut departments = HashSet::new();
+        for name in &names {
+            let mut department = name.as_str();
+            while let Some((parent, _)) = department.rsplit_once('/') {
+                departments.insert(parent.to_owned());
+                department = parent;
+            }
+        }
+        Self { names, departments }
+    }
+}
+
+impl crate::directive_comment::CopRegistry for KnownCops {
+    fn names(&self) -> &[String] {
+        &self.names
+    }
+
+    fn is_department(&self, name: &str) -> bool {
+        self.departments.contains(name)
+    }
+
+    fn names_for_department(&self, department: &str) -> Vec<String> {
+        self.names
+            .iter()
+            .filter(|name| {
+                name.rsplit_once('/')
+                    .is_some_and(|(dept, _)| dept == department)
+            })
+            .cloned()
+            .collect()
+    }
 }
 
 impl Config {
@@ -26,7 +81,63 @@ impl Config {
             hash,
             loaded_path,
             base_dir_for_path_parameters,
+            known_cops: OnceLock::new(),
+            badge_configs: OnceLock::new(),
         }
+    }
+
+    /// Port of `Config#for_badge`: the cop's configuration merged into its
+    /// department's (with both `Exclude` lists combined).
+    pub fn for_badge(&self, cop_name: &str) -> &Mapping {
+        let configs = self.badge_configs.get_or_init(|| {
+            let mut configs = std::collections::HashMap::new();
+            for (key, value) in &self.hash {
+                let (Some(name), Some(cop_config)) = (key.as_str(), value.as_mapping()) else {
+                    continue;
+                };
+                let Some((department, _)) = name.rsplit_once('/') else {
+                    continue;
+                };
+                let Some(department_config) = self.hash.get(department).and_then(Value::as_mapping)
+                else {
+                    continue;
+                };
+                let mut merged = department_config.clone();
+                for (k, v) in cop_config {
+                    merged.insert(k.clone(), v.clone());
+                }
+                if let (Some(Value::Sequence(dept)), Some(Value::Sequence(cop))) =
+                    (department_config.get("Exclude"), cop_config.get("Exclude"))
+                {
+                    let mut union = dept.clone();
+                    for item in cop {
+                        if !union.contains(item) {
+                            union.push(item.clone());
+                        }
+                    }
+                    merged.insert("Exclude".into(), Value::Sequence(union));
+                }
+                configs.insert(name.to_owned(), merged);
+            }
+            configs
+        });
+        configs
+            .get(cop_name)
+            .unwrap_or_else(|| self.for_cop(cop_name))
+    }
+
+    pub fn known_cops(&self) -> &KnownCops {
+        self.known_cops
+            .get_or_init(|| KnownCops::from_config(&self.hash))
+    }
+
+    /// `Registry#disabled_names`.
+    pub fn disabled_cop_names(&self, names: &[String]) -> Vec<String> {
+        names
+            .iter()
+            .filter(|name| !self.cop_enabled(name))
+            .cloned()
+            .collect()
     }
 
     pub fn to_h(&self) -> &Mapping {
@@ -128,7 +239,7 @@ impl Config {
         {
             return true;
         }
-        let cop_config = self.for_cop(cop_name);
+        let cop_config = self.for_badge(cop_name);
         let relative = self.path_relative_to_config(file);
         let absolute = file.to_string_lossy();
         let matches_any = |key: &str, default: bool| match cop_config.get(key) {

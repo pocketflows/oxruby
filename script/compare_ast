@@ -17,6 +17,7 @@ oxcop = ENV.fetch("OXCOP_BINARY") { File.join(root, "target", "debug", "oxcop") 
 version = "3.3"
 show = 5
 args = ARGV.dup
+tokens = args.delete("--tokens")
 if (i = args.index("--version"))
   version = args[i + 1]
   args.slice!(i, 2)
@@ -47,10 +48,11 @@ end
 expected = {}
 actual = {}
 files.each_slice(500) do |slice|
-  out, status = Open3.capture2("ruby", File.join(__dir__, "dump_ast"), "--version", version, *slice)
+  out, status = Open3.capture2("ruby", File.join(__dir__, "dump_ast"), "--version", version, *[tokens].compact, *slice)
   abort "dump_ast failed" unless status.success?
   expected.merge!(split(out))
-  out, status = Open3.capture2(oxcop, "--dump-ast", "--dump-ast-version", version, *slice)
+  mode = tokens ? "--dump-tokens" : "--dump-ast"
+  out, status = Open3.capture2(oxcop, mode, "--dump-ast-version", version, *slice)
   abort "oxcop --dump-ast failed" unless status.success?
   actual.merge!(split(out))
 end

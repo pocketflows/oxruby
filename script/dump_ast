@@ -13,6 +13,7 @@
 require "rubocop"
 
 version = 2.7
+tokens = ARGV.delete("--tokens")
 if (i = ARGV.index("--version"))
   version = Float(ARGV[i + 1])
   ARGV.slice!(i, 2)
@@ -65,7 +66,7 @@ def dump(node, offsets, depth, out)
 end
 
 ARGV.each do |path|
-  source = File.read(path, mode: "rb").force_encoding(Encoding::UTF_8)
+  source = File.read(path, mode: "rb").force_encoding(Encoding::UTF_8).gsub("\r\n", "\n")
   out = +"== #{path}\n"
   begin
     processed = RuboCop::AST::ProcessedSource.new(source, version, path)
@@ -78,7 +79,14 @@ ARGV.each do |path|
         byte += char.bytesize
       end
       offsets << byte
-      dump(processed.ast, offsets, 0, out)
+      if tokens
+        processed.tokens.each do |token|
+          text = "\"#{escape(token.text.to_s)}\""
+          out << "#{token.type} #{text} #{offsets[token.pos.begin_pos]}..#{offsets[token.pos.end_pos]}\n"
+        end
+      else
+        dump(processed.ast, offsets, 0, out)
+      end
     else
       out << "syntax error\n"
     end

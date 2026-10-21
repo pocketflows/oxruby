@@ -3,9 +3,11 @@
 
 pub mod ast;
 pub mod cli;
+pub mod comment_config;
 pub mod config;
 pub mod config_loader;
 pub mod cop;
+pub mod directive_comment;
 pub mod formatter;
 pub mod options;
 pub mod path_util;

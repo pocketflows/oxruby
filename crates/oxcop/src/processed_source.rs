@@ -1,11 +1,17 @@
 //! Port of `RuboCop::AST::ProcessedSource` (from rubocop-ast), backed by
 //! Prism instead of the `parser` gem.
+//!
+//! Like `Parser::Source::Buffer`, positions refer to the source with `\r\n`
+//! normalized to `\n` (`buffer_source`); `raw_source` is the original text.
 
+use std::borrow::Cow;
+use std::cell::OnceCell;
 use std::path::{Path, PathBuf};
 
 use ruby_prism::ParseResult;
 
 use crate::ast::Ast;
+use crate::ast::lexer::{Lexer, Token};
 
 /// A half-open byte range into the source, like `Parser::Source::Range`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -26,6 +32,89 @@ impl Range {
     pub fn is_empty(&self) -> bool {
         self.begin_pos == self.end_pos
     }
+
+    /// `Range#join`.
+    pub fn join(&self, other: Range) -> Range {
+        Range::new(
+            self.begin_pos.min(other.begin_pos),
+            self.end_pos.max(other.end_pos),
+        )
+    }
+
+    /// `Range#begin` (an empty range at the start).
+    pub fn begin(&self) -> Range {
+        Range::new(self.begin_pos, self.begin_pos)
+    }
+
+    /// `Range#end` (an empty range at the end).
+    pub fn end(&self) -> Range {
+        Range::new(self.end_pos, self.end_pos)
+    }
+
+    pub fn with_begin(&self, begin_pos: usize) -> Range {
+        Range::new(begin_pos, self.end_pos)
+    }
+
+    pub fn with_end(&self, end_pos: usize) -> Range {
+        Range::new(self.begin_pos, end_pos)
+    }
+
+    /// `Range#adjust`.
+    pub fn adjust(&self, begin: isize, end: isize) -> Range {
+        Range::new(
+            (self.begin_pos as isize + begin) as usize,
+            (self.end_pos as isize + end) as usize,
+        )
+    }
+
+    /// `Range#resize`.
+    pub fn resize(&self, size: usize) -> Range {
+        Range::new(self.begin_pos, self.begin_pos + size)
+    }
+
+    fn cmp_sign(a: usize, b: usize) -> i32 {
+        match a.cmp(&b) {
+            std::cmp::Ordering::Less => -1,
+            std::cmp::Ordering::Equal => 0,
+            std::cmp::Ordering::Greater => 1,
+        }
+    }
+
+    /// `Range#contains?`: strictly contains `other`.
+    pub fn contains(&self, other: Range) -> bool {
+        Self::cmp_sign(other.begin_pos, self.begin_pos)
+            + Self::cmp_sign(self.end_pos, other.end_pos)
+            >= if other.is_empty() { 2 } else { 1 }
+    }
+
+    /// `Range#disjoint?`.
+    pub fn disjoint(&self, other: Range) -> bool {
+        if self.is_empty() && other.is_empty() {
+            self.begin_pos != other.begin_pos
+        } else {
+            self.begin_pos >= other.end_pos || other.begin_pos >= self.end_pos
+        }
+    }
+
+    /// `Range#overlaps?`.
+    pub fn overlaps(&self, other: Range) -> bool {
+        !self.disjoint(other)
+    }
+
+    /// `Range#crossing?`.
+    pub fn crossing(&self, other: Range) -> bool {
+        self.overlaps(other)
+            && Self::cmp_sign(self.begin_pos, other.begin_pos)
+                * Self::cmp_sign(self.end_pos, other.end_pos)
+                == 1
+    }
+
+    /// `Range#intersect`.
+    pub fn intersect(&self, other: Range) -> Option<Range> {
+        let begin = self.begin_pos.max(other.begin_pos);
+        let end = self.end_pos.min(other.end_pos);
+        (begin <= end).then(|| Range::new(begin, end))
+    }
 }
 
 impl From<&ruby_prism::Location<'_>> for Range {
@@ -40,28 +129,56 @@ pub struct Diagnostic {
     pub range: Range,
 }
 
+/// A `Parser::Source::Comment`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Comment<'src> {
+    pub range: Range,
+    pub text: &'src str,
+}
+
+impl Comment<'_> {
+    /// `Comment#document?` (`=begin`/`=end`).
+    pub fn is_document(&self) -> bool {
+        self.text.starts_with("=begin")
+    }
+}
+
+/// `source.gsub("\r\n", "\n")`, as `Parser::Source::Buffer` does.
+pub fn normalize_newlines(source: &str) -> Cow<'_, str> {
+    if source.contains("\r\n") {
+        Cow::Owned(source.replace("\r\n", "\n"))
+    } else {
+        Cow::Borrowed(source)
+    }
+}
+
 pub struct ProcessedSource<'src> {
     path: PathBuf,
     raw_source: &'src str,
+    source: &'src str,
     parse_result: ParseResult<'src>,
     line_starts: Vec<usize>,
     diagnostics: Vec<Diagnostic>,
     lines: Vec<&'src str>,
     ruby_version: f64,
     ast: Ast,
+    comments: Vec<Comment<'src>>,
+    tokens: OnceCell<Vec<Token>>,
 }
 
 impl<'src> ProcessedSource<'src> {
-    pub fn new(raw_source: &'src str, ruby_version: f64, path: &Path) -> Self {
+    /// `raw_source` is the file as read; `source` the same with `\r\n`
+    /// normalized (see [`normalize_newlines`]).
+    pub fn new(raw_source: &'src str, source: &'src str, ruby_version: f64, path: &Path) -> Self {
         let version = (
             ruby_version.trunc() as u8,
             ((ruby_version * 10.0).round() as u8) % 10,
         );
         let parse_result = ruby_prism::parse_with_options(
-            raw_source.as_bytes(),
+            source.as_bytes(),
             &ruby_prism::ParseOptions {
                 version: Some(version),
-                lex: false,
+                lex: true,
                 marker: std::marker::PhantomData,
             },
         );
@@ -74,23 +191,31 @@ impl<'src> ProcessedSource<'src> {
             .collect();
 
         let mut line_starts = vec![0];
-        line_starts.extend(raw_source.match_indices('\n').map(|(i, _)| i + 1));
+        line_starts.extend(source.match_indices('\n').map(|(i, _)| i + 1));
 
         // `ProcessedSource#lines` stops at `__END__`.
         let end_line = parse_result
             .data_loc()
             .map(|loc| line_index(&line_starts, loc.start_offset()));
-        let mut lines: Vec<&str> = raw_source
-            .split('\n')
-            .map(|l| l.strip_suffix('\r').unwrap_or(l))
-            .collect();
+        let mut lines: Vec<&str> = source.split('\n').collect();
         if let Some(end_line) = end_line {
             lines.truncate(end_line);
         }
 
+        let comments = parse_result
+            .comments()
+            .map(|c| {
+                let range = Range::from(&c.location());
+                Comment {
+                    range,
+                    text: &source[range.begin_pos..range.end_pos],
+                }
+            })
+            .collect();
+
         let ast = if diagnostics.is_empty() {
             let file_name = path.to_string_lossy();
-            Ast::from_prism(&parse_result, raw_source, &file_name)
+            Ast::from_prism(&parse_result, source, &file_name)
         } else {
             Ast::default()
         };
@@ -99,11 +224,14 @@ impl<'src> ProcessedSource<'src> {
             ast,
             path: path.to_path_buf(),
             raw_source,
+            source,
             parse_result,
             line_starts,
             diagnostics,
             lines,
             ruby_version,
+            comments,
+            tokens: OnceCell::new(),
         }
     }
 
@@ -111,8 +239,14 @@ impl<'src> ProcessedSource<'src> {
         &self.path
     }
 
+    /// The source as read, before newline normalization.
     pub fn raw_source(&self) -> &'src str {
         self.raw_source
+    }
+
+    /// `buffer.source`: what every position refers to.
+    pub fn buffer_source(&self) -> &'src str {
+        self.source
     }
 
     pub fn ruby_version(&self) -> f64 {
@@ -144,6 +278,20 @@ impl<'src> ProcessedSource<'src> {
         &self.diagnostics
     }
 
+    pub fn comments(&self) -> &[Comment<'src>] {
+        &self.comments
+    }
+
+    /// `processed_source.tokens`, in the `parser` gem's format.
+    pub fn tokens(&self) -> &[Token] {
+        self.tokens.get_or_init(|| {
+            if !self.valid_syntax() {
+                return Vec::new();
+            }
+            Lexer::new(self.source, self.parse_result.tokens()).tokens()
+        })
+    }
+
     /// Source lines without their terminators, as in RuboCop.
     pub fn lines(&self) -> &[&'src str] {
         &self.lines
@@ -158,6 +306,11 @@ impl<'src> ProcessedSource<'src> {
         )
     }
 
+    /// The byte offset where a 1-based line starts.
+    pub fn line_start(&self, line: usize) -> usize {
+        self.line_starts[(line - 1).min(self.line_starts.len() - 1)]
+    }
+
     /// 1-based line number for a byte offset.
     pub fn line_of(&self, pos: usize) -> usize {
         line_index(&self.line_starts, pos) + 1
@@ -166,19 +319,18 @@ impl<'src> ProcessedSource<'src> {
     /// 0-based column in characters for a byte offset.
     pub fn column_of(&self, pos: usize) -> usize {
         let start = self.line_starts[line_index(&self.line_starts, pos)];
-        self.raw_source[start..pos].chars().count()
+        self.source[start..pos].chars().count()
     }
 
     /// Full text of the 1-based line (without terminator).
     pub fn source_line(&self, line: usize) -> &'src str {
         let start = self.line_starts[line - 1];
-        let rest = &self.raw_source[start..];
-        let line = rest.split('\n').next().unwrap_or("");
-        line.strip_suffix('\r').unwrap_or(line)
+        let rest = &self.source[start..];
+        rest.split('\n').next().unwrap_or("")
     }
 
     pub fn slice(&self, range: Range) -> &'src str {
-        &self.raw_source[range.begin_pos..range.end_pos]
+        &self.source[range.begin_pos..range.end_pos]
     }
 }
 

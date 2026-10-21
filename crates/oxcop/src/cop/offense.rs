@@ -7,6 +7,7 @@ use crate::processed_source::{ProcessedSource, Range};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
+    Disabled,
     Unsupported,
     Uncorrected,
     Corrected,
@@ -112,7 +113,11 @@ impl Offense {
     }
 
     pub fn correctable(&self) -> bool {
-        self.status != Status::Unsupported
+        !matches!(self.status, Status::Unsupported | Status::Disabled)
+    }
+
+    pub fn disabled(&self) -> bool {
+        self.status == Status::Disabled
     }
 
     pub fn corrected(&self) -> bool {

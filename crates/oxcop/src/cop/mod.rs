@@ -2,6 +2,7 @@
 //! mirroring `lib/rubocop/cop/<department>/`.
 
 pub mod base;
+pub mod commissioner;
 pub mod corrector;
 pub mod layout;
 pub mod lint;

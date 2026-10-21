@@ -70,7 +70,7 @@ fn process_line_in_heredoc(
     heredoc: &Heredoc,
 ) {
     let indent_level = indent_level(processed_source.slice(heredoc.body));
-    let whitespace_only = whitespace_only(processed_source.raw_source(), range);
+    let whitespace_only = whitespace_only(processed_source.buffer_source(), range);
     if whitespace_only && processed_source.slice(range).chars().count() <= indent_level {
         corrector.remove(range);
     } else if !heredoc.static_ {
