@@ -937,3 +937,249 @@ mod tests {
         assert_eq!(q.flush(0), "ab # c\nc");
     }
 }
+
+/// How the flat half of an `if_break` (or an `if_flat`) is being built.
+#[derive(Debug, Clone, Copy)]
+pub enum FlatMode {
+    /// Into the IfBreak's flat contents (`IfBreakBuilder`).
+    Contents(Target),
+    /// Into a throwaway group whose breaks propagate (`IfFlatIgnore`).
+    Ignore { group: DocId, previous: Target },
+}
+
+impl PrettierPrint {
+    pub fn target(&self) -> Target {
+        self.target
+    }
+
+    pub fn restore(&mut self, previous: Target) {
+        self.target = previous;
+    }
+
+    pub fn open_group(&mut self) -> (DocId, Target) {
+        let doc = self.push(Doc::Group {
+            contents: Vec::new(),
+            brk: false,
+        });
+        self.groups.push(doc);
+        let previous = self.target;
+        self.target = Target {
+            doc,
+            slot: Slot::Contents,
+        };
+        (doc, previous)
+    }
+
+    pub fn close_group(&mut self, previous: Target) {
+        self.groups.pop();
+        self.target = previous;
+    }
+
+    pub fn open_indent(&mut self) -> Target {
+        let doc = self.push(Doc::Indent {
+            contents: Vec::new(),
+        });
+        let previous = self.target;
+        self.target = Target {
+            doc,
+            slot: Slot::Contents,
+        };
+        previous
+    }
+
+    pub fn open_align(&mut self, indent: i64) -> (DocId, Target) {
+        let doc = self.push(Doc::Align {
+            indent,
+            contents: Vec::new(),
+        });
+        let previous = self.target;
+        self.target = Target {
+            doc,
+            slot: Slot::Contents,
+        };
+        (doc, previous)
+    }
+
+    pub fn open_line_suffix(&mut self, priority: i64) -> Target {
+        let doc = self.push(Doc::LineSuffix {
+            priority,
+            contents: Vec::new(),
+        });
+        let previous = self.target;
+        self.target = Target {
+            doc,
+            slot: Slot::Contents,
+        };
+        previous
+    }
+
+    /// Pushes an IfBreak and targets its break contents.
+    pub fn open_if_break(&mut self) -> (DocId, Target) {
+        let doc = self.push(Doc::IfBreak {
+            break_contents: Vec::new(),
+            flat_contents: Vec::new(),
+        });
+        let previous = self.target;
+        self.target = Target {
+            doc,
+            slot: Slot::Break,
+        };
+        (doc, previous)
+    }
+
+    /// After the break contents of `doc` were built (and the target restored),
+    /// starts building its flat contents.
+    pub fn begin_flat_of(&mut self, doc: DocId) -> FlatMode {
+        let previous = self.target;
+        if self.current_group_broken() {
+            let group = self.alloc(Doc::Group {
+                contents: Vec::new(),
+                brk: false,
+            });
+            self.target = Target {
+                doc: group,
+                slot: Slot::Contents,
+            };
+            FlatMode::Ignore { group, previous }
+        } else {
+            self.target = Target {
+                doc,
+                slot: Slot::Flat,
+            };
+            FlatMode::Contents(previous)
+        }
+    }
+
+    /// `if_flat` without a preceding `if_break`.
+    pub fn begin_if_flat(&mut self) -> FlatMode {
+        if self.current_group_broken() {
+            let previous = self.target;
+            let group = self.alloc(Doc::Group {
+                contents: Vec::new(),
+                brk: false,
+            });
+            self.target = Target {
+                doc: group,
+                slot: Slot::Contents,
+            };
+            FlatMode::Ignore { group, previous }
+        } else {
+            let doc = self.push(Doc::IfBreak {
+                break_contents: Vec::new(),
+                flat_contents: Vec::new(),
+            });
+            let previous = self.target;
+            self.target = Target {
+                doc,
+                slot: Slot::Flat,
+            };
+            FlatMode::Contents(previous)
+        }
+    }
+
+    pub fn end_flat(&mut self, mode: FlatMode) {
+        match mode {
+            FlatMode::Contents(previous) => self.target = previous,
+            FlatMode::Ignore { group, previous } => {
+                self.target = previous;
+                if self.group_is_broken(group) {
+                    self.break_parent();
+                }
+            }
+        }
+    }
+}
+
+/// The node-builder half of `PrettierPrint`, with the block-taking methods
+/// expressed as closures over the implementor so that formatters can call
+/// back into themselves while building.
+pub trait DocBuilder: Sized {
+    fn pp(&mut self) -> &mut PrettierPrint;
+
+    fn group<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> DocId {
+        let (doc, previous) = self.pp().open_group();
+        f(self);
+        self.pp().close_group(previous);
+        doc
+    }
+
+    fn indent(&mut self, f: impl FnOnce(&mut Self)) {
+        let previous = self.pp().open_indent();
+        f(self);
+        self.pp().restore(previous);
+    }
+
+    fn nest(&mut self, indent: i64, f: impl FnOnce(&mut Self)) -> DocId {
+        let (doc, previous) = self.pp().open_align(indent);
+        f(self);
+        self.pp().restore(previous);
+        doc
+    }
+
+    fn line_suffix(&mut self, priority: i64, f: impl FnOnce(&mut Self)) {
+        let previous = self.pp().open_line_suffix(priority);
+        f(self);
+        self.pp().restore(previous);
+    }
+
+    fn if_break(&mut self, break_fn: impl FnOnce(&mut Self), flat_fn: impl FnOnce(&mut Self)) {
+        let (doc, previous) = self.pp().open_if_break();
+        break_fn(self);
+        self.pp().restore(previous);
+        let mode = self.pp().begin_flat_of(doc);
+        flat_fn(self);
+        self.pp().end_flat(mode);
+    }
+
+    fn if_break_only(&mut self, break_fn: impl FnOnce(&mut Self)) {
+        let (_, previous) = self.pp().open_if_break();
+        break_fn(self);
+        self.pp().restore(previous);
+    }
+
+    fn if_flat(&mut self, f: impl FnOnce(&mut Self)) {
+        let mode = self.pp().begin_if_flat();
+        f(self);
+        self.pp().end_flat(mode);
+    }
+
+    fn text(&mut self, text: &'static str) {
+        self.pp().text(text);
+    }
+
+    fn text_owned(&mut self, text: String) {
+        self.pp().text_owned(text);
+    }
+
+    fn breakable_space(&mut self) {
+        self.pp().breakable_space();
+    }
+
+    fn breakable_empty(&mut self) {
+        self.pp().breakable_empty();
+    }
+
+    fn breakable_force(&mut self) {
+        self.pp().breakable_force();
+    }
+
+    fn breakable_return(&mut self) {
+        self.pp().breakable_return();
+    }
+
+    fn breakable(&mut self, separator: &'static str, indent: bool, force: Force) {
+        self.pp().breakable(separator, indent, force);
+    }
+
+    fn comma_breakable(&mut self) {
+        self.pp().comma_breakable();
+    }
+
+    fn break_parent(&mut self) {
+        self.pp().break_parent();
+    }
+
+    fn trim(&mut self) {
+        self.pp().trim();
+    }
+}

@@ -439,6 +439,24 @@ impl<'s> Builder<'s> {
         }
     }
 
+    /// The end of the next token after `position`, skipping whitespace,
+    /// newlines and comments.
+    fn next_token_end(&self, position: usize) -> usize {
+        let mut i = position;
+        while i < self.bytes.len() {
+            match self.bytes[i] {
+                b' ' | b'\t' | b'\n' | b'\r' => i += 1,
+                b'#' => {
+                    while i < self.bytes.len() && self.bytes[i] != b'\n' {
+                        i += 1;
+                    }
+                }
+                _ => break,
+            }
+        }
+        self.after_next_token(i)
+    }
+
     /// `Location.fixed` at Ripper's lexer position just after the token that
     /// follows `position` (newlines count as tokens), on that token's line.
     fn lookahead_loc(&self, position: usize) -> Location {
@@ -3350,7 +3368,19 @@ impl<'s> Builder<'s> {
         let else_parts = node.else_clause().map(|e| {
             let keyword = span(&e.else_keyword_loc());
             let clause = match e.statements() {
-                None => self.statements(vec![], keyword.end),
+                // Never bound, so it keeps Ripper's lexer position: the end of
+                // the token after the else keyword.
+                None => {
+                    let at = self.next_token_end(keyword.end);
+                    let statements = self.statements(vec![], at);
+                    let loc = self.fixed_loc(at);
+                    if let Kind::Statements { body } = self.kind(statements) {
+                        let void = body[0];
+                        self.set_loc(void, loc);
+                    }
+                    self.set_loc(statements, loc);
+                    statements
+                }
                 Some(stmts) => self.statements_with_void(&stmts, keyword, false),
             };
             let kw = self.kw(keyword);
