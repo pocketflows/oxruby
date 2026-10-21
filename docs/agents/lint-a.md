@@ -5,7 +5,7 @@ EnsureReturn, Syntax (done before) and MissingCopEnableDirective (`runtime`).
 
 ## Done (whole upstream spec passes; example counts)
 
-AmbiguousBlockAssociation 52, BigDecimalNew 3,
+AmbiguousBlockAssociation 52, ArrayLiteralInRegexp 32, BigDecimalNew 3,
 BinaryOperatorWithIdenticalOperands 23, BooleanSymbol 10,
 CircularArgumentReference 13, ConstantDefinitionInBlock 27,
 ConstantOverwrittenInRescue 8, DataDefineOverride 8, Debugger 97,
@@ -16,6 +16,7 @@ DuplicateCaseCondition 9, DuplicateElsifCondition 5,
 DuplicateMatchPattern 19, DuplicateRequire 10, DuplicateRescueException 6,
 DuplicateSetElement 36, EachWithObjectArgument 7, EmptyBlock 17,
 EmptyClass 9, EmptyConditionalBody 42, EmptyEnsure 2, EmptyExpression 12,
+EmptyInterpolation 12,
 EmptyFile 4 (2 drive the Commissioner directly and never reach oxcop, like
 Lint/Syntax), EmptyInPattern 13, EmptyWhen 16, ErbNewArguments 10,
 FlipFlop 2, FloatComparison 18, FloatOutOfRange 5,
@@ -25,7 +26,8 @@ ImplicitStringConcatenation 12, IncompatibleIoSelectWithFiberScheduler 20,
 IneffectiveAccessModifier 8, InheritException 18 (5 pending: they need the
 `rubydex` project index), InterpolationCheck 17,
 ItWithoutArgumentsInBlock 19, LambdaWithoutLiteralBlock 7,
-LiteralAsCondition 261, LiteralAssignmentInCondition 35, Loop 4,
+LiteralAsCondition 261, LiteralAssignmentInCondition 35,
+LiteralInInterpolation 396, Loop 4,
 MissingSuper 31 (9 pending: project index), MultipleComparison 20, NestedMethodDefinition 38,
 NextWithoutAccumulator 18, NoReturnInBeginEndBlocks 72,
 NonAtomicFileOperation 43, NonDeterministicRequireOrder 14, NonLocalExitFromIterator 15,
@@ -60,12 +62,12 @@ PercentSymbolArray) and `cop/utils/format_string.rs`
 
 ## Left
 
-ArgumentMismatch, ArrayLiteralInRegexp, AmbiguousAssignment,
+ArgumentMismatch, AmbiguousAssignment,
 AmbiguousOperator, AmbiguousRegexpLiteral, ConstantReassignment,
 ConstantResolution, CopDirectiveSyntax, DeprecatedReference,
 DuplicateMagicComment, DuplicateMethods,
-DuplicateRegexpCharacterClassElement, EmptyInterpolation, ElseLayout,
-FormatParameterMismatch, LiteralInInterpolation, MisplacedMagicComment,
+DuplicateRegexpCharacterClassElement, ElseLayout,
+FormatParameterMismatch, MisplacedMagicComment,
 MixedCaseRange, MixedRegexpCaptureTypes, NameTypo, NestedPercentLiteral,
 OrderedMagicComments, OutOfRangeRegexpRef, PercentStringArray,
 PercentSymbolArray.
@@ -86,8 +88,6 @@ PercentSymbolArray.
   the config's) for "Unknown cop name", plus NameSimilarity (lint-b).
 - ElseLayout needs the `alignment` mixin (claimed by another agent).
 - `check_assignment` (claimed by layout-a): AmbiguousAssignment.
-- `interpolation` (claimed by style-a): EmptyInterpolation,
-  ArrayLiteralInRegexp, LiteralInInterpolation.
 
 ## Mixins owned
 
