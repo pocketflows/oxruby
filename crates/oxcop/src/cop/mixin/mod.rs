@@ -64,6 +64,7 @@ pub mod space_before_punctuation;
 pub mod statement_modifier;
 pub mod string_help;
 pub mod string_literals_help;
+pub mod surrounding_space;
 pub mod symbol_help;
 pub mod trailing_body;
 pub mod trailing_comma;

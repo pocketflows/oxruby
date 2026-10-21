@@ -13,5 +13,6 @@ pub mod parentheses_corrector;
 pub mod percent_literal_corrector;
 pub mod punctuation_corrector;
 pub mod require_library_corrector;
+pub mod space_corrector;
 pub mod string_literal_corrector;
 pub mod unused_arg_corrector;
