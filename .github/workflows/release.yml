@@ -1,0 +1,60 @@
+# Builds one native gem per platform plus the plain `ruby` gem and pushes
+# them to RubyGems when a v* tag is pushed. Not exercised yet: run it on a
+# test tag before the first real release.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: arm64-darwin, target: aarch64-apple-darwin, os: macos-latest }
+          - { platform: x86_64-darwin, target: x86_64-apple-darwin, os: macos-latest }
+          - { platform: x86_64-linux-gnu, target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - { platform: aarch64-linux-gnu, target: aarch64-unknown-linux-gnu, os: ubuntu-24.04-arm }
+          - { platform: x86_64-linux-musl, target: x86_64-unknown-linux-musl, os: ubuntu-latest, musl: true }
+          - { platform: aarch64-linux-musl, target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm, musl: true }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - if: matrix.musl
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --release --target ${{ matrix.target }}
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+      - run: rake "gem:native[${{ matrix.platform }}]"
+        env:
+          BINARY: target/${{ matrix.target }}/release/oxcop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gem-${{ matrix.platform }}
+          path: pkg/*.gem
+
+  publish:
+    needs: native
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # RubyGems trusted publishing
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+      - run: rake gem:ruby
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gem-*
+          path: pkg
+          merge-multiple: true
+      - uses: rubygems/configure-rubygems-credentials@v1.0.0
+      - run: for gem in pkg/*.gem; do gem push "$gem"; done

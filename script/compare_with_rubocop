@@ -1,0 +1,60 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Differential test: runs real RuboCop (from the target project's bundle) and
+# oxcop over the same project, restricted to the cops oxcop has ported, and
+# diffs their JSON reports.
+#
+#   script/compare_with_rubocop [PROJECT_DIR] [-- extra args for both tools]
+#
+# PROJECT_DIR defaults to ../code, the sibling checkout used as our corpus.
+
+require "json"
+require "open3"
+require "bundler"
+
+root = File.expand_path("..", __dir__)
+args = ARGV.dup
+extra = (i = args.index("--")) ? args.slice!(i..)[1..] : []
+project = File.expand_path(args.first || File.join(root, "..", "code"))
+oxcop = ENV.fetch("OXCOP_BINARY") { File.join(root, "target", "release", "oxcop") }
+abort "oxcop binary not found at #{oxcop}; run `cargo build --release`" unless File.executable?(oxcop)
+
+ported, status = Open3.capture2(oxcop, "--show-ported-cops")
+abort "could not list ported cops" unless status.success?
+only = ["--only", ported.lines(chomp: true).join(","), "--format", "json", "--cache", "false", *extra]
+
+def report(label, command, dir)
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  # Undo the version manager's per-process pins (rbenv puts the running
+  # Ruby's bin directory first on PATH) so the project's .ruby-version applies.
+  path = ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).grep_v(%r{/\.rbenv/versions/[^/]+/bin\z})
+  env = { "PATH" => path.join(File::PATH_SEPARATOR), "RBENV_VERSION" => nil, "RBENV_DIR" => nil,
+          "GEM_HOME" => nil, "GEM_PATH" => nil }
+  stdout, stderr, status = Open3.capture3(env, *command, chdir: dir)
+  elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+  if status.exitstatus > 1 || stdout.empty?
+    abort "#{label} failed (exit #{status.exitstatus}):\n#{stderr}"
+  end
+  warn format("%-8s %6.2fs", label, elapsed)
+  json = JSON.parse(stdout)
+  json["files"].to_h { |file| [file["path"], file["offenses"].map { |o| o.except("corrected") }] }
+end
+
+expected = Bundler.with_unbundled_env { report("rubocop", ["bundle", "exec", "rubocop", *only], project) }
+actual = Bundler.with_unbundled_env { report("oxcop", [oxcop, *only], project) }
+
+only_rubocop = expected.keys - actual.keys
+only_oxcop = actual.keys - expected.keys
+mismatched = (expected.keys & actual.keys).reject { |path| expected[path] == actual[path] }
+
+puts "files: rubocop=#{expected.size} oxcop=#{actual.size}"
+puts "inspected only by rubocop (#{only_rubocop.size}):", only_rubocop.first(20).map { "  #{_1}" } if only_rubocop.any?
+puts "inspected only by oxcop (#{only_oxcop.size}):", only_oxcop.first(20).map { "  #{_1}" } if only_oxcop.any?
+mismatched.first(20).each do |path|
+  puts "offenses differ in #{path}:"
+  puts "  rubocop: #{JSON.generate(expected[path])}"
+  puts "  oxcop:   #{JSON.generate(actual[path])}"
+end
+puts "mismatched files: #{mismatched.size}"
+exit(only_rubocop.empty? && only_oxcop.empty? && mismatched.empty? ? 0 : 1)

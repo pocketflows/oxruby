@@ -1,0 +1,11 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../lib/oxcop"
+
+begin
+  Oxcop.exec(ARGV)
+rescue Oxcop::ExecutableNotFound => e
+  warn("ERROR: #{e.message}")
+  exit 2
+end
