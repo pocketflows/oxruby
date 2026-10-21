@@ -55,6 +55,14 @@ pub fn parse(source: &str) -> Result<Ast, ParseError> {
         builder.end_content(data.start_offset(), data.end_offset());
     }
     let program = result.node();
+    let mut collector = TokenCollector::default();
+    pm::Visit::visit(&mut collector, &program);
+    collector.then.sort_unstable();
+    collector.then.dedup();
+    collector.pow.sort_unstable();
+    collector.pow.dedup();
+    builder.then_tokens = collector.then.into_iter().map(|p| (p, false)).collect();
+    builder.pow_tokens = collector.pow.into_iter().map(|p| (p, false)).collect();
     let root = builder.program(&program);
     Ok(Ast {
         nodes: builder.nodes,
@@ -142,6 +150,11 @@ struct Builder<'s> {
     /// isn't the line of the closing token (class and module bodies, where
     /// the newline after the name is a terminator).
     next_void_line: Option<usize>,
+    /// Every `then` keyword in the source, and whether a parser event has
+    /// consumed it yet (Ripper's token list).
+    then_tokens: Vec<(usize, bool)>,
+    /// Every `**` operator token, and whether it has been consumed.
+    pow_tokens: Vec<(usize, bool)>,
 }
 
 impl<'s> Builder<'s> {
@@ -161,6 +174,8 @@ impl<'s> Builder<'s> {
             comments: Vec::new(),
             end_content: None,
             next_void_line: None,
+            then_tokens: Vec::new(),
+            pow_tokens: Vec::new(),
         }
     }
 
@@ -455,6 +470,36 @@ impl<'s> Builder<'s> {
             }
         }
         self.after_next_token(i)
+    }
+
+    /// `find_keyword_between(:then, ...)`, deleting the token.
+    fn consume_then_between(&mut self, lo: usize, hi: usize) -> Option<Span> {
+        let index = self
+            .then_tokens
+            .iter()
+            .rposition(|&(pos, used)| !used && pos >= lo && pos < hi)?;
+        self.then_tokens[index].1 = true;
+        let pos = self.then_tokens[index].0;
+        Some(Span {
+            start: pos,
+            end: pos + 4,
+        })
+    }
+
+    /// `consume_operator(:**)` / `find_operator(:**)` + delete: the last
+    /// unconsumed `**` lexed before `hi`.
+    fn consume_pow_before(&mut self, hi: usize) -> Option<usize> {
+        let index = self
+            .pow_tokens
+            .iter()
+            .rposition(|&(pos, used)| !used && pos < hi)?;
+        self.pow_tokens[index].1 = true;
+        Some(self.pow_tokens[index].0)
+    }
+
+    /// `find_keyword(:then)`: the last `then` lexed so far.
+    fn consume_then_before(&mut self, hi: usize) -> Option<Span> {
+        self.consume_then_between(0, hi)
     }
 
     /// `Location.fixed` at Ripper's lexer position just after the token that
@@ -863,6 +908,7 @@ impl<'s> Builder<'s> {
             pm::Node::AssocSplatNode { .. } => {
                 let n = node.as_assoc_splat_node().unwrap();
                 let value = n.value().map(|v| self.visit(&v));
+                self.consume_pow_before(node_span(node).end);
                 let operator = self.op(span(&n.operator_loc()));
                 let loc = self.to(operator, value.unwrap_or(operator));
                 self.add(Kind::AssocSplat { value }, loc)
@@ -1414,6 +1460,7 @@ impl<'s> Builder<'s> {
                 );
                 self.add(Kind::BEGINBlock { lbrace, statements }, loc)
             }
+            pm::Node::RequiredParameterNode { .. } => self.ident(node_span(node)),
             pm::Node::RedoNode { .. } => {
                 let loc = self.token_loc(node_span(node));
                 self.add(Kind::Redo, loc)
@@ -1735,6 +1782,15 @@ impl<'s> Builder<'s> {
         for element in elements {
             match element {
                 pm::Node::BlockArgumentNode { .. } => {
+                    // on_args_add_block gives up when a token it scans sits
+                    // before the end of the arguments so far, which happens
+                    // when a heredoc extends them: syntax_tree drops `&blk`.
+                    if let Some(l) = location
+                        && !parts.is_empty()
+                        && l.end_char > node_span(element).end
+                    {
+                        continue;
+                    }
                     let arg = self.arg_block(&element.as_block_argument_node().unwrap());
                     let arg_loc = self.loc(arg);
                     location = Some(match location {
@@ -1932,6 +1988,17 @@ impl<'s> Builder<'s> {
                     let receiver = self.visit(&n.receiver().unwrap());
                     let value =
                         self.visit(&n.arguments().unwrap().arguments().iter().next().unwrap());
+                    // on_binary deletes the operator token only if it starts
+                    // after `left.end_char + 1`.
+                    if name == "**" {
+                        let pos = span(&n.message_loc().unwrap()).start;
+                        if pos > self.loc(receiver).end_char && pos < self.loc(value).start_char {
+                            if let Some(entry) = self.pow_tokens.iter_mut().find(|(p, _)| *p == pos)
+                            {
+                                entry.1 = true;
+                            }
+                        }
+                    }
                     return self.binary(receiver, name, value);
                 }
                 _ => {}
@@ -3171,6 +3238,11 @@ impl<'s> Builder<'s> {
         let keyword_rest = match params.keyword_rest() {
             None => NilOr::None,
             Some(kr) => {
+                if kr.as_no_keywords_parameter_node().is_some()
+                    || kr.as_keyword_rest_parameter_node().is_some()
+                {
+                    self.consume_pow_before(node_span(&kr).end);
+                }
                 if let Some(nokw) = kr.as_no_keywords_parameter_node() {
                     let op = self.token_loc(span(&nokw.operator_loc()));
                     let kw = self.token_loc(span(&nokw.keyword_loc()));
@@ -3937,10 +4009,17 @@ impl<'s> Builder<'s> {
             Some(c) => self.loc(c),
             None => self.token_loc(end_span.unwrap()),
         };
-        let then_keyword = n
-            .then_keyword_loc()
-            .map(|t| span(&t))
-            .filter(|t| self.slice(*t) == "then");
+        let then_limit = if elsif {
+            let stmts = self.loc(statements).start_char;
+            if stmts > self.loc(predicate).end_char {
+                stmts
+            } else {
+                ending.start_char
+            }
+        } else {
+            ending.start_char
+        };
+        let then_keyword = self.consume_then_between(self.loc(predicate).end_char, then_limit);
         let after = match then_keyword {
             Some(t) => t.end,
             None if elsif => {
@@ -4046,10 +4125,8 @@ impl<'s> Builder<'s> {
             Some(c) => self.loc(c),
             None => self.token_loc(end_span.unwrap()),
         };
-        let after = n
-            .then_keyword_loc()
-            .map(|t| span(&t))
-            .filter(|t| self.slice(*t) == "then")
+        let after = self
+            .consume_then_between(self.loc(predicate).end_char, ending.start_char)
             .map_or(self.loc(predicate).end_char, |t| t.end);
         let start_char = self.find_next_statement_start(after);
         self.bind(statements, start_char, ending.start_char);
@@ -4211,8 +4288,9 @@ impl<'s> Builder<'s> {
         let value = n.predicate().map(|p| self.visit(&p));
         let end_span = span(&n.end_keyword_loc());
         let conditions: Vec<pm::Node> = n.conditions().iter().collect();
-        let mut current = n.else_clause().map(|e| self.else_node(&e, Some(end_span)));
-        for condition in conditions.iter().rev() {
+        // Ripper parses the clauses in order but reduces them last to first.
+        let mut clauses = Vec::new();
+        for condition in &conditions {
             let w = condition.as_when_node().unwrap();
             let elements: Vec<pm::Node> = w.conditions().iter().collect();
             let arguments = self.arguments_list(&elements, span(&w.keyword_loc()).end);
@@ -4223,15 +4301,20 @@ impl<'s> Builder<'s> {
                     self.statements(body, self.loc(arguments).end_char)
                 }
             };
-            let beginning = self.token_loc(span(&w.keyword_loc()));
+            clauses.push((span(&w.keyword_loc()), arguments, statements));
+        }
+        let mut current = n.else_clause().map(|e| self.else_node(&e, Some(end_span)));
+        for (keyword, arguments, statements) in clauses.into_iter().rev() {
+            let beginning = self.token_loc(keyword);
             let ending = match current {
                 Some(c) => self.loc(c),
                 None => self.token_loc(end_span),
             };
-            let then = w.then_keyword_loc().map(|t| span(&t));
-            let after = match then {
-                Some(t) if self.slice(t) == "then" => t.end,
-                _ => self.loc(arguments).end_char,
+            // on_when takes the last unconsumed `then` anywhere before it,
+            // which can belong to an earlier clause.
+            let after = match self.consume_then_before(ending.start_char) {
+                Some(t) => t.end,
+                None => self.loc(arguments).end_char,
             };
             let start_char = self.find_next_statement_start(after);
             self.bind(statements, start_char, ending.start_char);
@@ -4263,8 +4346,10 @@ impl<'s> Builder<'s> {
         let value = n.predicate().map(|p| self.visit(&p));
         let end_span = span(&n.end_keyword_loc());
         let conditions: Vec<pm::Node> = n.conditions().iter().collect();
-        let mut current = n.else_clause().map(|e| self.else_node(&e, Some(end_span)));
-        for condition in conditions.iter().rev() {
+        // Patterns and bodies are parsed in order; the clauses reduce last
+        // to first.
+        let mut clauses = Vec::new();
+        for condition in &conditions {
             let i = condition.as_in_node().unwrap();
             let pattern = self.visit_pattern(&i.pattern());
             let statements = match i.statements() {
@@ -4274,15 +4359,22 @@ impl<'s> Builder<'s> {
                     self.statements(body, self.loc(pattern).end_char)
                 }
             };
-            let beginning = self.token_loc(span(&i.in_loc()));
+            clauses.push((span(&i.in_loc()), pattern, statements));
+        }
+        let mut current = n.else_clause().map(|e| self.else_node(&e, Some(end_span)));
+        for (in_loc, pattern, statements) in clauses.into_iter().rev() {
+            let beginning = self.token_loc(in_loc);
             let ending = match current {
                 Some(c) => self.loc(c),
                 None => self.token_loc(end_span),
             };
-            let then = i
-                .then_loc()
-                .map(|t| span(&t))
-                .filter(|t| self.slice(*t) == "then");
+            let stmts_start = self.loc(statements).start_char;
+            let limit = if stmts_start > self.loc(pattern).end_char {
+                stmts_start
+            } else {
+                ending.start_char
+            };
+            let then = self.consume_then_between(self.loc(pattern).end_char, limit);
             let after = match then {
                 Some(t) => t.end,
                 None => self.loc(pattern).end_char,
@@ -4320,6 +4412,47 @@ impl<'s> Builder<'s> {
     // ------------------------------------------------------------------
 
     fn visit_pattern(&mut self, node: &pm::Node<'_>) -> NodeId {
+        // `in pattern if guard`: Ripper's if_mod around the pattern.
+        let guard = match node {
+            pm::Node::IfNode { .. } => {
+                let n = node.as_if_node().unwrap();
+                Some((n.predicate(), n.statements(), true))
+            }
+            pm::Node::UnlessNode { .. } => {
+                let n = node.as_unless_node().unwrap();
+                Some((n.predicate(), n.statements(), false))
+            }
+            _ => None,
+        };
+        if let Some((predicate, Some(statements), is_if)) = guard
+            && node_span(&predicate).start > span(&statements.location()).start
+        {
+            let first = statements.body().iter().next().unwrap();
+            let statement = self.visit_pattern(&first);
+            let predicate = self.visit(&predicate);
+            let stmt_loc = self.loc(statement);
+            let statements = self.add(
+                Kind::Statements {
+                    body: vec![statement],
+                },
+                stmt_loc,
+            );
+            let loc = self.to(statement, predicate);
+            let kind = if is_if {
+                Kind::IfNode {
+                    predicate,
+                    statements,
+                    consequent: None,
+                }
+            } else {
+                Kind::UnlessNode {
+                    predicate,
+                    statements,
+                    consequent: None,
+                }
+            };
+            return self.add(kind, loc);
+        }
         if let Some(paren) = node.as_parentheses_node()
             && let Some(body) = paren.body()
         {
@@ -4459,7 +4592,9 @@ impl<'s> Builder<'s> {
             }
             keywords.push((key, value));
         }
-        let keyword_rest = n.rest().map(|rest| {
+        let pattern_end = node_span(node).end;
+        let mut keyword_rest = n.rest().map(|rest| {
+            self.consume_pow_before(pattern_end);
             if let Some(splat) = rest.as_assoc_splat_node() {
                 let star = self.token_loc(span(&splat.operator_loc()));
                 match splat.value() {
@@ -4477,6 +4612,18 @@ impl<'s> Builder<'s> {
                 )
             }
         });
+        if keyword_rest.is_none()
+            && let Some(pos) = self.consume_pow_before(pattern_end)
+        {
+            // on_hshptn grabs any `**` operator token still in the list
+            // (e.g. from `a**b`, which on_binary doesn't consume) and
+            // invents a bare `**` rest.
+            let loc = self.token_loc(Span {
+                start: pos,
+                end: pos + 2,
+            });
+            keyword_rest = Some(self.add(Kind::VarField { value: NilOr::None }, loc));
+        }
         if let Some(r) = keyword_rest {
             locs.push(self.loc(r));
         }
@@ -4527,5 +4674,66 @@ fn collect_heredoc_items<'pr>(part: pm::Node<'pr>, items: &mut Vec<HeredocItem<'
         }
     } else {
         items.push(HeredocItem::Embed(part));
+    }
+}
+
+/// Collects the offsets of the tokens whose consumption by Ripper event
+/// handlers has to be simulated: `then` keywords and `**` operators.
+#[derive(Default)]
+struct TokenCollector {
+    then: Vec<usize>,
+    pow: Vec<usize>,
+}
+
+impl TokenCollector {
+    fn collect(&mut self, node: &pm::Node<'_>) {
+        let then = match node {
+            pm::Node::IfNode { .. } => node.as_if_node().unwrap().then_keyword_loc(),
+            pm::Node::UnlessNode { .. } => node.as_unless_node().unwrap().then_keyword_loc(),
+            pm::Node::WhenNode { .. } => node.as_when_node().unwrap().then_keyword_loc(),
+            pm::Node::InNode { .. } => node.as_in_node().unwrap().then_loc(),
+            pm::Node::RescueNode { .. } => node.as_rescue_node().unwrap().then_keyword_loc(),
+            _ => None,
+        };
+        if let Some(then) = then
+            && then.as_slice() == b"then"
+        {
+            self.then.push(then.start_offset());
+        }
+        let pow = match node {
+            pm::Node::CallNode { .. } => {
+                let call = node.as_call_node().unwrap();
+                if call.name().as_slice() == b"**" && call.call_operator_loc().is_none() {
+                    call.message_loc()
+                } else {
+                    None
+                }
+            }
+            pm::Node::AssocSplatNode { .. } => {
+                Some(node.as_assoc_splat_node().unwrap().operator_loc())
+            }
+            pm::Node::KeywordRestParameterNode { .. } => Some(
+                node.as_keyword_rest_parameter_node()
+                    .unwrap()
+                    .operator_loc(),
+            ),
+            pm::Node::NoKeywordsParameterNode { .. } => {
+                Some(node.as_no_keywords_parameter_node().unwrap().operator_loc())
+            }
+            _ => None,
+        };
+        if let Some(pow) = pow {
+            self.pow.push(pow.start_offset());
+        }
+    }
+}
+
+impl<'pr> pm::Visit<'pr> for TokenCollector {
+    fn visit_branch_node_enter(&mut self, node: pm::Node<'pr>) {
+        self.collect(&node);
+    }
+
+    fn visit_leaf_node_enter(&mut self, node: pm::Node<'pr>) {
+        self.collect(&node);
     }
 }
