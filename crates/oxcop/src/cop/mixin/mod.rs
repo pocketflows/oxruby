@@ -12,6 +12,7 @@ pub mod dig_help;
 pub mod duplication;
 pub mod empty_parameter;
 pub mod frozen_string_literal;
+pub mod hash_alignment_styles;
 pub mod heredoc;
 pub mod ignored_node;
 pub mod integer_node;
