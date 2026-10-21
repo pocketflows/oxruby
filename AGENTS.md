@@ -1,17 +1,20 @@
 # Agent guide for oxruby
 
-oxruby is a Rust port of RuboCop (the `oxcop` gem), with a syntax_tree
-formatter port planned. Read `README.md` for the layout and
-`docs/ROADMAP.md` for known gaps.
+oxruby is a Rust port of RuboCop (the `oxcop` gem) and of syntax_tree plus
+its ERB plugin (the `oxtree` crate and gem). Read `README.md` for the
+layout, `docs/ROADMAP.md` (oxcop) and `docs/OXTREE.md` (oxtree) for status
+and known gaps. When several agents work at once, `docs/PARALLEL.md` is the
+contract: worktrees, ownership, and landing on main with `script/land`.
 
 ## Commands
 
 ```sh
-cargo build                              # target/debug/oxcop (used by specs)
+cargo build -p oxcop                     # target/debug/oxcop (used by specs)
 cargo test                               # Rust unit tests
 bundle exec rake                         # everything CI runs
 bundle exec rspec spec/rubocop/cop/layout/trailing_whitespace_spec.rb
 bundle exec rake compare                 # diff vs real rubocop on ../code
+script/land                              # gate and land your branch on main
 ```
 
 ## Porting rules
@@ -23,8 +26,9 @@ bundle exec rake compare                 # diff vs real rubocop on ../code
   doc comment naming its source. Messages are copied verbatim.
 - Positions are byte offsets internally. Anything reported (columns, lengths)
   is in characters, as in RuboCop.
-- Register new cops in `cop/registry.rs`; that also makes their upstream
-  specs run instead of being skipped.
+- `build.rs` registers every `cop/<department>/<name>.rs` file, so a cop is
+  live (and its upstream spec runs) as soon as the file exists. Only land a
+  cop once its whole spec passes.
 - **No `unsafe` in code we write**, including patches to vendored crates.
   Every crate root starts with `#![forbid(unsafe_code)]`. Use safe std APIs
   (`str::from_utf8`, `char_indices`, checked slicing). Crates.io dependencies
@@ -37,8 +41,8 @@ bundle exec rake compare                 # diff vs real rubocop on ../code
 
 - `spec/rubocop/` and `spec/support/` are vendored from upstream: **never edit
   them**. Re-sync with `rake vendor:rubocop`. If an upstream spec can't pass
-  for a principled reason, record it in `docs/ROADMAP.md`. Don't change the
-  spec.
+  for a principled reason, record it (in your `docs/agents/<name>.md` when
+  working in parallel). Don't change the spec.
 - `spec/oxcop/` is ours: the shim that sends `expect_offense` and friends to
   the binary (`--stdin`, `-c <dumped spec config>`, `--only <cop>`).
 - A cop is "done" when its upstream spec file passes in full.

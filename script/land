@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Land the current branch on main: rebase onto main, run the gates for what
+# changed, then move main with a compare-and-swap (`git update-ref NEW OLD`).
+# If another agent landed in the meantime the swap fails and we retry, so no
+# lock is needed and main only ever fast-forwards to a gated commit.
+#
+#   script/land            # gate + land
+#   script/land --dry-run  # gate only
+#   FULL=1 script/land     # always run the full gates
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+dry_run=false
+[[ "${1:-}" == "--dry-run" ]] && dry_run=true
+
+branch=$(git symbolic-ref --short HEAD)
+if [[ "$branch" == "main" ]]; then
+  echo "land: run this from your own branch, not main" >&2
+  exit 2
+fi
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "land: commit or discard your changes first" >&2
+  exit 2
+fi
+
+gate() {
+  local changed
+  changed=$(git diff --name-only main...HEAD)
+  if [[ -z "$changed" ]]; then
+    echo "land: nothing to land"
+    return 0
+  fi
+
+  echo "land: checking that every crate root forbids unsafe"
+  for root in crates/*/src/lib.rs crates/*/src/main.rs; do
+    [[ -f "$root" ]] || continue
+    if ! grep -q '^#!\[forbid(unsafe_code)\]' "$root"; then
+      echo "land: $root lacks #![forbid(unsafe_code)]" >&2
+      return 1
+    fi
+  done
+
+  cargo fmt --all --check
+
+  local oxcop=false oxtree=false
+  grep -qvE '^(crates/oxtree/|gems/oxtree/|rakelib/oxtree|script/compare_with_stree|docs/)' <<<"$changed" && oxcop=true
+  grep -qE '^(crates/oxtree/|gems/oxtree/|rakelib/oxtree|script/compare_with_stree|Cargo\.(toml|lock))' <<<"$changed" && oxtree=true
+
+  if $oxtree; then
+    cargo clippy -p oxtree --all-targets -- -D warnings
+    cargo test -p oxtree
+  fi
+
+  if $oxcop; then
+    cargo clippy -p oxcop --all-targets -- -D warnings
+    cargo test -p oxcop
+    cargo build -p oxcop
+
+    # Only cop files changed: run their own specs. Anything shared changed
+    # (mixins, ast/, config, the shim, ...): run every ported spec and diff
+    # against real RuboCop on ../code.
+    local specs=() shared=false
+    while IFS= read -r path; do
+      if [[ "$path" =~ ^crates/oxcop/src/cop/([a-z_]+)/([a-z0-9_]+)\.rs$ && "${BASH_REMATCH[2]}" != "mod" ]]; then
+        local spec="spec/rubocop/cop/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}_spec.rb"
+        [[ -f "$spec" ]] && specs+=("$spec")
+      elif [[ "$path" =~ ^docs/ ]]; then
+        :
+      else
+        shared=true
+      fi
+    done <<<"$changed"
+
+    if $shared || [[ -n "${FULL:-}" ]]; then
+      bundle exec rspec
+      if [[ -d ../code ]]; then
+        local out
+        out=$(script/compare_with_rubocop ../code 2>&1 | tail -1)
+        echo "land: compare_with_rubocop: $out"
+        [[ "$out" == "mismatched files: 0" ]] || return 1
+      fi
+    elif ((${#specs[@]})); then
+      bundle exec rspec "${specs[@]}"
+    fi
+  fi
+}
+
+for attempt in 1 2 3 4 5 6 7 8; do
+  base=$(git rev-parse main)
+  if ! git rebase main; then
+    git rebase --abort || true
+    echo "land: rebase onto main conflicts; run 'git rebase main', resolve, then land again" >&2
+    exit 1
+  fi
+  gate
+  if $dry_run; then
+    echo "land: gates passed (dry run, main not moved)"
+    exit 0
+  fi
+  if git update-ref -m "land $branch" refs/heads/main HEAD "$base"; then
+    echo "land: main is now $(git rev-parse --short HEAD) ($branch)"
+    exit 0
+  fi
+  echo "land: main moved while gating (attempt $attempt); rebasing and retrying"
+done
+echo "land: gave up after repeated races; try again shortly" >&2
+exit 1
