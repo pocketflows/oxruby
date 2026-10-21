@@ -70,6 +70,11 @@ pub trait Cop {
     /// Called instead of the AST callbacks when the file has syntax errors.
     fn on_other_file(&mut self, _cx: &mut Investigation<'_, '_>) {}
 
+    /// `RedundantCopDisableDirective#offenses_to_check=`: the offenses the
+    /// other cops found (disabled ones included), given before the
+    /// investigation. Other cops ignore it.
+    fn set_offenses_to_check(&mut self, _offenses: Vec<OffenseToCheck>) {}
+
     /// `validate_config`: `Err(message)` is `raise ValidationError, message`.
     /// The team checks it before investigating each file, and the run stops
     /// with `Error: message` (in specs the shim raises
@@ -137,6 +142,24 @@ pub fn department(cop_name: &str) -> &str {
     cop_name
         .rsplit_once('/')
         .map_or(cop_name, |(department, _)| department)
+}
+
+/// The parts of an offense `Lint/RedundantCopDisableDirective` looks at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffenseToCheck {
+    pub cop_name: String,
+    pub line: usize,
+    pub last_line: usize,
+}
+
+impl From<&Offense> for OffenseToCheck {
+    fn from(offense: &Offense) -> Self {
+        Self {
+            cop_name: offense.cop_name.clone(),
+            line: offense.location.line,
+            last_line: offense.location.last_line,
+        }
+    }
 }
 
 /// Options that affect how offenses are registered, derived from the CLI.

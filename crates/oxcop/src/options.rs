@@ -158,6 +158,16 @@ pub struct Options {
     #[arg(long = "default-external", hide = true, value_name = "ENCODING")]
     pub default_external: Option<String>,
 
+    /// `Lint/RedundantCopDisableDirective`'s offenses to check (JSON:
+    /// `[{"cop_name", "line", "last_line"}]`), as its spec constructs it.
+    #[arg(long = "offenses-to-check", hide = true, value_name = "FILE")]
+    pub offenses_to_check: Option<PathBuf>,
+
+    /// No warnings from the first investigation (the spec shim's autocorrect
+    /// run repeats one it already reported).
+    #[arg(long = "quiet-first-pass", hide = true)]
+    pub quiet_first_pass: bool,
+
     /// `RuboCop::LSP.enabled?` for cops that report differently under LSP.
     #[arg(long = "lsp", hide = true)]
     pub lsp: bool,

@@ -97,6 +97,7 @@ impl CommentConfig {
             stack: Vec::new(),
             detached: Vec::new(),
             statement_bounds: HashMap::new(),
+            warn: true,
         };
         let directives: Vec<DirectiveComment<'_>> = processed_source
             .comments()
@@ -172,6 +173,7 @@ impl<'a, 'src> DirectiveScopes<'a, 'src> {
                 stack: Vec::new(),
                 detached: Vec::new(),
                 statement_bounds: HashMap::new(),
+                warn: false,
             },
         }
     }
@@ -205,6 +207,8 @@ struct Analyzer<'a, 'src> {
     stack: Vec<HashMap<String, CopAnalysis>>,
     detached: Vec<usize>,
     statement_bounds: HashMap<i64, (i64, i64)>,
+    /// Print "no department given" warnings (CommentConfig's own analysis).
+    warn: bool,
 }
 
 impl Analyzer<'_, '_> {
@@ -232,10 +236,26 @@ impl Analyzer<'_, '_> {
             .iter()
             .filter(|n| n.ends_with(&suffix) && !n[..n.len() - suffix.len()].contains('/'))
             .collect();
+        if self.warn && !candidates.is_empty() {
+            self.print_department_missing_warning(name);
+        }
         match candidates.as_slice() {
             [one] => (*one).clone(),
             _ => name.to_owned(),
         }
+    }
+
+    /// `Registry#print_department_missing_warning`.
+    fn print_department_missing_warning(&self, name: &str) {
+        let path = self.processed_source.path();
+        let mut message = format!("no department given for {name}.");
+        if path.to_string_lossy().ends_with(".rb") {
+            message.push_str(" Run `rubocop -a --only Migration/DepartmentName` to fix.");
+        }
+        crate::cli::warn(&format!(
+            "{}: Warning: {message}",
+            crate::path_util::smart_path(path)
+        ));
     }
 
     fn analyze(

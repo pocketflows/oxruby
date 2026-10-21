@@ -86,10 +86,12 @@ module Oxcop
         # binary replays first so the cop's state carries over. With
         # `real_file`, the binary inspects `path` on disk (where the spec
         # wrote `source`) instead of reading `--stdin`.
-        def offenses(source, path:, config:, cop_name:, priors: [], real_file: false)
+        def offenses(source, path:, config:, cop_name:, priors: [], real_file: false, offenses_to_check: nil,
+                     warnings: true)
           @investigations = investigations.to_i + 1
           stdout, = invoke(source, path: path, config: config, cop_name: cop_name, priors: priors,
-                                   real_file: real_file,
+                                   real_file: real_file, offenses_to_check: offenses_to_check,
+                                   warnings: warnings,
                                    args: ["--format", "json", "--no-display-cop-names"])
           JSON.parse(stdout).fetch("files").flat_map { |file| file["offenses"] }
         end
@@ -97,10 +99,12 @@ module Oxcop
         # `source` after autocorrecting with every correction (`-A`) until no
         # more changes are made, in the source's encoding (so it compares
         # equal to a spec's binary expected correction).
-        def autocorrect(source, path:, config:, cop_name:, once: false, priors: [], real_file: false)
+        def autocorrect(source, path:, config:, cop_name:, once: false, priors: [], real_file: false,
+                        offenses_to_check: nil)
           stdout, = invoke(source, path: path, config: config, cop_name: cop_name, priors: priors,
-                                   real_file: real_file,
-                                   args: ["--persist-cops", *("--autocorrect-once" if once), "-A",
+                                   real_file: real_file, offenses_to_check: offenses_to_check,
+                                   args: ["--persist-cops", "--quiet-first-pass",
+                                          *("--autocorrect-once" if once), "-A",
                                           "--format", "quiet", "--stderr"])
           return stdout.force_encoding(source.encoding) unless real_file
 
@@ -109,13 +113,24 @@ module Oxcop
           File.binread(path).force_encoding(source.encoding).tap { File.binwrite(path, source) }
         end
 
-        def invoke(source, path:, config:, cop_name:, priors:, real_file:, args:)
+        # `offenses_to_check`: Lint/RedundantCopDisableDirective's, as
+        # `[{"cop_name", "line", "last_line"}]`.
+        def invoke(source, path:, config:, cop_name:, priors:, real_file:, args:, offenses_to_check: nil,
+                   warnings: true)
           input = real_file ? [path] : ["--stdin", path, "--keep-stdin-path"]
+          if offenses_to_check
+            return with_temp_files([JSON.generate(offenses_to_check)]) do |(offenses_path)|
+              invoke(source, path: path, config: config, cop_name: cop_name, priors: priors,
+                             real_file: real_file, args: [*args, "--offenses-to-check", offenses_path],
+                             warnings: warnings)
+            end
+          end
+
           with_config(config) do |config_path|
             with_temp_files(priors.map(&:last)) do |prior_paths|
               prior_args = priors.zip(prior_paths).flat_map { |(name, _), file| ["--prior", "#{name}=#{file}"] }
               with_temp_files([JSON.generate(auto_gen_state(cop_name))]) do |(state_path)|
-                with_report do |report_path|
+                with_report(warnings: warnings) do |report_path|
                   run(*input, "-c", config_path, "--raw-config", "--only", cop_name, *prior_args,
                       "--auto-gen-state", state_path, *("--lsp" if lsp?), *default_external_args,
                       "--spec-report", report_path,
@@ -132,7 +147,9 @@ module Oxcop
         # (`cop.config_to_allow_offenses`, `read_exclude_limit`). The binary
         # starts from the current state (`--auto-gen-state`), so it
         # accumulates across calls as RuboCop's class-level hashes do.
-        def with_report
+        # Warnings the binary printed (`Kernel#warn` upstream) go to the
+        # spec's `$stderr`, unless this call repeats an investigation.
+        def with_report(warnings: true)
           path = File.join(Dir.tmpdir, "oxcop-spec-report-#{Process.pid}.json")
           File.delete(path) if File.exist?(path)
           begin
@@ -147,6 +164,7 @@ module Oxcop
           raise failed if failed
 
           apply_auto_gen_state(report)
+          report.fetch("warnings", []).each { |warning| $stderr.puts(warning) } if warnings
           result
         end
 

@@ -92,6 +92,35 @@ pub fn stderr() -> Sink {
     STDERR.with(|sink| sink.borrow().clone())
 }
 
+thread_local! {
+    static WARNINGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    static QUIET: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// `Kernel#warn` from inside a run: printed to stderr and kept for
+/// `--spec-report` (the shim prints them to the spec's `$stderr`).
+pub fn warn(message: &str) {
+    if QUIET.with(std::cell::Cell::get) {
+        return;
+    }
+    let _ = writeln!(stderr(), "{message}");
+    WARNINGS.with(|w| w.borrow_mut().push(message.to_owned()));
+}
+
+/// The warnings `warn` printed so far in this run.
+pub fn take_warnings() -> Vec<String> {
+    WARNINGS.with(|w| std::mem::take(&mut *w.borrow_mut()))
+}
+
+/// Runs `f` without warnings (replayed investigations, whose warnings were
+/// already given).
+pub fn quietly<R>(f: impl FnOnce() -> R) -> R {
+    let previous = QUIET.with(|q| q.replace(true));
+    let result = f();
+    QUIET.with(|q| q.set(previous));
+    result
+}
+
 pub fn run(args: impl IntoIterator<Item = OsString>) -> i32 {
     install_panic_hook();
     let args: Vec<OsString> = args.into_iter().collect();
@@ -124,6 +153,7 @@ fn install_panic_hook() {
 pub fn run_with(args: impl IntoIterator<Item = OsString>, io: &mut Io) -> i32 {
     let previous = STDERR.with(|sink| sink.replace(io.stderr.clone()));
     crate::config_loader::reset_warnings();
+    take_warnings();
     let status = run_options(args, io);
     STDERR.with(|sink| sink.replace(previous));
     status
@@ -228,6 +258,7 @@ fn execute_runner(options: &Options, io: &mut Io) -> Result<i32, String> {
     let run = runner.run(formatter.as_mut(), &mut io.stdin);
     drop(formatter);
     if let Some(path) = &options.spec_report {
+        runner.spec_report.warnings = take_warnings();
         std::fs::write(path, runner.spec_report.to_json().to_string())
             .map_err(|e| format!("{}: {e}", path.display()))?;
     }

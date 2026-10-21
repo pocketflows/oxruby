@@ -122,7 +122,12 @@ impl crate::directive_comment::CopRegistry for SelectedCops<'_> {
     /// the cops `--only`/`--except` select.
     fn mobilized(&self, cop_name: &str) -> bool {
         if let Some(config) = self.config {
-            return config.get(cop_name).is_some() || self.enabled_by_option(cop_name);
+            // `Registry.global.find_cops_by_directive(key)` for each key: a
+            // cop, or every cop of a department.
+            let department = cop_name.rsplit_once('/').map(|(d, _)| d);
+            return config.get(cop_name).is_some()
+                || department.is_some_and(|d| config.get(d).is_some())
+                || self.enabled_by_option(cop_name);
         }
         !crate::cop::registry::matches(cop_name, self.except)
             && (self.only.is_empty() || crate::cop::registry::matches(cop_name, self.only))

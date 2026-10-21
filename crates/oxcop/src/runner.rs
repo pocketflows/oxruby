@@ -8,7 +8,7 @@ use serde_yaml_ng::{Mapping, Value};
 
 use crate::config::Config;
 use crate::config_loader::{ConfigError, ConfigStore};
-use crate::cop::base::{AutoGenState, CopError, CopOptions};
+use crate::cop::base::{AutoGenState, CopError, CopOptions, OffenseToCheck};
 use crate::cop::team::{Selection, Team};
 use crate::cop::{Offense, Severity};
 use crate::formatter::Formatter;
@@ -40,6 +40,8 @@ pub struct SpecReport {
     pub auto_gen: std::collections::BTreeMap<String, AutoGenState>,
     /// Errors raised by cops, in order.
     pub raised: Vec<CopError>,
+    /// What `cli::warn` printed.
+    pub warnings: Vec<String>,
 }
 
 impl SpecReport {
@@ -70,6 +72,7 @@ impl SpecReport {
             "detected_styles": detected_styles,
             "exclude_limits": exclude_limits,
             "raised": raised,
+            "warnings": self.warnings,
         })
     }
 }
@@ -83,6 +86,8 @@ struct Inspector<'a> {
     /// `--auto-gen-state`: the state RuboCop's class-level hashes hold when
     /// the run starts (the spec shim's current values).
     auto_gen_seed: std::collections::BTreeMap<String, AutoGenState>,
+    /// `--offenses-to-check`.
+    offenses_to_check: Option<Vec<OffenseToCheck>>,
 }
 
 /// What inspecting one file produced, reported in file order.
@@ -120,6 +125,10 @@ impl<'a> Runner<'a> {
                     .as_deref()
                     .map(read_auto_gen_state)
                     .unwrap_or_default(),
+                offenses_to_check: options
+                    .offenses_to_check
+                    .as_deref()
+                    .map(read_offenses_to_check),
             },
             corrected_stdin: None,
             errors: Vec::new(),
@@ -256,8 +265,30 @@ impl Inspector<'_> {
             },
         };
         let (source, encoding) = source_encoding::decode(&bytes);
-        let (corrected_source, offenses) =
-            self.do_inspection_loop(file, source, config, &mut result);
+        let (mut corrected_source, offenses) =
+            self.do_inspection_loop(file, source.clone(), config, &mut result);
+        let mut offenses: Vec<Offense> = offenses.into_iter().flatten().collect();
+        offenses.sort();
+
+        // add_redundant_disables
+        let current = corrected_source.as_deref().unwrap_or(&source);
+        if let Some((new_offenses, updated)) =
+            self.redundant_disables(file, current, config, &offenses, &mut result)
+        {
+            offenses.extend(new_offenses);
+            if let Some(updated) = updated {
+                // One more loop: removing a disable can make an enable
+                // redundant.
+                let (again, more) =
+                    self.do_inspection_loop(file, updated.clone(), config, &mut result);
+                corrected_source = Some(again.unwrap_or(updated));
+                for offense in more.into_iter().flatten() {
+                    if !offenses.contains(&offense) {
+                        offenses.push(offense);
+                    }
+                }
+            }
+        }
 
         if let Some(corrected) = corrected_source {
             let corrected = source_encoding::encode(&corrected, encoding);
@@ -270,7 +301,6 @@ impl Inspector<'_> {
             result.corrected_stdin = Some(source.to_vec());
         }
 
-        let mut offenses: Vec<Offense> = offenses.into_iter().flatten().collect();
         offenses.retain(|offense| !offense.disabled());
         offenses.sort();
         // The runner's `offenses_by_iteration.flatten.uniq` merges offenses
@@ -281,6 +311,65 @@ impl Inspector<'_> {
         }
         result.offenses = offenses;
         result
+    }
+
+    /// `Runner#add_redundant_disables`: Lint/RedundantCopDisableDirective
+    /// checks the directives against every offense (disabled ones too). Its
+    /// offenses, and the corrected source when it removed directives.
+    fn redundant_disables(
+        &self,
+        file: &Path,
+        source: &str,
+        config: &Config,
+        offenses: &[Offense],
+        result: &mut FileResult,
+    ) -> Option<(Vec<Offense>, Option<String>)> {
+        const COP: &str = "Lint/RedundantCopDisableDirective";
+        // except_redundant_cop_disable_directive? and `!@options[:only]`
+        let except = &self.options.except;
+        if [
+            "Lint/RedundantCopDisableDirective",
+            "RedundantCopDisableDirective",
+            "Lint",
+        ]
+        .iter()
+        .any(|name| except.iter().any(|e| e == name))
+            || !self.options.only.is_empty()
+        {
+            return None;
+        }
+        let enabled = config.for_cop(COP).get("Enabled");
+        if enabled.is_none_or(|e| matches!(e, Value::Bool(false) | Value::Null))
+            || !config.cop_relevant_file(COP, file)
+        {
+            return None;
+        }
+        let mut cop = crate::cop::registry::all()
+            .iter()
+            .map(|new| new())
+            .find(|cop| cop.name() == COP)?;
+        cop.set_offenses_to_check(offenses.iter().map(OffenseToCheck::from).collect());
+
+        let ruby_version = target_ruby_version(config);
+        let buffer_source = crate::processed_source::normalize_newlines(source);
+        let processed_source = ProcessedSource::new(source, &buffer_source, ruby_version, file);
+        let team = Team::with_cops(config, &self.selection, self.cop_options, vec![cop]);
+        let report = team.investigate(&processed_source);
+        // check_for_redundant_disables?
+        if report.comment_config.cop_disabled_line_ranges.is_empty()
+            && report.comment_config.detached_next_directives.is_empty()
+        {
+            return None;
+        }
+        result.cop_errors.extend(report.errors);
+        result.raised.extend(report.raised);
+        let updated = match report.corrector {
+            Some(corrector) if self.cop_options.autocorrect != AutocorrectMode::Off => {
+                Some(corrector.rewrite(&buffer_source)).filter(|new| new != source)
+            }
+            _ => None,
+        };
+        Some((report.offenses, updated))
     }
 
     /// `--prior`: investigates earlier sources with the team's cops, which it
@@ -299,7 +388,7 @@ impl Inspector<'_> {
             let path = Path::new(name);
             let processed_source =
                 ProcessedSource::new(&source, &buffer_source, ruby_version, path);
-            team.investigate(&processed_source);
+            crate::cli::quietly(|| team.investigate(&processed_source));
         }
     }
 
@@ -320,6 +409,7 @@ impl Inspector<'_> {
             self.investigate_priors(&mut team, ruby_version);
         }
         *team.auto_gen.borrow_mut() = self.auto_gen_seed.clone();
+        team.offenses_to_check = self.offenses_to_check.clone();
         let mut offenses_by_iteration: Vec<Vec<Offense>> = Vec::new();
         let mut seen_sources: Vec<String> = Vec::new();
         let mut corrected = false;
@@ -339,7 +429,13 @@ impl Inspector<'_> {
                 let buffer_source = crate::processed_source::normalize_newlines(&source);
                 let processed_source =
                     ProcessedSource::new(&source, &buffer_source, ruby_version, file);
-                let report = team.investigate(&processed_source);
+                // `--quiet-first-pass`: the spec shim's autocorrect run
+                // repeats the investigation it just reported.
+                let report = if self.options.quiet_first_pass && offenses_by_iteration.is_empty() {
+                    crate::cli::quietly(|| team.investigate(&processed_source))
+                } else {
+                    team.investigate(&processed_source)
+                };
                 if report.validation_error.is_some() {
                     result.validation_error = report.validation_error;
                     break;
@@ -399,4 +495,27 @@ fn read_auto_gen_state(path: &Path) -> std::collections::BTreeMap<String, AutoGe
         }
     }
     states
+}
+
+/// Reads `--offenses-to-check`.
+fn read_offenses_to_check(path: &Path) -> Vec<OffenseToCheck> {
+    let json: serde_json::Value = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    json.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|o| {
+            let line = o.get("line")?.as_u64()? as usize;
+            Some(OffenseToCheck {
+                cop_name: o.get("cop_name")?.as_str()?.to_owned(),
+                line,
+                last_line: o
+                    .get("last_line")
+                    .and_then(serde_json::Value::as_u64)
+                    .map_or(line, |l| l as usize),
+            })
+        })
+        .collect()
 }

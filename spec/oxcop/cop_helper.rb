@@ -41,7 +41,8 @@ module Oxcop
           # The cop object keeps its state across the example's
           # investigations, so the binary replays the earlier ones.
           priors: (@oxcop_priors ||= []).dup,
-          real_file: real_file?(cop, processed_source)
+          real_file: real_file?(cop, processed_source),
+          offenses_to_check: offenses_to_check(cop)
         }
         cop_options = cop.instance_variable_get(:@options) || {}
 
@@ -59,12 +60,23 @@ module Oxcop
                                     .tap { |s| @oxcop_corrected_sources << s }
                             end
                           end
-        offenses = Binary.offenses(source, **options)
+        # The final source of oxcop's correction loop was investigated there.
+        offenses = Binary.offenses(source, warnings: !@oxcop_corrected_sources.include?(source), **options)
         @oxcop_priors << [options[:path], source]
         offenses.map { |offense| to_offense(offense, processed_source, cop) }
       end
 
       private
+
+      # Lint/RedundantCopDisableDirective is constructed with the offenses it
+      # checks the directives against.
+      def offenses_to_check(cop)
+        return unless cop.respond_to?(:offenses_to_check) && cop.offenses_to_check
+
+        cop.offenses_to_check.map do |offense|
+          { "cop_name" => offense.cop_name, "line" => offense.line, "last_line" => offense.last_line }
+        end
+      end
 
       # The spec wrote the source to a real file (`expect_offense(source,
       # file)`) and didn't tell the cop it came from stdin: inspect the file,

@@ -3,7 +3,7 @@
 
 use crate::comment_config::CommentConfig;
 use crate::config::Config;
-use crate::cop::base::{AutoGenState, CopError, CopOptions};
+use crate::cop::base::{AutoGenState, CopError, CopOptions, OffenseToCheck};
 use crate::cop::commissioner::{self, CopReport};
 use crate::cop::{Cop, Corrector, Investigation, Offense, registry};
 use crate::options::AutocorrectMode;
@@ -46,6 +46,8 @@ pub struct Team<'a> {
     /// autocorrect loop, and in specs from `expect_offense` to
     /// `expect_correction`). Exclude limits are the values set so far.
     pub auto_gen: std::cell::RefCell<std::collections::BTreeMap<String, AutoGenState>>,
+    /// Given to each mobilized cop (`set_offenses_to_check`).
+    pub offenses_to_check: Option<Vec<OffenseToCheck>>,
 }
 
 impl<'a> Team<'a> {
@@ -57,6 +59,7 @@ impl<'a> Team<'a> {
             persist_cops: false,
             persisted: std::cell::RefCell::new(None),
             auto_gen: std::cell::RefCell::default(),
+            offenses_to_check: None,
         }
     }
 
@@ -75,6 +78,22 @@ impl<'a> Team<'a> {
             || self.config.cop_enabled(name)
     }
 
+    /// A team of exactly these cops (`Team.mobilize([...])`), kept for every
+    /// investigation.
+    pub fn with_cops(
+        config: &'a Config,
+        selection: &'a Selection,
+        options: CopOptions,
+        cops: Vec<Box<dyn Cop>>,
+    ) -> Self {
+        let team = Self::new(config, selection, options);
+        *team.persisted.borrow_mut() = Some(cops);
+        Self {
+            persist_cops: true,
+            ..team
+        }
+    }
+
     /// `roundup_relevant_cops`.
     fn mobilize_cops(
         &self,
@@ -84,7 +103,13 @@ impl<'a> Team<'a> {
         let target = processed_source.ruby_version();
         registry::all()
             .iter()
-            .map(|new| new())
+            .map(|new| {
+                let mut cop = new();
+                if let Some(offenses) = &self.offenses_to_check {
+                    cop.set_offenses_to_check(offenses.clone());
+                }
+                cop
+            })
             .filter(|cop| {
                 let name = cop.name();
                 self.selected(name, comment_config)

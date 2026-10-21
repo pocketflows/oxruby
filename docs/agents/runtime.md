@@ -54,6 +54,30 @@ Owner: `runtime` (see the roster in `docs/PARALLEL.md`).
   when the file contains `<%`. **`inherit_gem`** resolves through
   `OXCOP_GEMS`; without the launcher it warns and is skipped.
 
+## Directive cops (done)
+
+Lint/MissingCopEnableDirective 16/16, Lint/RedundantCopEnableDirective
+28/28, Lint/RedundantCopDisableDirective 65/65. The runner runs
+RedundantCopDisableDirective after the inspection loop with every
+offense (disabled ones included) as `offenses_to_check`, then one more
+loop when it removed directives (`Runner#add_redundant_disables`; skipped
+with `--only`, as upstream). Checked against rubocop on a sample with
+`-A`: same offenses and correction.
+
+- `Config::known_cops()` is the global registry: every core cop plus the
+  configuration's own (plugin/custom) cops.
+- `processed_source.registry` (for `disabled_names`): the cops `--only` /
+  `--except` mobilize; under `--raw-config`, the cops and departments the
+  spec's configuration names (CopHelper#registry).
+- `cli::warn(msg)` prints a warning and records it for `--spec-report`; the
+  shim prints them to the spec's `$stderr` (not for replayed
+  investigations: `--prior`, `--quiet-first-pass`, the final re-investigation
+  of oxcop's corrected source). CommentConfig prints "no department given"
+  through it.
+- Shim edits made for these (small, in `spec/oxcop/`, now `shim`'s):
+  `offenses_to_check` passed as `--offenses-to-check FILE`; warnings
+  forwarding; `--quiet-first-pass` on autocorrect calls.
+
 ## Handoff to `shim`
 
 Already landed by runtime (9fe3cd9 and before), so `shim` needn't redo
@@ -63,8 +87,9 @@ calls in one example; `--lsp`; re-raising cop errors as their class
 buffer as `NO_LOCATION`; ExcludeLimit tmp_dir; `buffer.name` file names;
 cop instances persisting across files in one example (`--prior`);
 real-path inspection (ScriptPermission's shape); binary-encoded and
-magic-encoding stdin. Not done: the "no department given" warning
-(Migration/DepartmentName), invalid-UTF-8 strings in a spec's cop config
+magic-encoding stdin; the "no department given" warning (CommentConfig,
+forwarded to `$stderr`). Not done: Migration/DepartmentName itself,
+invalid-UTF-8 strings in a spec's cop config
 (`YAML.dump` raises; serde can't hold the bytes anyway).
 
 ## API for cop authors (shim support)
