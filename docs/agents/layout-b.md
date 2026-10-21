@@ -19,7 +19,8 @@ files):
   MultilineMethodArgumentLineBreaks 18, MultilineMethodParameterLineBreaks 14
 - Layout/ParameterAlignment 19, SpaceAroundBlockParameters 49,
   MultilineBlockLayout 30, MultilineMethodCallIndentation 287,
-  LineEndStringConcatenationIndentation 59, MultilineAssignmentLayout 34
+  LineEndStringConcatenationIndentation 59, MultilineAssignmentLayout 34,
+  MultilineOperationIndentation 99
 - Token-based (need the `tokens` agent's token builder, cherry-picked onto
   `layout-b` as `Build processed_source.tokens ...`; it drops out of the
   branch when `tokens` lands it): SpaceAfterComma 9, SpaceAfterSemicolon 9,
@@ -65,8 +66,7 @@ files):
 
 - LineLength: needs LineLengthHelp (style-b, on their branch only),
   EndlessMethodRewriter (claimed by style-a, not written) and my
-  CheckLineBreakable. 3 of its examples use `raise_error`/
-  `config_to_allow_offenses`; check before porting.
+  CheckLineBreakable.
 - SpaceInsideArrayPercentLiteral, SpaceInsidePercentLiteralDelimiters: need
   PercentLiteral (claimed by lint-a, not written yet) and my MatchRange.
 - RedundantLineBreak: needs CheckSingleLineSuitability and
@@ -81,15 +81,12 @@ shim can't see. Parked (the files are on `layout-b-wip`):
   `cop.config_to_allow_offenses` (the `--auto-gen-config` bookkeeping) and 1
   expects the cop to raise `Unknown EnforcedStyleForEmptyBraces selected!`.
 - Layout/SpaceInsideBlockBraces: 42 of 43 pass; 1 expects the same raise.
-- Layout/MultilineOperationIndentation (not ported yet): 7
-  `config_to_allow_offenses` assertions; also needs CheckAssignment.
 
 What the shim would need: (1) the binary reports a cop's raised error
 message for the investigation and the shim re-raises it as a RuntimeError
 with that message (RuboCop's specs run the Commissioner with
 `raise_error: true`); (2) the binary reports `config_to_allow_offenses` per
-investigation and the shim sets it on `cop`. 11 spec files across all
-departments use `config_to_allow_offenses`.
+investigation and the shim sets it on `cop`.
 
 ## Notes for others
 
