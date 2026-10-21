@@ -89,15 +89,19 @@ module Oxcop
         # With `autocorrect` (the cop's `@options[:autocorrect]`, which
         # `expect_offense` sets), the cop investigates as it would when
         # correcting (`autocorrect?` is true), but only once and without
-        # writing anything back.
+        # keeping any correction.
         def offenses(source, path:, config:, cop_name:, priors: [], real_file: false, offenses_to_check: nil,
                      warnings: true, autocorrect: false)
           @investigations = investigations.to_i + 1
-          correct = autocorrect && !real_file ? ["-A", "--autocorrect-once"] : []
+          correct = autocorrect ? ["-A", "--autocorrect-once"] : []
           stdout, = invoke(source, path: path, config: config, cop_name: cop_name, priors: priors,
                                    real_file: real_file, offenses_to_check: offenses_to_check,
                                    warnings: warnings,
                                    args: [*correct, "--format", "json", "--no-display-cop-names"])
+          # A correction written to the real file is undone: the spec's file
+          # keeps the source, as an in-memory correction would (a cop's side
+          # effects, like Lint/ScriptPermission's chmod, stay).
+          File.binwrite(path, source) if real_file && autocorrect && File.binread(path) != source.b
           JSON.parse(stdout).fetch("files").flat_map { |file| file["offenses"] }
         end
 
