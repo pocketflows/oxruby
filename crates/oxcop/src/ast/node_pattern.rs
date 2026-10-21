@@ -496,7 +496,8 @@ fn lex(src: &str) -> Vec<Tok> {
                 .iter()
                 .take_while(|c| is_ident(**c) || **c == b'-')
                 .count();
-            out.push(Tok::NodeType(src[i..i + len].to_owned()));
+            // `block-pass` is `block_pass` (the lexer's `tr('-', '_')`).
+            out.push(Tok::NodeType(src[i..i + len].replace('-', "_")));
             i += len;
             continue;
         }
