@@ -2,7 +2,7 @@
 
 ## Done (whole upstream spec passes; example counts)
 
-All landed on main (656c62a, then 087974d). 48 cops, 2,402 examples.
+All landed on main (656c62a, then 087974d): 44 cops, 1,991 examples.
 
 - Layout/SpaceAfterColon 12, SpaceAfterMethodName 8, SpaceAfterNot 6,
   SpaceBeforeBrackets 28, SpaceInsideRangeLiteral 7, SpaceInLambdaLiteral 15,
