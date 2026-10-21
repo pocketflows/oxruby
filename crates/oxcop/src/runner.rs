@@ -116,16 +116,7 @@ struct FileResult {
 
 impl<'a> Runner<'a> {
     pub fn new(options: &'a Options, cop_options: CopOptions) -> Self {
-        let mut config_store = ConfigStore::new(options.config.clone());
-        config_store.raw = options.raw_config;
-        // `Registry#enabled_pending_cop?` checks `--disable-pending-cops` first.
-        config_store.pending_cops_option = if options.disable_pending_cops {
-            Some(false)
-        } else if options.enable_pending_cops {
-            Some(true)
-        } else {
-            None
-        };
+        let config_store = ConfigStore::from_options(options);
         Self {
             options,
             config_store,

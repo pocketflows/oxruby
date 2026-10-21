@@ -223,14 +223,7 @@ fn run_options(args: impl IntoIterator<Item = OsString>, io: &mut Io) -> i32 {
 /// every ported cop, with `Enabled` replaced by `Registry#enabled_cop_name?`
 /// (whether the cop runs without `--only`).
 fn show_resolved_cops(options: &Options, io: &mut Io) -> i32 {
-    let mut store = crate::config_loader::ConfigStore::new(options.config.clone());
-    store.pending_cops_option = if options.disable_pending_cops {
-        Some(false)
-    } else if options.enable_pending_cops {
-        Some(true)
-    } else {
-        None
-    };
+    let mut store = crate::config_loader::ConfigStore::from_options(options);
     let config = match store.for_pwd() {
         Ok(config) => config,
         Err(e) => {
@@ -245,7 +238,10 @@ fn show_resolved_cops(options: &Options, io: &mut Io) -> i32 {
             "Enabled".into(),
             serde_yaml_ng::Value::Bool(config.cop_enabled(name)),
         );
-        cops.insert(name.to_owned(), yaml_to_json(&serde_yaml_ng::Value::Mapping(params)));
+        cops.insert(
+            name.to_owned(),
+            yaml_to_json(&serde_yaml_ng::Value::Mapping(params)),
+        );
     }
     let _ = writeln!(io.stdout, "{}", serde_json::Value::Object(cops));
     STATUS_SUCCESS
@@ -306,6 +302,11 @@ fn validate_compatibility(options: &Options) -> Result<(), String> {
             .any(|cop| cop == "Lint/Syntax" || cop == "Syntax")
     {
         return Err("Syntax checking cannot be turned off.".to_owned());
+    }
+    if options.enable_all_cops && options.disable_all_cops {
+        return Err(
+            "--enable-all-cops cannot be used together with --disable-all-cops.".to_owned(),
+        );
     }
     Ok(())
 }

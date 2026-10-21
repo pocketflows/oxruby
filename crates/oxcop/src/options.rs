@@ -110,6 +110,27 @@ pub struct Options {
     #[arg(long = "enable-pending-cops")]
     pub enable_pending_cops: bool,
 
+    /// Run with all cops disabled by default, except `Lint/Syntax`.
+    /// Overrides `AllCops/EnabledByDefault` and `AllCops/DisabledByDefault`
+    /// in config files.
+    #[arg(long = "disable-all-cops")]
+    pub disable_all_cops: bool,
+
+    /// Run with all cops enabled, including those disabled by default.
+    /// Overrides `AllCops/EnabledByDefault` and `AllCops/DisabledByDefault`
+    /// in config files.
+    #[arg(long = "enable-all-cops")]
+    pub enable_all_cops: bool,
+
+    /// Opt in to unstable behavior: cops that are `Enabled: preview`, and
+    /// changes to existing cops that are not the default yet. Overrides
+    /// `AllCops: Preview`.
+    #[arg(long = "preview", overrides_with = "no_preview")]
+    pub preview: bool,
+
+    #[arg(long = "no-preview", overrides_with = "preview")]
+    pub no_preview: bool,
+
     /// Display version.
     #[arg(short = 'v', long = "version")]
     pub version: bool,
@@ -243,6 +264,29 @@ impl Options {
     }
 
     /// `None` means "use `AllCops: DisplayCopNames` from the config".
+    /// `@options[:preview]`: `--preview`, `--no-preview` or unset.
+    pub fn preview_option(&self) -> Option<bool> {
+        if self.preview {
+            Some(true)
+        } else if self.no_preview {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    /// `@options[:disable_pending_cops]` / `[:enable_pending_cops]`, as
+    /// `Registry#enabled_pending_cop?` checks them (disable first).
+    pub fn pending_cops_option(&self) -> Option<bool> {
+        if self.disable_pending_cops {
+            Some(false)
+        } else if self.enable_pending_cops {
+            Some(true)
+        } else {
+            None
+        }
+    }
+
     pub fn display_cop_names(&self) -> Option<bool> {
         if self.no_display_cop_names {
             Some(false)

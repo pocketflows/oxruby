@@ -23,6 +23,8 @@ pub struct Config {
     /// `--enable-pending-cops` / `--disable-pending-cops` (the registry's
     /// options upstream).
     pub pending_cops_option: Option<bool>,
+    /// `--preview` / `--no-preview` (`Config#preview?(options)`).
+    pub preview_option: Option<bool>,
 }
 
 /// The cops RuboCop's registry would know about for this configuration:
@@ -147,6 +149,7 @@ impl Config {
             known_cops: OnceLock::new(),
             badge_configs: OnceLock::new(),
             pending_cops_option: None,
+            preview_option: None,
         }
     }
 
@@ -300,6 +303,12 @@ impl Config {
         }
     }
 
+    /// `Config#preview?(options)`: `--[no-]preview`, else `AllCops: Preview`.
+    pub fn preview(&self) -> bool {
+        self.preview_option
+            .unwrap_or_else(|| self.for_all_cops().get("Preview") == Some(&Value::Bool(true)))
+    }
+
     /// `Registry#enabled_pending_cop?`.
     pub fn enabled_pending_cop(&self, cop_name: &str) -> bool {
         match self.pending_cops_option {
@@ -344,8 +353,9 @@ impl Config {
         if enabled.and_then(Value::as_str) == Some("override_department") {
             return true;
         }
-        if let Some((department, _)) = cop_name.split_once('/')
-            && self.for_department(department).get("Enabled") == Some(&Value::Bool(false))
+        if self
+            .department_of(cop_name)
+            .is_some_and(|d| d.get("Enabled") == Some(&Value::Bool(false)))
         {
             return false;
         }
@@ -386,7 +396,7 @@ impl Config {
         match enabled {
             Some(Value::String(s)) if s == "pending" => self.enabled_pending_cop(cop_name),
             // `enabled_preview_cop?`
-            Some(Value::String(s)) if s == "preview" => self.all_cops_bool("Preview", false),
+            Some(Value::String(s)) if s == "preview" => self.preview(),
             Some(Value::Bool(b)) => *b,
             Some(_) => true,
             None => !self.all_cops_bool("DisabledByDefault", false),

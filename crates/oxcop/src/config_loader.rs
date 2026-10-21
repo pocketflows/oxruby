@@ -7,8 +7,7 @@
 //!
 //! ERB in config files is rendered by Ruby (see `render_erb`).
 //!
-//! Not yet ported: remote `inherit_from` URLs, `inherit_from` globs,
-//! `DisabledByDefault` handling of user-enabled cops.
+//! Not yet ported: remote `inherit_from` URLs, `inherit_from` globs.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -130,6 +129,12 @@ pub struct ConfigLoader {
     default_configuration: Option<Mapping>,
     loaded_plugins: HashSet<String>,
     pub gems: Gems,
+    /// `ConfigLoader.enabled_by_default` (`--enable-all-cops`).
+    pub enabled_by_default: Option<bool>,
+    /// `ConfigLoader.disabled_by_default` (`--disable-all-cops`).
+    pub disabled_by_default: Option<bool>,
+    /// `ConfigLoader.preview` (`--[no-]preview`).
+    pub preview: Option<bool>,
 }
 
 impl ConfigLoader {
@@ -158,7 +163,7 @@ impl ConfigLoader {
     ) -> Result<Config, ConfigError> {
         let Some(config_file) = config_file else {
             let defaults = self.default_configuration().clone();
-            return Ok(Config::new(apply_preview_defaults(&defaults, false), None));
+            return Ok(Config::new(self.apply_default_overrides(&defaults), None));
         };
         let config_file = path_util::expand_path(config_file);
         let hash = self.load_file(&config_file)?;
@@ -411,7 +416,7 @@ impl ConfigLoader {
                         .is_some_and(truthy);
                 let value = match derived {
                     Some(Value::Mapping(derived)) => {
-                        let mode = determine_inherit_mode(hash, key);
+                        let mode = determine_inherit_mode(hash, key, self.preview_for(hash));
                         Value::Mapping(merge_with(
                             base_value,
                             derived,
@@ -433,30 +438,38 @@ impl ConfigLoader {
         Ok(())
     }
 
-    /// Port of `ConfigLoaderResolver#merge_with_default`.
-    fn merge_with_default(&mut self, mut config: Mapping, unset_nil: bool) -> Mapping {
-        let mut defaults = apply_preview_defaults(self.default_configuration(), false);
-        let all_cops = config.get("AllCops").and_then(Value::as_mapping);
-        let flag = |key| all_cops.and_then(|m| m.get(key)).is_some_and(truthy);
-        let (disabled_by_default, enabled_by_default) =
-            (flag("DisabledByDefault"), flag("EnabledByDefault"));
-        if disabled_by_default || enabled_by_default {
-            for (key, params) in defaults.iter_mut() {
-                if key.as_str().is_some_and(|k| k.contains('/'))
-                    && let Some(params) = params.as_mapping_mut()
-                {
-                    params.insert("Enabled".into(), Value::Bool(!disabled_by_default));
-                }
+    /// Port of `ConfigLoaderResolver#merge_with_default`: if
+    /// `AllCops:DisabledByDefault` is true, only cops from the user
+    /// configuration are enabled; if `AllCops:EnabledByDefault` is true, only
+    /// cops it disables are disabled. `--disable-all-cops` and
+    /// `--enable-all-cops` take precedence over both.
+    fn merge_with_default(&mut self, config: Mapping, unset_nil: bool) -> Mapping {
+        let preview = self.preview_for(&config);
+        let base_defaults = apply_preview_defaults(self.default_configuration(), preview);
+        let (disabled_by_default, enabled_by_default) = self.resolve_default_overrides(&config);
+        let mut config = config;
+        let default_configuration = if disabled_by_default || enabled_by_default {
+            let mut default_configuration =
+                transform_enabled(&base_defaults, Value::Bool(!disabled_by_default));
+            if disabled_by_default {
+                config =
+                    handle_disabled_by_default(&config, &mut default_configuration, &base_defaults);
             }
-        }
-        override_enabled_for_disabled_departments(&defaults, &mut config);
-        let mode = config
-            .get("inherit_mode")
-            .and_then(Value::as_mapping)
-            .cloned()
-            .unwrap_or_default();
+            default_configuration
+        } else {
+            base_defaults
+        };
+        override_enabled_for_disabled_departments(&default_configuration, &mut config);
+        let mode = with_preview_exclude_merge(
+            config
+                .get("inherit_mode")
+                .and_then(Value::as_mapping)
+                .cloned()
+                .unwrap_or_default(),
+            preview,
+        );
         merge_with(
-            &defaults,
+            &default_configuration,
             &config,
             &MergeOptions {
                 inherit_mode: Some(&mode),
@@ -464,6 +477,131 @@ impl ConfigLoader {
             },
         )
     }
+
+    /// `ConfigLoaderResolver#preview?`: `--[no-]preview`, else
+    /// `AllCops: Preview` of the configuration being merged.
+    fn preview_for(&self, config: &Mapping) -> bool {
+        self.preview.unwrap_or_else(|| {
+            config
+                .get("AllCops")
+                .and_then(Value::as_mapping)
+                .and_then(|all_cops| all_cops.get("Preview"))
+                == Some(&Value::Bool(true))
+        })
+    }
+
+    /// `ConfigLoaderResolver#resolve_default_overrides`: the CLI options when
+    /// either is given, else the configuration's `AllCops` settings (Ruby
+    /// truthiness).
+    fn resolve_default_overrides(&self, config: &Mapping) -> (bool, bool) {
+        let (disabled, enabled) = (
+            self.disabled_by_default.unwrap_or(false),
+            self.enabled_by_default.unwrap_or(false),
+        );
+        if disabled || enabled {
+            return (disabled, enabled);
+        }
+        let all_cops = config.get("AllCops").and_then(Value::as_mapping);
+        let flag = |key| all_cops.and_then(|m| m.get(key)).is_some_and(truthy);
+        (flag("DisabledByDefault"), flag("EnabledByDefault"))
+    }
+
+    /// Port of `ConfigLoader.apply_default_overrides`: the defaults as the
+    /// whole configuration (no config file), with the same preview and
+    /// `--enable-all-cops` / `--disable-all-cops` treatment
+    /// `merge_with_default` gives them.
+    fn apply_default_overrides(&self, defaults: &Mapping) -> Mapping {
+        let hash = apply_preview_defaults(defaults, self.preview == Some(true));
+        if self.enabled_by_default.is_none() && self.disabled_by_default.is_none() {
+            return hash;
+        }
+        let disabled = self.disabled_by_default.unwrap_or(false);
+        transform_enabled(&hash, Value::Bool(!disabled))
+    }
+}
+
+/// `transform(config) { |params| params.merge('Enabled' => enabled) }` over
+/// every top-level entry (`AllCops` and departments too, as upstream does).
+fn transform_enabled(config: &Mapping, enabled: Value) -> Mapping {
+    let mut result = config.clone();
+    for (_, params) in result.iter_mut() {
+        if let Some(params) = params.as_mapping_mut() {
+            params.insert("Enabled".into(), enabled.clone());
+        }
+    }
+    result
+}
+
+/// Port of `ConfigLoaderResolver#handle_disabled_by_default`. Cops of a
+/// department the user configuration enables keep their original default
+/// `Enabled`; every entry of the user configuration gets `Enabled: true`
+/// unless it sets `Enabled` itself.
+fn handle_disabled_by_default(
+    config: &Mapping,
+    new_default_configuration: &mut Mapping,
+    base_defaults: &Mapping,
+) -> Mapping {
+    for (dept, dept_params) in config {
+        let Some(dept) = dept.as_str().filter(|dept| !dept.contains('/')) else {
+            continue;
+        };
+        let dept_enabled = dept_params
+            .as_mapping()
+            .and_then(|params| params.get("Enabled"))
+            .is_some_and(truthy);
+        if !dept_enabled {
+            continue;
+        }
+        let prefix = format!("{dept}/");
+        for (cop, params) in new_default_configuration.iter_mut() {
+            let Some(cop) = cop.as_str().filter(|cop| cop.starts_with(&prefix)) else {
+                continue;
+            };
+            let Some(params) = params.as_mapping_mut() else {
+                continue;
+            };
+            // Retain original default configuration for cops in the department.
+            let original = base_defaults
+                .get(cop)
+                .and_then(Value::as_mapping)
+                .and_then(|base| base.get("Enabled"))
+                .cloned()
+                .unwrap_or(Value::Null);
+            params.insert("Enabled".into(), original);
+        }
+    }
+
+    // `{ 'Enabled' => true }.merge(params)`: set true if not set.
+    let mut result = config.clone();
+    for (_, params) in result.iter_mut() {
+        let Some(mapping) = params.as_mapping() else {
+            continue;
+        };
+        let mut with_enabled = Mapping::new();
+        with_enabled.insert("Enabled".into(), Value::Bool(true));
+        for (key, value) in mapping {
+            with_enabled.insert(key.clone(), value.clone());
+        }
+        *params = Value::Mapping(with_enabled);
+    }
+    result
+}
+
+/// `ConfigLoaderResolver#with_preview_exclude_merge`: under `Preview`,
+/// `Exclude` is merged rather than replaced, unless `inherit_mode` says
+/// otherwise.
+fn with_preview_exclude_merge(mut mode: Mapping, preview: bool) -> Mapping {
+    if !preview {
+        return mode;
+    }
+    let exclude = Value::String("Exclude".to_owned());
+    if mode_includes(&mode, "override", &exclude) || mode_includes(&mode, "merge", &exclude) {
+        return mode;
+    }
+    let mut merge = array(mode.get("merge"));
+    merge.push(exclude);
+    mode.insert("merge".into(), Value::Sequence(merge));
+    mode
 }
 
 fn plugin_load_error(name: &str) -> String {
@@ -610,16 +748,17 @@ fn override_department_setting_for_cops(base: &Mapping, derived: &mut Mapping) {
 }
 
 /// `ConfigLoaderResolver#determine_inherit_mode`.
-fn determine_inherit_mode(hash: &Mapping, key: &Value) -> Mapping {
+fn determine_inherit_mode(hash: &Mapping, key: &Value, preview: bool) -> Mapping {
     let local = hash
         .get(key)
         .and_then(Value::as_mapping)
         .and_then(|cop| cop.get("inherit_mode"));
-    local
+    let mode = local
         .or_else(|| hash.get("inherit_mode"))
         .and_then(Value::as_mapping)
         .cloned()
-        .unwrap_or_default()
+        .unwrap_or_default();
+    with_preview_exclude_merge(mode, preview)
 }
 
 /// Ruby truthiness.
@@ -801,6 +940,8 @@ pub struct ConfigStore {
     loader: ConfigLoader,
     /// `--enable-pending-cops` (`Some(true)`) / `--disable-pending-cops`.
     pub pending_cops_option: Option<bool>,
+    /// `--preview` (`Some(true)`) / `--no-preview`.
+    pub preview_option: Option<bool>,
 }
 
 impl ConfigStore {
@@ -810,6 +951,20 @@ impl ConfigStore {
             loader: ConfigLoader::new(Gems::from_env()),
             ..Default::default()
         }
+    }
+
+    /// The store a run with these options uses: `-c`, `--raw-config`, and
+    /// the cop selection options `CLI#set_cop_selection_options_to_config_loader`
+    /// hands `ConfigLoader` (and the registry).
+    pub fn from_options(options: &crate::options::Options) -> Self {
+        let mut store = Self::new(options.config.clone());
+        store.raw = options.raw_config;
+        store.pending_cops_option = options.pending_cops_option();
+        store.preview_option = options.preview_option();
+        store.loader.enabled_by_default = options.enable_all_cops.then_some(true);
+        store.loader.disabled_by_default = options.disable_all_cops.then_some(true);
+        store.loader.preview = options.preview_option();
+        store
     }
 
     pub fn for_file(&mut self, file: &Path) -> Result<Rc<Config>, ConfigError> {
@@ -844,6 +999,7 @@ impl ConfigStore {
             };
             let mut config = config;
             config.pending_cops_option = self.pending_cops_option;
+            config.preview_option = self.preview_option;
             self.by_path.insert(config_path.clone(), Rc::new(config));
         }
         Ok(Rc::clone(&self.by_path[&config_path]))
@@ -946,6 +1102,297 @@ mod tests {
         );
         assert!(!default_configuration().contains_key("Fake/Cop"));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A scratch directory holding `files`, for one test.
+    fn project(name: &str, files: &[(&str, &str)]) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("oxcop-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for (path, contents) in files {
+            let path = dir.join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, contents).unwrap();
+        }
+        dir
+    }
+
+    /// `configuration_from_file(file_path)` in config_loader_spec.rb.
+    fn configuration(dir: &Path, loader: &mut ConfigLoader) -> Config {
+        loader
+            .configuration_from_file(Some(&dir.join(".rubocop.yml")))
+            .unwrap()
+    }
+
+    /// `config.for_cop(cop)['Enabled']`: upstream's `for_cop` stores
+    /// `enable_cop?`, whose truthiness `cop_enabled_in_config` is.
+    fn enabled(config: &Config, cop: &str) -> bool {
+        config.cop_enabled_in_config(cop)
+    }
+
+    // config_loader_spec.rb: "when a parent file specifies DisabledByDefault: true"
+    #[test]
+    fn disabled_by_default_in_a_parent_file_disables_cops() {
+        let dir = project(
+            "dbd-parent",
+            &[
+                ("disable.yml", "AllCops:\n  DisabledByDefault: true\n"),
+                (".rubocop.yml", "inherit_from: disable.yml\n"),
+            ],
+        );
+        let config = configuration(&dir, &mut ConfigLoader::default());
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(config.for_cop("Style/Alias")["Enabled"], Value::Bool(false));
+    }
+
+    // config_loader_spec.rb: "when a department is disabled", the shared
+    // examples with a nested `Foo/Bar` department.
+    #[test]
+    fn department_disabling_resolves_for_all_cops() {
+        for (enabled_by_default, disabled_by_default) in
+            [(false, false), (false, true), (true, false)]
+        {
+            let child = format!(
+                "inherit_from: parent_rubocop.yml\n\nAllCops:\n  EnabledByDefault: \
+                 {enabled_by_default}\n  DisabledByDefault: {disabled_by_default}\n\nLayout:\n  \
+                 Enabled: false\n\nLayout/LineLength:\n  Enabled: true\n\nStyle:\n  Enabled: \
+                 false\n\nMetrics/MethodLength:\n  Enabled: true\n\nMetrics/ClassLength:\n  \
+                 Enabled: false\n\nLint/RaiseException:\n  Enabled: true\n\nStyle/AndOr:\n  \
+                 Enabled: true\n"
+            );
+            let dir = project(
+                "dept-disabled",
+                &[
+                    (
+                        "grandparent_rubocop.yml",
+                        "Layout:\n  Enabled: false\n\nLayout/EndOfLine:\n  Enabled: true\n\n\
+                         Naming/FileName:\n  Enabled: pending\n\nMetrics/AbcSize:\n  Enabled: \
+                         true\n\nMetrics/PerceivedComplexity:\n  Enabled: true\n\nLint:\n  \
+                         Enabled: false\n\nFoo/Bar/Baz:\n  Enabled: true\n",
+                    ),
+                    (
+                        "parent_rubocop.yml",
+                        "inherit_from: grandparent_rubocop.yml\n\nMetrics:\n  Enabled: false\n\n\
+                         Metrics/AbcSize:\n  Enabled: false\n\nNaming:\n  Enabled: false\n\n\
+                         Foo/Bar:\n  Enabled: false\n",
+                    ),
+                    (".rubocop.yml", &child),
+                ],
+            );
+            let config = configuration(&dir, &mut ConfigLoader::default());
+            std::fs::remove_dir_all(&dir).unwrap();
+            let case = format!(
+                "EnabledByDefault: {enabled_by_default}, DisabledByDefault: {disabled_by_default}"
+            );
+            for (cop, expected) in [
+                ("Layout/DotPosition", false),
+                ("Layout/EndOfLine", false),
+                ("Layout/LineLength", true),
+                ("Metrics/MethodLength", true),
+                ("Metrics/ClassLength", false),
+                ("Metrics/AbcSize", false),
+                ("Metrics/PerceivedComplexity", false),
+                ("Naming/FileName", false),
+                ("Style/Alias", false),
+                ("Style/AndOr", true),
+                ("Lint/RaiseException", true),
+                ("Foo/Bar/Baz", false),
+                ("Foo/BarBaz", !disabled_by_default),
+                ("Lint/StructNewOverride", false),
+                ("Bundler/DuplicatedGem", !disabled_by_default),
+            ] {
+                assert_eq!(enabled(&config, cop), expected, "{cop} with {case}");
+            }
+        }
+    }
+
+    // config_loader_spec.rb: "EnabledByDefault / DisabledByDefault"
+    #[test]
+    fn disabled_by_default_enables_the_cops_the_config_mentions() {
+        let dir = project(
+            "dbd-mentioned",
+            &[(
+                ".rubocop.yml",
+                "AllCops:\n  DisabledByDefault: true\nStyle/Copyright:\n  Exclude:\n  - foo\n",
+            )],
+        );
+        let config = configuration(&dir, &mut ConfigLoader::default());
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(
+            config.for_cop("Style/Copyright")["Enabled"],
+            Value::Bool(true)
+        );
+        assert_eq!(
+            config.for_cop("Layout/TrailingWhitespace")["Enabled"],
+            Value::Bool(false)
+        );
+    }
+
+    #[test]
+    fn disabled_by_default_with_an_enabled_department_keeps_its_defaults() {
+        let dir = project(
+            "dbd-dept",
+            &[(
+                ".rubocop.yml",
+                "AllCops:\n  DisabledByDefault: true\nStyle:\n  Enabled: true\n",
+            )],
+        );
+        let config = configuration(&dir, &mut ConfigLoader::default());
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(enabled(&config, "Style/Alias"));
+        assert!(!enabled(&config, "Layout/HashAlignment"));
+        assert!(!enabled(&config, "Style/AutoResourceCleanup"));
+    }
+
+    #[test]
+    fn enabled_by_default_enables_cops_unless_the_config_disables_them() {
+        let dir = project(
+            "ebd",
+            &[(
+                ".rubocop.yml",
+                "AllCops:\n  EnabledByDefault: true\nLayout/TrailingWhitespace:\n  Enabled: false\n",
+            )],
+        );
+        let config = configuration(&dir, &mut ConfigLoader::default());
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(enabled(&config, "Layout/FirstMethodArgumentLineBreak"));
+        assert!(!enabled(&config, "Layout/TrailingWhitespace"));
+    }
+
+    #[test]
+    fn enable_all_cops_and_disable_all_cops_override_the_config() {
+        for (option, file, cop, expected) in [
+            (true, "", "Style/CollectionMethods", true),
+            (
+                true,
+                "AllCops:\n  DisabledByDefault: true\n",
+                "Style/CollectionMethods",
+                true,
+            ),
+            (false, "", "Layout/TrailingWhitespace", false),
+            (
+                false,
+                "AllCops:\n  EnabledByDefault: true\n",
+                "Style/CollectionMethods",
+                false,
+            ),
+        ] {
+            let dir = project("all-cops", &[(".rubocop.yml", file)]);
+            let mut loader = ConfigLoader::default();
+            if option {
+                loader.enabled_by_default = Some(true);
+            } else {
+                loader.disabled_by_default = Some(true);
+            }
+            let config = configuration(&dir, &mut loader);
+            std::fs::remove_dir_all(&dir).unwrap();
+            assert_eq!(enabled(&config, cop), expected, "{cop} with {file:?}");
+        }
+        // No config file: `apply_default_overrides`.
+        let mut loader = ConfigLoader {
+            disabled_by_default: Some(true),
+            ..Default::default()
+        };
+        let config = loader.configuration_from_file(None).unwrap();
+        assert!(!enabled(&config, "Layout/TrailingWhitespace"));
+        assert!(enabled(&config, "Lint/Syntax"));
+    }
+
+    // config_loader_spec.rb: "when a new cop is introduced"
+    #[test]
+    fn a_pending_cop_follows_disabled_and_enabled_by_default() {
+        for (file, expected) in [
+            ("", Value::from("pending")),
+            (
+                "Metrics/MethodLength:\n  Enabled: true\n",
+                Value::Bool(true),
+            ),
+            (
+                "Metrics/MethodLength:\n  Enabled: false\n",
+                Value::Bool(false),
+            ),
+            ("AllCops:\n  DisabledByDefault: true\n", Value::Bool(false)),
+            ("AllCops:\n  EnabledByDefault: true\n", Value::Bool(true)),
+        ] {
+            let dir = project("new-cop", &[(".rubocop.yml", file)]);
+            let mut loader = ConfigLoader {
+                default_configuration: Some(yaml(
+                    "AllCops:\n  AnythingGoes: banana\nMetrics/MethodLength:\n  Enabled: pending\n",
+                )),
+                ..Default::default()
+            };
+            let config = configuration(&dir, &mut loader);
+            std::fs::remove_dir_all(&dir).unwrap();
+            assert_eq!(
+                config.for_cop("Metrics/MethodLength")["Enabled"],
+                expected,
+                "{file:?}"
+            );
+        }
+    }
+
+    // config_loader_spec.rb: "when a department is configured without an
+    // Enable value specified"
+    #[test]
+    fn a_department_without_enabled_still_enables_its_configured_cop() {
+        for (name, files) in [
+            (
+                "inline",
+                vec![(
+                    ".rubocop.yml",
+                    "AllCops:\n  DisabledByDefault: true\n\nCustom:\n  Foo: Bar\n\nCustom/Cop:\n  \
+                     Enabled: true\n",
+                )],
+            ),
+            (
+                "inherit",
+                vec![
+                    ("third_party/default.yml", "Custom:\n  Foo: Bar\n"),
+                    (
+                        ".rubocop.yml",
+                        "inherit_from:\n  - 'third_party/default.yml'\n\nAllCops:\n  \
+                         DisabledByDefault: true\n\nCustom/Cop:\n  Enabled: true\n",
+                    ),
+                ],
+            ),
+        ] {
+            let dir = project(&format!("dept-no-enabled-{name}"), &files);
+            let config = configuration(&dir, &mut ConfigLoader::default());
+            std::fs::remove_dir_all(&dir).unwrap();
+            assert!(enabled(&config, "Custom/Cop"), "{name}");
+        }
+    }
+
+    // A plugin's cops are disabled under DisabledByDefault unless the user
+    // configuration mentions the cop or enables its department.
+    #[test]
+    fn disabled_by_default_applies_to_plugin_cops() {
+        let dir = project(
+            "dbd-plugin",
+            &[
+                (
+                    "rubocop-fake/config/default.yml",
+                    "Fake:\n  Enabled: true\nFake/On:\n  Enabled: true\nFake/Off:\n  Enabled: \
+                     false\nFake/Configured:\n  Enabled: true\n  Max: 1\n",
+                ),
+                (
+                    ".rubocop.yml",
+                    "plugins: [rubocop-fake]\nAllCops:\n  DisabledByDefault: true\n\
+                     Fake/Configured:\n  Max: 2\nStyle/HashSyntax:\n  EnforcedShorthandSyntax: always\n",
+                ),
+            ],
+        );
+        let gems = Gems::parse(&format!(
+            "rubocop-fake\t{}\tFake::Plugin\n",
+            dir.join("rubocop-fake").display()
+        ));
+        let config = configuration(&dir, &mut ConfigLoader::new(gems));
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(!enabled(&config, "Fake/On"));
+        assert!(!enabled(&config, "Fake/Off"));
+        assert!(enabled(&config, "Fake/Configured"));
+        assert_eq!(config.for_cop("Fake/Configured")["Max"], Value::from(2));
+        assert!(enabled(&config, "Style/HashSyntax"));
+        assert!(!enabled(&config, "Style/Alias"));
     }
 
     #[test]
