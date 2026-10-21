@@ -100,6 +100,14 @@ pub struct Options {
     #[arg(long = "no-color", overrides_with = "color")]
     pub no_color: bool,
 
+    /// Print the translated AST of the given files (see `script/dump_ast`).
+    #[arg(long = "dump-ast", hide = true)]
+    pub dump_ast: bool,
+
+    /// The Ruby version `--dump-ast` parses as.
+    #[arg(long = "dump-ast-version", hide = true, default_value_t = 3.3)]
+    pub dump_ast_version: f64,
+
     /// Print the names of cops that have been ported to oxcop, then exit.
     #[arg(long = "show-ported-cops", hide = true)]
     pub show_ported_cops: bool,

@@ -1,0 +1,89 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Prints the RuboCop AST (parser-gem node types and source maps) of Ruby files
+# in the format `oxcop --dump-ast` uses, so the two can be diffed:
+#
+#   script/dump_ast [--version 2.7] FILE...
+#   script/compare_ast DIR_OR_FILES...   # runs both and diffs
+#
+# RuboCop parses with the `parser` gem below Ruby 3.3 and with
+# `Prism::Translation::Parser` from 3.3 on; `--version` picks which.
+
+require "rubocop"
+
+version = 2.7
+if (i = ARGV.index("--version"))
+  version = Float(ARGV[i + 1])
+  ARGV.slice!(i, 2)
+end
+
+def escape(string)
+  string.b.each_byte.map do |byte|
+    if byte.between?(0x20, 0x7e) && byte != 0x22 && byte != 0x5c
+      byte.chr
+    else
+      format("\\x%02X", byte)
+    end
+  end.join
+end
+
+def value(child)
+  case child
+  when Symbol then ":#{escape(child.to_s)}"
+  when String then "\"#{escape(child)}\""
+  when Integer then child.to_s
+  when Float then "f#{[child].pack('G').unpack1('H*')}"
+  when Rational then "r#{child.numerator}/#{child.denominator}"
+  when Complex then "c#{value(child.real)},#{value(child.imaginary)}"
+  when nil then "nil"
+  else "?#{child.class}"
+  end
+end
+
+def dump(node, offsets, depth, out)
+  indent = "  " * depth
+  if node.nil?
+    out << "#{indent}nil\n"
+    return
+  end
+  unless node.is_a?(Parser::AST::Node)
+    out << "#{indent}#{value(node)}\n"
+    return
+  end
+
+  loc = node.location
+  kind = loc.class.name.split("::").last
+  ranges = loc.instance_variables.sort.filter_map do |ivar|
+    range = loc.instance_variable_get(ivar)
+    next unless range.is_a?(Parser::Source::Range)
+
+    "#{ivar.to_s.delete_prefix('@')}=#{offsets[range.begin_pos]}..#{offsets[range.end_pos]}"
+  end
+  out << "#{indent}#{node.type} #{kind}{#{ranges.join(',')}}\n"
+  node.children.each { |child| dump(child, offsets, depth + 1, out) }
+end
+
+ARGV.each do |path|
+  source = File.read(path, mode: "rb").force_encoding(Encoding::UTF_8)
+  out = +"== #{path}\n"
+  begin
+    processed = RuboCop::AST::ProcessedSource.new(source, version, path)
+    if processed.valid_syntax?
+      # Character offsets (what parser reports) to byte offsets.
+      offsets = []
+      byte = 0
+      source.each_char do |char|
+        offsets << byte
+        byte += char.bytesize
+      end
+      offsets << byte
+      dump(processed.ast, offsets, 0, out)
+    else
+      out << "syntax error\n"
+    end
+  rescue StandardError => e
+    out << "error #{e.class}\n"
+  end
+  $stdout.write(out)
+end

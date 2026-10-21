@@ -130,7 +130,7 @@ fn extract_heredocs(processed_source: &ProcessedSource<'_>) -> Vec<Heredoc> {
         processed_source,
         heredocs: Vec::new(),
     };
-    visitor.visit(&processed_source.ast());
+    visitor.visit(&processed_source.prism_ast());
     visitor.heredocs
 }
 

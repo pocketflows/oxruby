@@ -33,6 +33,9 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> i32 {
         println!("{VERSION}");
         return STATUS_SUCCESS;
     }
+    if options.dump_ast {
+        return dump_ast(&options);
+    }
     if options.show_ported_cops {
         for name in registry::names() {
             println!("{name}");
@@ -122,4 +125,27 @@ fn maybe_print_corrected_source(options: &Options, format: &str, corrected: Opti
     }
     print!("{}", corrected.unwrap_or_default());
     let _ = std::io::stdout().flush();
+}
+
+fn dump_ast(options: &Options) -> i32 {
+    let mut out = std::io::stdout().lock();
+    for path in &options.paths {
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                eprintln!("{}: {e}", path.display());
+                return STATUS_ERROR;
+            }
+        };
+        let source = String::from_utf8_lossy(&bytes);
+        let processed =
+            crate::processed_source::ProcessedSource::new(&source, options.dump_ast_version, path);
+        let _ = writeln!(out, "== {}", path.display());
+        if processed.valid_syntax() {
+            let _ = write!(out, "{}", processed.tree().dump());
+        } else {
+            let _ = writeln!(out, "syntax error");
+        }
+    }
+    STATUS_SUCCESS
 }

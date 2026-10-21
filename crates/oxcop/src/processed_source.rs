@@ -5,8 +5,10 @@ use std::path::{Path, PathBuf};
 
 use ruby_prism::ParseResult;
 
+use crate::ast::Ast;
+
 /// A half-open byte range into the source, like `Parser::Source::Range`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Range {
     pub begin_pos: usize,
     pub end_pos: usize,
@@ -46,12 +48,24 @@ pub struct ProcessedSource<'src> {
     diagnostics: Vec<Diagnostic>,
     lines: Vec<&'src str>,
     ruby_version: f64,
+    ast: Ast,
 }
 
 impl<'src> ProcessedSource<'src> {
     pub fn new(raw_source: &'src str, ruby_version: f64, path: &Path) -> Self {
-        let parse_result = ruby_prism::parse(raw_source.as_bytes());
-        let diagnostics = parse_result
+        let version = (
+            ruby_version.trunc() as u8,
+            ((ruby_version * 10.0).round() as u8) % 10,
+        );
+        let parse_result = ruby_prism::parse_with_options(
+            raw_source.as_bytes(),
+            &ruby_prism::ParseOptions {
+                version: Some(version),
+                lex: false,
+                marker: std::marker::PhantomData,
+            },
+        );
+        let diagnostics: Vec<Diagnostic> = parse_result
             .errors()
             .map(|d| Diagnostic {
                 message: d.message().to_owned(),
@@ -74,7 +88,15 @@ impl<'src> ProcessedSource<'src> {
             lines.truncate(end_line);
         }
 
+        let ast = if diagnostics.is_empty() {
+            let file_name = path.to_string_lossy();
+            Ast::from_prism(&parse_result, raw_source, &file_name)
+        } else {
+            Ast::default()
+        };
+
         Self {
+            ast,
             path: path.to_path_buf(),
             raw_source,
             parse_result,
@@ -97,8 +119,17 @@ impl<'src> ProcessedSource<'src> {
         self.ruby_version
     }
 
-    pub fn ast(&self) -> ruby_prism::Node<'_> {
+    pub fn prism_ast(&self) -> ruby_prism::Node<'_> {
         self.parse_result.node()
+    }
+
+    /// The `parser`-gem-shaped AST (`nil` in RuboCop for an empty file).
+    pub fn ast(&self) -> Option<crate::ast::Node<'_>> {
+        self.ast.root()
+    }
+
+    pub fn tree(&self) -> &Ast {
+        &self.ast
     }
 
     pub fn parse_result(&self) -> &ParseResult<'src> {

@@ -1,6 +1,7 @@
 //! A Rust port of RuboCop's core. Module layout mirrors `lib/rubocop/` in
 //! the upstream repository so each file has an obvious Ruby counterpart.
 
+pub mod ast;
 pub mod cli;
 pub mod config;
 pub mod config_loader;

@@ -23,9 +23,17 @@ needs most of these):
       formatter, `--out`, `--fail-level`, `--display-only-*`, `--cache`, ...).
 - [ ] Result cache, and parallel inspection (rayon).
 - [ ] Hidden-file and `RubyInterpreters` edge cases in `TargetFinder`.
-- [ ] A node-pattern-style matching layer over Prism nodes. The rubocop-ast
-      node types (`send`, `csend`, `lvasgn`, ...) don't map one-to-one onto
-      Prism's, so cops are ported against Prism's node types instead.
+- [x] A `parser`-gem-shaped AST. `crates/oxcop/src/ast/` ports
+      `Prism::Translation::Parser::Compiler` and the `Parser::Builders::Default`
+      methods it calls, with RuboCop's legacy `emit_*` settings, so cops,
+      node patterns and offense locations port one-to-one from the Ruby
+      sources. `script/compare_ast DIR...` diffs it against RuboCop's own AST
+      (types, values and every source-map range); it is identical on all of
+      `../code`, rubocop's `lib/` and `spec/`, and the prism/parser gems.
+      Known difference: below Ruby 3.3 RuboCop uses the `parser` gem, whose
+      squiggly-heredoc unescaping of `\\` differs from Prism's (8 files in
+      rubocop's own specs).
+- [ ] A node-pattern matching layer (`def_node_matcher`) over that AST.
 
 ## oxcop: cops
 
