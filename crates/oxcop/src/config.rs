@@ -53,6 +53,23 @@ impl KnownCops {
     }
 }
 
+/// `Cop::Registry.global`: every core cop (default.yml's), whether ported
+/// or not.
+pub fn core_cops() -> &'static KnownCops {
+    static CORE: LazyLock<KnownCops> =
+        LazyLock::new(|| KnownCops::from_config(crate::config_loader::default_configuration()));
+    &CORE
+}
+
+impl KnownCops {
+    /// `Registry#names.include?` / `find_by_cop_name`.
+    pub fn contains(&self, cop_name: &str) -> bool {
+        self.names
+            .binary_search_by(|name| name.as_str().cmp(cop_name))
+            .is_ok()
+    }
+}
+
 impl crate::directive_comment::CopRegistry for KnownCops {
     fn names(&self) -> &[String] {
         &self.names
@@ -151,9 +168,19 @@ impl Config {
             .unwrap_or_else(|| self.for_cop(cop_name))
     }
 
+    /// The registry directives and directive cops resolve names with:
+    /// `Cop::Registry.global` (every core cop, ported or not) plus the cops
+    /// this configuration mentions (plugin and custom cops).
     pub fn known_cops(&self) -> &KnownCops {
-        self.known_cops
-            .get_or_init(|| KnownCops::from_config(&self.hash))
+        self.known_cops.get_or_init(|| {
+            let mut known = KnownCops::from_config(&self.hash);
+            let core = core_cops();
+            known.names.extend(core.names.iter().cloned());
+            known.names.sort();
+            known.names.dedup();
+            known.departments.extend(core.departments.iter().cloned());
+            known
+        })
     }
 
     /// `Registry#disabled_names`.
