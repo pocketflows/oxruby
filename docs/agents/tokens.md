@@ -51,10 +51,11 @@ token text is `Rational#to_s`/`Complex#to_s`, as in RuboCop.
 
 ## Known gaps
 
-Not seen in any corpus, so not handled: a string literal that spans lines
-on the same line as a heredoc start (`foo(<<A, "x\ny")`, where Prism splits
-the string's content around the heredoc body), and `\` line continuations on
-a heredoc start line.
+None known. Literals that span lines on a heredoc start line
+(`foo(<<A, "x\nbody\nA\ny")`) split around the body as Prism does. Any
+construct the tree walk misses shows up as `?unknown OFFSET` in
+`oxcop --dump-prism-tokens` and as a diff in `script/compare_ast
+--prism-tokens`; run that on new corpora first.
 
 ## Left
 
