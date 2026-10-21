@@ -1,0 +1,86 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Differential test of oxcop's Prism-to-parser AST translation against
+# RuboCop's own (`script/dump_ast`), over every Ruby file under the given
+# directories or files.
+#
+#   script/compare_ast [--version 3.3] [--show N] PATH...
+#
+# Exits non-zero when any file's AST differs.
+
+require "open3"
+require "tmpdir"
+
+root = File.expand_path("..", __dir__)
+oxcop = ENV.fetch("OXCOP_BINARY") { File.join(root, "target", "debug", "oxcop") }
+version = "3.3"
+show = 5
+args = ARGV.dup
+tokens = args.delete("--tokens")
+if (i = args.index("--version"))
+  version = args[i + 1]
+  args.slice!(i, 2)
+end
+if (i = args.index("--show"))
+  show = Integer(args[i + 1])
+  args.slice!(i, 2)
+end
+
+files = args.flat_map do |path|
+  File.directory?(path) ? Dir.glob(File.join(path, "**", "*.rb")) : [path]
+end.map { |f| File.expand_path(f) }.sort
+
+def split(output)
+  result = {}
+  current = nil
+  output.each_line do |line|
+    if line.start_with?("== ")
+      current = line[3..].chomp
+      result[current] = +""
+    else
+      result[current] << line
+    end
+  end
+  result
+end
+
+expected = {}
+actual = {}
+files.each_slice(500) do |slice|
+  out, status = Open3.capture2("ruby", File.join(__dir__, "dump_ast"), "--version", version, *[tokens].compact, *slice)
+  abort "dump_ast failed" unless status.success?
+  expected.merge!(split(out))
+  mode = tokens ? "--dump-tokens" : "--dump-ast"
+  out, status = Open3.capture2(oxcop, mode, "--dump-ast-version", version, *slice)
+  abort "oxcop --dump-ast failed" unless status.success?
+  actual.merge!(split(out))
+end
+
+compared = 0
+skipped = 0
+differ = []
+files.each do |file|
+  e = expected[file]
+  a = actual[file]
+  if e.nil? || e.start_with?("error") || e == "syntax error\n" || a == "syntax error\n"
+    skipped += 1 unless e == a
+    next
+  end
+  compared += 1
+  differ << file if e != a
+end
+
+differ.first(show).each do |file|
+  puts "=== #{file}"
+  Dir.mktmpdir do |dir|
+    File.write(File.join(dir, "rubocop"), expected[file])
+    File.write(File.join(dir, "oxcop"), actual[file])
+    diff, = Open3.capture2("diff", "-u", File.join(dir, "rubocop"), File.join(dir, "oxcop"))
+    puts diff.lines.first(40).join
+  end
+end
+syntax_mismatch = files.count { |f| (expected[f] == "syntax error\n") != (actual[f] == "syntax error\n") }
+puts "files: #{files.size}, compared: #{compared}, differ: #{differ.size}, " \
+     "syntax-validity mismatches: #{syntax_mismatch}"
+exit(differ.empty? ? 0 : 1)

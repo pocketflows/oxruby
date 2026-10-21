@@ -30,6 +30,10 @@ RSpec.configure do |config|
 
   config.filter_run_excluding broken_on: :ruby_head if ENV["CI_RUBY_VERSION"] == "head"
 
+  # oxcop always parses with Prism, which handles Ruby 3.3+ syntax only;
+  # upstream skips these examples under its Prism engine (`unsupported_on:`).
+  config.filter_run_excluding unsupported_on: :prism
+
   # Examples for cops that have not been ported yet are filtered out rather
   # than run; the scoreboard printed at the end tracks the remaining work.
   config.define_derived_metadata do |metadata|

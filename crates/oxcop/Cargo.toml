@@ -20,3 +20,6 @@ serde_json.workspace = true
 serde_yaml_ng.workspace = true
 unicode-width.workspace = true
 walkdir.workspace = true
+onig = { version = "6.5", default-features = false }
+regex = "1"
+rayon = "1"

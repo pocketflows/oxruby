@@ -7,6 +7,7 @@ use crate::processed_source::{ProcessedSource, Range};
 
 const MSG: &str = "Trailing whitespace detected.";
 
+#[derive(Default)]
 pub struct TrailingWhitespace;
 
 impl Cop for TrailingWhitespace {
@@ -70,7 +71,7 @@ fn process_line_in_heredoc(
     heredoc: &Heredoc,
 ) {
     let indent_level = indent_level(processed_source.slice(heredoc.body));
-    let whitespace_only = whitespace_only(processed_source.raw_source(), range);
+    let whitespace_only = whitespace_only(processed_source.buffer_source(), range);
     if whitespace_only && processed_source.slice(range).chars().count() <= indent_level {
         corrector.remove(range);
     } else if !heredoc.static_ {
@@ -130,7 +131,7 @@ fn extract_heredocs(processed_source: &ProcessedSource<'_>) -> Vec<Heredoc> {
         processed_source,
         heredocs: Vec::new(),
     };
-    visitor.visit(&processed_source.ast());
+    visitor.visit(&processed_source.prism_ast());
     visitor.heredocs
 }
 
@@ -153,7 +154,7 @@ impl HeredocVisitor<'_, '_> {
         if !opening.starts_with(b"<<") {
             return;
         }
-        let body_end = closing.start_offset();
+        let body_end = closing.start() as usize;
         let body_start = body_start.unwrap_or(body_end).min(body_end);
         self.heredocs.push(Heredoc {
             lines: self.processed_source.line_of(body_start)
@@ -168,7 +169,7 @@ impl<'pr> Visit<'pr> for HeredocVisitor<'_, '_> {
     fn visit_string_node(&mut self, node: &ruby_prism::StringNode<'pr>) {
         self.record(
             node.opening_loc(),
-            Some(node.content_loc().start_offset()),
+            Some(node.content_loc().start() as usize),
             node.closing_loc(),
         );
         ruby_prism::visit_string_node(self, node);
@@ -177,7 +178,7 @@ impl<'pr> Visit<'pr> for HeredocVisitor<'_, '_> {
     fn visit_x_string_node(&mut self, node: &ruby_prism::XStringNode<'pr>) {
         self.record(
             Some(node.opening_loc()),
-            Some(node.content_loc().start_offset()),
+            Some(node.content_loc().start() as usize),
             Some(node.closing_loc()),
         );
         ruby_prism::visit_x_string_node(self, node);
@@ -187,7 +188,7 @@ impl<'pr> Visit<'pr> for HeredocVisitor<'_, '_> {
         let body_start = node
             .parts()
             .first()
-            .map(|part| part.location().start_offset());
+            .map(|part| part.location().start() as usize);
         self.record(node.opening_loc(), body_start, node.closing_loc());
         ruby_prism::visit_interpolated_string_node(self, node);
     }
@@ -199,7 +200,7 @@ impl<'pr> Visit<'pr> for HeredocVisitor<'_, '_> {
         let body_start = node
             .parts()
             .first()
-            .map(|part| part.location().start_offset());
+            .map(|part| part.location().start() as usize);
         self.record(
             Some(node.opening_loc()),
             body_start,

@@ -100,6 +100,32 @@ pub struct Options {
     #[arg(long = "no-color", overrides_with = "color")]
     pub no_color: bool,
 
+    /// Print the translated AST of the given files (see `script/dump_ast`).
+    #[arg(long = "dump-ast", hide = true)]
+    pub dump_ast: bool,
+
+    /// Print the `parser`-gem tokens of the given files.
+    #[arg(long = "dump-tokens", hide = true)]
+    pub dump_tokens: bool,
+
+    /// The Ruby version `--dump-ast` parses as.
+    #[arg(long = "dump-ast-version", hide = true, default_value_t = 3.3)]
+    pub dump_ast_version: f64,
+
+    /// Use the `-c` file as the whole configuration, without RuboCop's
+    /// defaults (what RuboCop's specs do; used by the spec shim).
+    #[arg(long = "raw-config", hide = true)]
+    pub raw_config: bool,
+
+    /// Keep the same cop instances across autocorrect iterations, as the
+    /// `expect_correction` loop of RuboCop's specs does.
+    #[arg(long = "persist-cops", hide = true)]
+    pub persist_cops: bool,
+
+    /// Stop after one autocorrect pass (`expect_correction(loop: false)`).
+    #[arg(long = "autocorrect-once", hide = true)]
+    pub autocorrect_once: bool,
+
     /// Print the names of cops that have been ported to oxcop, then exit.
     #[arg(long = "show-ported-cops", hide = true)]
     pub show_ported_cops: bool,

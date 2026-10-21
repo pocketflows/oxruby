@@ -34,7 +34,7 @@ module Oxcop
         def offenses(source, path:, config:, cop_name:)
           @investigations = investigations.to_i + 1
           with_config(config) do |config_path|
-            stdout, = run("--stdin", path, "-c", config_path, "--only", cop_name,
+            stdout, = run("--stdin", path, "-c", config_path, "--raw-config", "--only", cop_name,
                           "--format", "json", "--no-display-cop-names", stdin: source)
             JSON.parse(stdout).fetch("files").flat_map { |file| file["offenses"] }
           end
@@ -42,10 +42,11 @@ module Oxcop
 
         # `source` after autocorrecting with every correction (`-A`) until no
         # more changes are made.
-        def autocorrect(source, path:, config:, cop_name:)
+        def autocorrect(source, path:, config:, cop_name:, once: false)
           with_config(config) do |config_path|
-            stdout, = run("--stdin", path, "-c", config_path, "--only", cop_name,
-                          "-A", "--format", "quiet", "--stderr", stdin: source)
+            stdout, = run("--stdin", path, "-c", config_path, "--raw-config", "--persist-cops",
+                          *("--autocorrect-once" if once),
+                          "--only", cop_name, "-A", "--format", "quiet", "--stderr", stdin: source)
             stdout
           end
         end
