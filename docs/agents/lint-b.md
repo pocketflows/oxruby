@@ -127,6 +127,25 @@ UselessElseWithoutRescue only applies to Ruby <= 2.5 (`parser`'s
 
 - Lint/ScriptPermission: see below.
 
+## Landing the queue (when main's full gate is green)
+
+`lint-b` (and `lint-b-wip`, the same commits) holds everything not on main.
+`git rebase main` (if style-d has landed `nil_methods.rs` first, expect a
+trivial conflict in `cop/mixin/mod.rs`; the file itself is byte-identical),
+rerun the queued cops' specs, then one `script/land` (full gate). Before
+the hold, `script/compare_with_rubocop ../code` on the whole queue reported
+0 mismatched files.
+
+## Notes for others
+
+- `processed_source.rs` is the one edit in the queue outside my ownership:
+  one additive `.filter` in `ProcessedSource::new` that drops Prism's
+  "Invalid retry without rescue" error below Ruby 3.3 (see UnreachableCode
+  below). `tokens`/`runtime`: keep it when you rebase.
+- Lint/ShadowedException's `Errno` table was dumped on macOS. On Linux some
+  pairs are aliases (`EDEADLOCK`/`EDEADLK`, `ENOTSUP`/`EOPNOTSUPP`) that are
+  distinct classes here; it only matters when one `rescue` names both.
+
 ## Principled failures and decisions
 
 - **Lint/UnreachableCode**: its `retry` examples put `retry` outside a
