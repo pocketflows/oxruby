@@ -4,6 +4,7 @@
 
 - Style/NegatedIf 15
 - Style/NegatedWhile 10
+- Style/NegativeArrayIndex 424
 - Style/NestedTernaryOperator 7
 - Style/Next 72
 - Style/NilComparison 10
