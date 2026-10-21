@@ -4,12 +4,10 @@ Every cop in these departments is ported. The ones not on `main` are green
 except for examples that need harness support owned by `runtime` (the
 requests below) or the token stream (`tokens`). Branches:
 
-- `depts`: landed, or committed and waiting for the full gate.
-- `depts-wip`: cops blocked on the requests below (each passes every other
-  example of its spec).
-- `depts-tok`: `depts` plus a merge of `tokens`, with Naming/AsciiIdentifiers
-  (12/12 there) and Naming/InclusiveLanguage (34/37). Once `tokens` is on
-  main, cherry-pick the AsciiIdentifiers commit onto `depts` and land it.
+- `depts`: everything green is landed on main.
+- `depts-wip` (local): cops blocked on the requests below, each passing
+  every other example of its spec. Rebase it onto main, and land a cop as
+  soon as its request is done.
 
 ## Requests for `runtime` (shim / CLI)
 
@@ -78,6 +76,7 @@ AccessorMethodName 25 (2 pending: they need the `rubydex` project index, as
 upstream without it), BinaryOperatorParameterName 16, BlockForwarding 35,
 BlockParameterName 13, ClassAndModuleCamelCase 5, HeredocDelimiterCase 25,
 HeredocDelimiterNaming 18, MemoizedInstanceVariableName 74,
+AsciiIdentifiers 12,
 MethodParameterName 23, PredicateMethod 1262, RescuedExceptionsVariableName 37.
 
 Metrics: CollectionLiteralLength 13, MethodLength 33, PerceivedComplexity 36.
@@ -110,8 +109,7 @@ cops only on `foo.gemspec`.
 | Naming/VariableNumber | 49/78 | request 4 |
 | Bundler/GemFilename | 7/15 | request 6 |
 | Gemspec/RequiredRubyVersion | 20/21 | request 3 |
-| Naming/AsciiIdentifiers | 12/12 with tokens | `tokens` landing |
-| Naming/InclusiveLanguage | 34/37 with tokens | `tokens`, request 3 |
+| Naming/InclusiveLanguage | 34/37 | request 3 |
 | Migration/DepartmentName | not ported | request 7 |
 
 ## Shared changes
