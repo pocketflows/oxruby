@@ -18,6 +18,8 @@ module Oxcop
     # The cops whose index-aware code is ported. The `:project_index`
     # examples of the others stay pending until it is.
     INDEX_AWARE_COPS = %w[
+      Lint/ArgumentMismatch
+      Lint/DeprecatedReference
       Style/StaticClass
     ].freeze
 
