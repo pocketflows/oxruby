@@ -155,9 +155,7 @@ invalid-UTF-8 strings in a spec's cop config
   passes the current Ruby state in (`--auto-gen-state FILE`), so
   `expect_offense` + `expect_correction` accumulate (FormatStringToken
   420/420 with style-b-wip's port). Cops must still *call* the detection
-  functions: layout-a-wip's EndAlignment/DefEndAlignment/BeginEndAlignment
-  fail only because their ports don't call `correct_style_detected` /
-  `opposite_style_detected` / `unrecognized_style_detected` yet.
+  functions where upstream does.
 - **One cop object per example**: the shim replays the example's earlier
   investigations first (`--prior NAME=FILE`), so cop state carries over
   between files as upstream's memoized `cop` does (DuplicateMethods: only
@@ -187,19 +185,15 @@ invalid-UTF-8 strings in a spec's cop config
 - Result cache (`ResultCache`): not started. `--cache` is accepted and ignored.
 - ConfigValidator (unknown cops/params warnings, invalid values).
 
-- Debug oxcop on the full ../code compare was ~225 s with ~170 cops, and
-  almost all of it is **Style/RedundantFreeze**: 55 s on app/models alone
-  (every other cop < 1 s). It calls `frozen_string_literals_enabled` per
-  `.freeze`, which re-reads the leading comments through `MagicComment`
-  each time (the coordinator has a MagicComment perf fix pending).
 - Plugins whose `rules` aren't `config/default.yml` (`type: :object`).
 - `inherit_from` globs, remote configs,
   `handle_disabled_by_default`, `add_missing_namespaces`,
   `add_excludes_from_files`, ConfigFinder's project-root stop.
-- Directive cops, pending-cops warning, CLI options, result cache, rayon.
-- Parallel spec files (parallel_tests), once the suite grows enough that
-  per-example Ruby time dominates.
+- Timing now (full compare on ../code, debug, ~400 cops): rubocop 95 s,
+  oxcop 20 s. Full gate specs: 31 s (4 groups).
 
 ## Gaps / blockers
 
-None yet.
+- Principled spec failures: none in the runtime-owned cops.
+- `script/parallel_rspec` prints one scoreboard per group (partial counts);
+  `bundle exec rspec` still gives the whole scoreboard.
