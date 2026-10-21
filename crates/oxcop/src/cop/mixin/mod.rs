@@ -19,6 +19,7 @@ pub mod interpolation;
 pub mod method_preference;
 pub mod negative_conditional;
 pub mod parentheses;
+pub mod percent_literal;
 pub mod range_help;
 pub mod rational_literal;
 pub mod safe_assignment;

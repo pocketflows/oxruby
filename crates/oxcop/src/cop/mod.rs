@@ -10,6 +10,7 @@ pub mod offense;
 pub mod registry;
 pub mod severity;
 pub mod team;
+pub mod utils;
 pub mod variable_force;
 
 // The department modules (`layout`, `lint`, ...) and `CONSTRUCTORS`,
