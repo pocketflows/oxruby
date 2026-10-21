@@ -93,12 +93,8 @@ and tests without running `oxtree:check` a second time.
 
 ### CI (`.github/workflows/`)
 
-**Not landed yet:** this is commit 0d31dcd on the local branch `tree-pkg-wip`.
-It touches `.github/`, so `script/land` runs the full gate. On 2026-10-21
-rspec passed (2004 examples, 0 failures), but `compare_with_rubocop ../code`
-reported 24 mismatched files on main 72921c9. That came from the Style cops
-landed just before it, not from this YAML-only diff. Cherry-pick it onto
-`tree-pkg` and land once main's compare is back to 0.
+Landed in 41a974b, after a first attempt was blocked by main's compare gate
+(24 mismatches from other agents' cops, fixed by the time of the retry).
 
 Additive lines only:
 
@@ -128,8 +124,6 @@ Additive lines only:
 - Adapt `gems/oxtree` once tree-cli's `cli.rs` lands, if the executable
   name or flags need it. Today it's pure pass-through, and the binary only has
   the dev commands (`--format-file` and so on).
-- Land the CI commit (`tree-pkg-wip`, 0d31dcd) once main's compare gate is
-  green.
 - `rake vendor:rubocop` (runtime's) uses `../rubocop` relative to the
   checkout, so it fails from a worktree. `oxtree:vendor`'s `oxtree_sibling`
   shows the fix if runtime wants it.
