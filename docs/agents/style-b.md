@@ -1,70 +1,49 @@
 # style-b: Style cops F–M
 
-Branch `style-b`. Held ports (complete, but their specs can't fully pass
-yet) are on `style-b-wip`.
+Branch `style-b`. The one held port (complete, but its spec can't fully
+pass yet) is on `style-b-wip`.
 
-## Done (whole upstream spec passes; example counts)
+## Done (whole upstream spec passes; example counts), all on main
 
 FetchEnvVar 39, FileEmpty 17, FileNull 15, FileOpen 21, FileRead 30,
 FileTouch 4, FileWrite 50, FloatDivision 34, For 35, FormatString 48,
-GlobalStdStream 6, GlobalVars 74, HashAsLastArrayItem 19, HashConversion 25,
+FrozenStringLiteralComment 103, GlobalStdStream 6, GlobalVars 74,
+GuardClause 76, HashAsLastArrayItem 19, HashConversion 25,
 HashEachMethods 62, HashExcept 110, HashFetchChain 34, HashLikeCase 8,
-HashSlice 114, HashTransformKeys 40, HashTransformValues 40,
-IdenticalConditionalBranches 49, IfInsideElse 23, IfUnlessModifier 144,
-IfWithBooleanLiteralBranches 94, IfWithSemicolon 36, ImplicitRuntimeError 8,
-InPatternThen 7, InlineComment 4, InverseMethods 110, IpAddresses 14,
-ItAssignment 23, ItBlockParameter 34, KeywordArgumentsMerging 10,
-KeywordParametersOrder 11, Lambda 41, LambdaCall 20,
+HashLookupMethod 21, HashSlice 114, HashSyntax 172, HashTransformKeys 40,
+HashTransformValues 40, IdenticalConditionalBranches 49, IfInsideElse 23,
+IfUnlessModifier 144, IfWithBooleanLiteralBranches 94, IfWithSemicolon 36,
+ImplicitRuntimeError 8, InPatternThen 7, InfiniteLoop 28, InlineComment 4,
+InverseMethods 110, IpAddresses 14, ItAssignment 23, ItBlockParameter 34,
+KeywordArgumentsMerging 10, KeywordParametersOrder 11, Lambda 41,
+LambdaCall 20, LineEndConcatenation 19, MagicCommentFormat 28,
 MapCompactWithConditionalBlock 33, MapIntoArray 64, MapJoin 23, MapToHash 38,
 MapToSet 32, MethodCallWithArgsParentheses 149,
 MethodCallWithoutArgsParentheses 39, MethodCalledOnDoEndBlock 10,
 MethodDefParentheses 53, MinMax 12, MinMaxComparison 19, MissingElse 84,
 MissingRespondToMissing 17 (6 pending: need `rubydex`, as upstream without
 it), MixinGrouping 18, MixinUsage 19, ModuleFunction 12,
-ModuleMemberExistenceCheck 69, MultilineBlockChain 11, MultilineIfThen 14,
-MultilineInPatternThen 13, MultilineMethodSignature 21,
-MultilineTernaryOperator 15, MultilineWhenThen 13, MultipleComparison 36.
+ModuleMemberExistenceCheck 69, MultilineBlockChain 11, MultilineIfModifier 10,
+MultilineIfThen 14, MultilineInPatternThen 13, MultilineMemoization 19,
+MultilineMethodSignature 21, MultilineTernaryOperator 15, MultilineWhenThen 13,
+MultipleComparison 36.
 
-61 cops. 43 of them (the ones needing no new shared helper) are on main
-(b6c30e6, landed from a cop-only branch while main's full gate was red). The
-other 18 need the full gate because they come with shared changes: FileRead,
-FileWrite, For, HashExcept, HashLikeCase, HashSlice, HashTransformKeys,
-HashTransformValues, IfInsideElse, IfUnlessModifier, IfWithSemicolon,
-KeywordArgumentsMerging, Lambda, MapIntoArray, MethodCallWithArgsParentheses,
-MissingElse, MultilineIfThen, MultilineMethodSignature. Land `style-b` with
-`script/land` once main is green.
+70 cops (plus IfUnlessModifierOfIfUnless, InvertibleUnlessCondition and
+MutableConstant, which were already done). Last landing: main 625e0a7.
 
-## Left
+## Left: one cop, blocked on the spec shim (port on `style-b-wip`)
 
-- Waiting on `tokens` (`processed_source.tokens`): FrozenStringLiteralComment,
-  LineEndConcatenation, MagicCommentFormat.
-- Waiting on `layout-b`'s Alignment mixin reaching main (`offset`,
-  `indentation`, `configured_indentation_width`): InfiniteLoop,
-  MultilineIfModifier, MultilineMemoization.
-
-## Blocked on the spec shim / runtime (ports done, on `style-b-wip`)
-
-- **`config_to_allow_offenses`** (ConfigurableEnforcedStyle's
-  `correct_style_detected`/`opposite_style_detected`/`style_detected`, which
-  only feed `--auto-gen-config`): specs assert on `cop.config_to_allow_offenses`
-  after `expect_offense`. Style/HashSyntax 163/172 (all 9 failures),
-  Style/FormatStringToken 348/420 (all 72). Other agents' cops hit it too
-  (StringLiterals, SymbolArray, WordArray, NumericLiterals, SpecialGlobalVars).
-  Needs: the detection bookkeeping in `configurable_enforced_style.rs` /
-  `Investigation`, the binary reporting it, and the shim setting it on the
-  spec's cop. **Decision for the coordinator/runtime.** HashSyntax is enabled
-  in `../code`, so it matters.
-- **Cop errors**: Style/GuardClause 75/76 — "Invalid MinBodyLength fails with
-  an error" expects `raise_error('MinBodyLength needs to be a positive
-  integer!')`. The cop panics with that message; the shim raises
-  `Binary::Error` with the whole stderr instead. Style/Next and
-  Style/MagicCommentFormat specs have the same pattern. Needs the binary to
-  report a cop error in a parsable way and the shim to re-raise it as a
-  `RuntimeError` with the message.
-- **Offense dedup**: Style/HashLookupMethod 19/21 — `a[:x][:y]` gives two
-  offenses at the same line/column with the same message; `Runner` dedups
-  them (RuboCop's runner does `offenses.uniq` too), but the spec helper calls
-  the cop directly. Needs the spec path to skip the dedup.
+- **Style/FormatStringToken** 384/420. The 36 failures are
+  `expect(cop.config_to_allow_offenses).to eq('Enabled' => false)` after an
+  `expect_offense` plus `expect_correction`. In Ruby the same cop instance
+  runs both, so `detected_style` accumulates (`template` in the offense run,
+  then `annotated` in the corrected source), and the intersection becomes
+  empty. The binary's auto-gen state is per investigation: it isn't carried
+  across the correction loop's iterations (`--persist-cops`) or from the
+  `expect_offense` call to the autocorrect call. Needs `runtime` to keep
+  `AutoGenState` with the persisted cops and have the shim pass it between
+  calls (or merge the reports the way `style_detected` would). The cop
+  already records its detected styles.
 
 ## Mixins and correctors owned
 
@@ -96,6 +75,5 @@ MissingElse, MultilineIfThen, MultilineMethodSignature. Land `style-b` with
 - `style_for` strips a leading `:` but `supported_styles`/`alternative_styles`
   don't; a cop comparing `style(cx)` with `supported_styles(cx)` under a spec
   that passes symbols would mismatch. Nothing fails from it today.
-- Checked before handing off: full `bundle exec rspec` green (15331
-  examples) and `script/compare_with_rubocop ../code` over every ported cop:
-  0 mismatched files, with this branch's shared changes.
+- Every landing passed `script/land`'s gates, including
+  `compare_with_rubocop ../code` (0 mismatched files).
