@@ -180,6 +180,10 @@ impl<'src> ProcessedSource<'src> {
                 message: String::from_utf8_lossy(d.message()).into_owned(),
                 range: Range::from(&d.location()),
             })
+            // Below Ruby 3.3 RuboCop parses with the `parser` gem, which
+            // accepts `retry` outside of `rescue` (Ruby rejects it when
+            // compiling, not parsing).
+            .filter(|d| !(ruby_version < 3.3 && d.message == "Invalid retry without rescue"))
             .collect();
 
         let mut line_starts = vec![0];
