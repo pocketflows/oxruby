@@ -64,6 +64,7 @@
 - Style/RedundantStructKeywordInit 12
 - Style/RegexpLiteral 65
 - Style/RequireOrder 24
+- Style/RescueStandardError 37
 - Style/ReturnNil 5
 - Style/ReturnNilInPredicateMethodDefinition 39
 - Style/ReverseFind 14
@@ -143,6 +144,9 @@ Style/RescueModifier, Style/Next, Style/PercentLiteralDelimiters.
 ## Mixins owned
 
 - `cop/mixin/integer_node.rs` (IntegerNode)
+- `cop/mixin/rescue_node.rs` (RescueNode): `modifier_locations(ps)` reads the
+  `keyword_loc` of Prism's `RescueModifierNode`s (what `kRESCUE_MOD` tokens
+  would give), so it works without `processed_source.tokens`.
 
 ## Shared-file edits
 

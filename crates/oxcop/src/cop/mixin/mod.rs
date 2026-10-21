@@ -23,6 +23,7 @@ pub mod parentheses;
 pub mod percent_literal;
 pub mod range_help;
 pub mod rational_literal;
+pub mod rescue_node;
 pub mod safe_assignment;
 pub mod string_help;
 pub mod string_literals_help;
