@@ -1,12 +1,10 @@
 //! Port of `lib/rubocop/cop/lint/constant_reassignment.rb`.
-//!
-//! Without a project index (`rubydex` isn't supported) there are no
-//! cross-file collisions, as in RuboCop without one.
 
 use std::collections::HashMap;
 
 use crate::ast::node_pattern::NodePattern;
 use crate::ast::{Node, NodeType};
+use crate::cop::mixin::project_index_help::prior_definition_in_other_file;
 use crate::cop::{Cop, Investigation};
 
 static REMOVE_CONSTANT: NodePattern =
@@ -74,7 +72,8 @@ impl ConstantReassignment {
             cx.add_offense(node.source_range(), &message);
             return;
         }
-        self.constant_definitions.insert(name, "casgn");
+        self.constant_definitions.insert(name.clone(), "casgn");
+        report_cross_file_collision(cx, node, &name, &constant_display_name(node));
     }
 
     fn on_send(&mut self, node: Node<'_>) {
@@ -220,3 +219,32 @@ fn identifier_namespaces(identifier: Node<'_>) -> Vec<String> {
         .collect()
 }
 
+
+/// `report_cross_file_collision`.
+fn report_cross_file_collision(
+    cx: &mut Investigation<'_, '_>,
+    node: Node<'_>,
+    fully_qualified_name: &str,
+    display_name: &str,
+) {
+    let Some(index) = cx.project_index() else {
+        return;
+    };
+    let Some(declaration) =
+        index.get(fully_qualified_name.strip_prefix("::").unwrap_or(fully_qualified_name))
+    else {
+        return;
+    };
+    let definitions = index.definitions(declaration);
+    let Some(prior) = prior_definition_in_other_file(cx, &index, &definitions) else {
+        return;
+    };
+    let Some(path) = index.location(prior).and_then(|location| location.file_path) else {
+        return;
+    };
+    let message = format!(
+        "Constant `{display_name}` is already assigned in `{}`.",
+        path.display()
+    );
+    cx.add_offense(node.source_range(), &message);
+}

@@ -15,26 +15,6 @@ module Oxcop
       end
     end
 
-    # The cops whose index-aware code is ported. The `:project_index`
-    # examples of the others stay pending until it is.
-    INDEX_AWARE_COPS = %w[
-      Lint/ArgumentMismatch
-      Lint/DeprecatedReference
-      Lint/NameTypo
-      Lint/ConstantResolution
-      Lint/InheritException
-      Lint/MissingSuper
-      Lint/SuperArgumentMismatch
-      Lint/UnusedPrivateMethod
-      Naming/AccessorMethodName
-      Naming/PredicatePrefix
-      Style/ClassAndModuleChildren
-      Style/Documentation
-      Style/MissingRespondToMissing
-      Style/RedundantConstantBase
-      Style/StaticClass
-    ].freeze
-
     # Examples that drive the Ruby cop's internals with a real
     # `Rubydex::Graph` instead of investigating through the binary, so
     # they can't run here (see docs/agents/index.md). Lint/UnusedPrivateMethod's
@@ -56,8 +36,8 @@ module Oxcop
       # output. oxcop has no result cache, so `cache_root` changes nothing.
       def project_index_offenses(tmpdir, cache_root: nil, paths: nil) # rubocop:disable Lint/UnusedMethodArgument
         output_path = File.join(tmpdir, "offenses.json")
-        stdout, = Dir.chdir(tmpdir) do
-          Binary.send(:run, "-c", File.join(tmpdir, ".rubocop.yml"), "--format", "json", *(paths || [tmpdir]))
+        stdout = Dir.chdir(tmpdir) do
+          Binary.run_project("-c", File.join(tmpdir, ".rubocop.yml"), "--format", "json", *(paths || [tmpdir]))
         end
         File.write(output_path, stdout)
         JSON.load_file(output_path).fetch("files").flat_map do |file|
@@ -83,12 +63,8 @@ RSpec.configure do |config|
   config.before(:each, :project_index) do |example|
     cop_class = example.metadata[:described_class]
     next unless cop_class.is_a?(Class) && cop_class < RuboCop::Cop::Base
+    next unless Oxcop::Spec::RUBY_INTERNALS_EXAMPLES.any? { |prefix| example.full_description.start_with?(prefix) }
 
-    if Oxcop::Spec::RUBY_INTERNALS_EXAMPLES.any? { |prefix| example.full_description.start_with?(prefix) }
-      skip "oxcop: drives the Ruby cop's internals with a rubydex graph, which the shim doesn't build."
-    end
-    next if Oxcop::Spec::INDEX_AWARE_COPS.include?(cop_class.cop_name)
-
-    skip "oxcop: #{cop_class.cop_name}'s project-index code is not ported yet."
+    skip "oxcop: drives the Ruby cop's internals with a rubydex graph, which the shim doesn't build."
   end
 end

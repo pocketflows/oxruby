@@ -1,15 +1,15 @@
 //! Port of `lib/rubocop/cop/lint/duplicate_methods.rb`.
 //!
-//! Without a project index (`rubydex` isn't supported) there is no
-//! cross-file duplicate check (`check_cross_file_duplicate`), as in RuboCop
-//! without one. Definitions are kept for the cop instance's lifetime, as
-//! `@definitions` is.
+//! Definitions are kept for the cop instance's lifetime, as `@definitions`
+//! is.
 
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::node_pattern::NodePattern;
 use crate::ast::{Child, Node, NodeType};
+use crate::cop::mixin::project_index_help::definitions_in_other_files;
 use crate::cop::{Cop, Investigation};
+use crate::project_index::{Def, DefKind, ProjectIndex};
 use crate::path_util::{match_path, smart_path};
 use crate::processed_source::Range;
 use crate::regex;
@@ -272,7 +272,39 @@ impl DuplicateMethods {
             self.found_redefinition(cx, node, method_name, &key, scope);
         } else {
             self.definitions.insert(key, definition(cx, node));
+            if scope_id.is_none() && scope.is_none() {
+                self.check_cross_file_duplicate(cx, node, method_name);
+            }
         }
+    }
+
+    /// `check_cross_file_duplicate`: with the project index, a method also
+    /// defined in another file of the project.
+    fn check_cross_file_duplicate<'a>(
+        &self,
+        cx: &mut Investigation<'a, '_>,
+        node: Node<'a>,
+        method_name: &str,
+    ) {
+        let Some(index) = cx.project_index() else {
+            return;
+        };
+        if self.intentionally_redefined.contains(method_name)
+            || node.ancestors().any(|a| a.is_any_def())
+        {
+            return;
+        }
+        let Some(prior) = cross_file_prior_definition(cx, &index, method_name) else {
+            return;
+        };
+        let Some(defined) = index_source_location(&index, prior) else {
+            return;
+        };
+        let message = format!(
+            "Method `{method_name}` is defined at both {defined} and {}.",
+            source_location(cx, node)
+        );
+        cx.add_offense(location(node), &message);
     }
 
     fn found_redefinition<'a>(
@@ -601,4 +633,138 @@ fn anon_block_identity(cx: &Investigation<'_, '_>, anon_block: Node<'_>) -> Stri
         anon_block.first_line(),
         range.begin_pos
     )
+}
+
+/// `cross_file_prior_definition`.
+fn cross_file_prior_definition(
+    cx: &Investigation<'_, '_>,
+    index: &ProjectIndex,
+    method_name: &str,
+) -> Option<Def> {
+    let indexable = regex!(r"\A([A-Z]\w*(?:::[A-Z]\w*)*)([#.])([^#.]+)\z");
+    let captures = indexable.captures(method_name)?;
+    let (owner, separator, name) = (captures.at(1)?, captures.at(2)?, captures.at(3)?);
+    let definitions: Vec<Def> =
+        definitions_in_other_files(cx, index, &indexed_definitions(index, owner, separator, name))
+            .into_iter()
+            .filter(|definition| {
+                !definition_path(index, *definition)
+                    .is_some_and(|path| allowed_cross_file_path(cx, &path))
+            })
+            .collect();
+    if definitions.is_empty()
+        || cross_file_self_alias_trick(index, &definitions)
+        || cross_file_redefinition_marker(cx, index, &definitions, name)
+    {
+        return None;
+    }
+    // `first_indexed_definition`
+    definitions
+        .into_iter()
+        .find(|definition| definition.kind != DefKind::MethodAlias)
+}
+
+fn definition_path(index: &ProjectIndex, definition: Def) -> Option<String> {
+    index
+        .location(definition)?
+        .file_path
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+/// `indexed_definitions`: rubydex indexes `attr_writer :foo` under `foo`
+/// rather than `foo=`, so writer definitions come from both the `foo=` and
+/// the `foo` declarations.
+fn indexed_definitions(index: &ProjectIndex, owner: &str, separator: &str, name: &str) -> Vec<Def> {
+    let namespace = if separator == "." {
+        format!("{owner}::<{}>", owner.rsplit("::").next().unwrap_or(owner))
+    } else {
+        owner.to_owned()
+    };
+    let declaration_definitions = |name: &str| {
+        index
+            .get(&format!("{namespace}#{name}()"))
+            .map(|declaration| index.definitions(declaration))
+            .unwrap_or_default()
+    };
+    if regex!(r"\A\w+=\z").find(name).is_some() {
+        let mut definitions = declaration_definitions(name);
+        definitions.extend(
+            declaration_definitions(name.strip_suffix('=').unwrap_or(name))
+                .into_iter()
+                .filter(|definition| {
+                    matches!(definition.kind, DefKind::AttrWriter | DefKind::AttrAccessor)
+                }),
+        );
+        definitions
+    } else {
+        declaration_definitions(name)
+            .into_iter()
+            .filter(|definition| definition.kind != DefKind::AttrWriter)
+            .collect()
+    }
+}
+
+/// `cross_file_self_alias_trick?`: an alias of the method alongside one of
+/// its definitions in another file may be the self-alias trick marking an
+/// intentional redefinition there.
+fn cross_file_self_alias_trick(index: &ProjectIndex, definitions: &[Def]) -> bool {
+    let (aliases, others): (Vec<Def>, Vec<Def>) = definitions
+        .iter()
+        .partition(|definition| definition.kind == DefKind::MethodAlias);
+    let alias_paths: Vec<Option<String>> = aliases
+        .iter()
+        .map(|definition| definition_path(index, *definition))
+        .collect();
+    others
+        .iter()
+        .any(|definition| alias_paths.contains(&definition_path(index, *definition)))
+}
+
+/// `cross_file_redefinition_marker?`: an Active Support redefinition marker
+/// naming the method in the other file's source.
+fn cross_file_redefinition_marker(
+    cx: &Investigation<'_, '_>,
+    index: &ProjectIndex,
+    definitions: &[Def],
+    name: &str,
+) -> bool {
+    if !active_support_extensions_enabled(cx) {
+        return false;
+    }
+    let mut paths: Vec<String> = Vec::new();
+    for path in definitions
+        .iter()
+        .filter_map(|definition| definition_path(index, *definition))
+    {
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    paths
+        .iter()
+        .any(|path| redefinition_marker_in_file(path, name))
+}
+
+/// `redefinition_marker_in_file?`.
+fn redefinition_marker_in_file(path: &str, name: &str) -> bool {
+    let Ok(bytes) = std::fs::read(path) else {
+        return false;
+    };
+    let escaped = crate::cop::mixin::util::regexp_escape(name);
+    let Ok(marker) = onig::Regex::new(&format!(
+        r#"\b(?:silence_redefinition_of_method|redefine_method)\s*\(?\s*(?::{escaped}|(["']){escaped}\1)(?![\w=!?])"#
+    )) else {
+        return false;
+    };
+    marker.find(&String::from_utf8_lossy(&bytes)).is_some()
+}
+
+/// `index_source_location`.
+fn index_source_location(index: &ProjectIndex, definition: Def) -> Option<String> {
+    let location = index.location(definition)?;
+    Some(format!(
+        "{}:{}",
+        smart_path(location.file_path.as_deref()?),
+        location.start_line + 1
+    ))
 }

@@ -80,6 +80,13 @@ module Oxcop
           @ported_cops ||= run("--show-ported-cops").first.lines(chomp: true).to_set
         end
 
+        # The output of a whole run on files (`RuboCop::Runner` in
+        # `project_index_offenses`).
+        def run_project(*args)
+          @investigations = investigations.to_i + 1
+          run(*args).first
+        end
+
         # Offenses for `source` as RuboCop's JSON formatter would report them.
         # `path` is the buffer name. `priors` are the `[name, source]` pairs
         # the example investigated before with the same cop object, which the

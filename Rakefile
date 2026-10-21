@@ -114,6 +114,12 @@ namespace :vendor do
     end
     # Unit tests of RuboCop's Ruby helpers rather than of cop behavior.
     FileUtils.rm_rf(File.join(ROOT, "spec/rubocop/cop/metrics/utils"))
+    # Fixture projects of the cop specs' `project_index_offenses` examples.
+    Dir[File.join(upstream, "spec/fixtures/cross_file_*")].each do |fixture|
+      FileUtils.rm_rf(File.join(ROOT, "spec/fixtures", File.basename(fixture)))
+      FileUtils.mkdir_p(File.join(ROOT, "spec/fixtures"))
+      FileUtils.cp_r(fixture, File.join(ROOT, "spec/fixtures"))
+    end
     puts "synced from rubocop #{tag}; update RUBOCOP_VERSION in version.rs/version.rb and the Gemfile to match"
   end
 end
