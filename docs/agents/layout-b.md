@@ -20,11 +20,9 @@ files):
 - Layout/ParameterAlignment 19, SpaceAroundBlockParameters 49,
   MultilineBlockLayout 30, MultilineMethodCallIndentation 287,
   LineEndStringConcatenationIndentation 59, MultilineAssignmentLayout 34,
-  MultilineOperationIndentation 99, RedundantLineBreak 114,
+  MultilineOperationIndentation 99,
   SpaceInsidePercentLiteralDelimiters 262, SpaceInsideArrayPercentLiteral 129
-- Token-based (need the `tokens` agent's token builder, cherry-picked onto
-  `layout-b` as `Build processed_source.tokens ...`; it drops out of the
-  branch when `tokens` lands it): SpaceAfterComma 9, SpaceAfterSemicolon 9,
+- Token-based: SpaceAfterComma 9, SpaceAfterSemicolon 9,
   SpaceBeforeComma 6, SpaceBeforeSemicolon 9, SpaceBeforeComment 5,
   LeadingEmptyLines 10, LineContinuationSpacing 31, SpaceInsideParens 28,
   SpaceInsideReferenceBrackets 47, SpaceAroundEqualsInParameterDefault 11,
@@ -57,8 +55,8 @@ files):
 - Copied verbatim from their owners (identical files, so rebases merge
   cleanly): `punctuation_corrector.rs` (style-d), `rational_literal.rs`
   (lint-a), `check_assignment.rs` and `end_keyword_alignment.rs` (layout-a),
-  `check_single_line_suitability.rs` and `reparsed_equivalence.rs` (style-d),
-  `line_length_help.rs` (style-b, on `layout-b-wip`).
+  and, on `layout-b-wip` only, `check_single_line_suitability.rs` and
+  `reparsed_equivalence.rs` (style-d) and `line_length_help.rs` (style-b).
 - Additive in shared files: `Investigation::current_offense_ranges()` and
   `Investigation::max_line_length()` (base.rs); `Config::cop_enabled_in_config`
   (`Config#cop_enabled?` alone, `pending` is truthy) and
@@ -69,6 +67,18 @@ files):
 Everything in L–Z is ported. Not landed: the parked cops below
 (`layout-b-wip`), and everything under "Green on `layout-b`" until a
 full-gate landing goes through.
+
+## Held back: Layout/RedundantLineBreak (114 of 114 pass)
+
+On `layout-b-wip`. Its whole spec passes and `compare_with_rubocop` on
+`../code` matches (after a fix to style-d's CheckSingleLineSuitability:
+`safe_to_split?` must see `"\n"` in strings that aren't valid UTF-8, it used
+`str_content`; style-d, please take that fix). It is held back because the
+cop is expensive by design (it reparses the enclosing def/class for every
+candidate): with `--only` forcing it on, real RuboCop spends ~540 s on
+`../code` and the debug oxcop ~170 s, so landing it would add minutes to
+every full gate. Coordinator: land it once the gate can skip disabled-by-
+default cops or the compare uses a release build.
 
 ## Blocked on the spec shim (runtime)
 
