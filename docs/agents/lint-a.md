@@ -85,17 +85,25 @@ PercentSymbolArray.
   (`leading_comment_lines` finds the first non-comment token).
 - Regexp parser (`regexp_parser`, claimed by lint-b): DuplicateRegexpCharacterClassElement,
   MixedCaseRange, MixedRegexpCaptureTypes, OutOfRangeRegexpRef.
-- DuplicateMethods: its spec runs two files through one cop instance
-  (`expect_no_offenses(src, 'first.rb')` then `expect_offense(src,
-  'second.rb')`, "defined at both first.rb:2 and second.rb:2"). The shim
-  starts a fresh cop per investigation; it needs cop instances kept for the
-  whole example (runtime).
-- CopDirectiveSyntax: needs every RuboCop cop name (the registry, not just
-  the config's) for "Unknown cop name", plus NameSimilarity (lint-b).
+- DuplicateMethods: ported on `lint-a-wip` (top commit, with a
+  `parent_module_name` fix: a receiverless `class_eval` block is skipped, as
+  rubocop-ast does). 519 of 532 examples pass. 11 run two files through one
+  cop instance (`expect_no_offenses(src, 'first.rb')` then
+  `expect_offense(src, 'second.rb')`, "defined at both first.rb:2 and
+  second.rb:2"); the shim starts a fresh cop per investigation, so it would
+  need cop instances kept for the whole example (runtime). 2 stub `Dir.pwd`
+  and `Parser::Source::Buffer#name` in Ruby ("when path is (not) in the
+  project root"), which can't reach the binary: principled.
+- CopDirectiveSyntax: `misplaced_next_directive?` needs
+  `comment_config.comment_only_line?` (tokens); "Unknown cop name" needs
+  every RuboCop cop name (`config_loader::default_configuration()` keys, not
+  the spec config's) and NameSimilarity (claimed by lint-b).
 - Non-UTF-8 source: PercentStringArray and PercentSymbolArray pass all but
   their "binary encoded source" examples (`<<~RUBY.b` with raw `\xC0`
   bytes); oxcop reads stdin as UTF-8 and works on `&str`. Ported on
   `lint-a-wip` (top commit), not landed.
+- Autocorrect: `-A` with every landed A–P cop gives byte-identical results
+  to RuboCop on copies of rubocop's lib/ and spec/ and ../code/app, except:
 - `disable-next` over a heredoc statement: rubocop/spec/rubocop/comment_config_spec.rb:8
   disables Lint/EmptyExpression and EmptyInterpolation for the next
   statement (a `<<~RUBY` heredoc). RuboCop honors it; oxcop reports both
