@@ -9,6 +9,8 @@ pub mod embedded;
 pub mod erb;
 pub mod format;
 pub mod node;
+#[cfg(feature = "oxc")]
+pub mod oxc;
 pub mod oxfmt;
 pub mod parser;
 pub mod prettier_print;
