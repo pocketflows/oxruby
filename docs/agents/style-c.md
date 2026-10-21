@@ -17,7 +17,9 @@
 - Style/NilLambda 31
 - Style/NonNilCheck 22
 - Style/NumberedParameters 4
+- Style/NumberedParametersLimit 12
 - Style/NumericLiteralPrefix 15
+- Style/NumericLiterals 28
 - Style/NumericPredicate 37
 - Style/ObjectThen 22
 - Style/OneClassPerFile 21
@@ -27,6 +29,7 @@
 - Style/OptionalBooleanParameter 8
 - Style/ParallelAssignment 91
 - Style/PartitionInsteadOfDoubleSelect 37
+- Style/PercentLiteralDelimiters 66
 - Style/PercentQLiterals 21
 - Style/PerlBackrefs 14
 - Style/PredicateWithKind 64
@@ -87,12 +90,8 @@ green): it needs layout-b's `mixin/match_range.rs`, which isn't on main yet
 `Port Style/RedundantStringEscape` onto `style-c` and land it. Everything
 else on that branch has landed.
 
-`style-c-wip` holds cops that pass all but a few examples blocked on the
-shim or runner (see below): Style/NumberedParametersLimit,
-Style/NumericLiterals, Style/RedundantArgument,
-Style/PercentLiteralDelimiters (it also needs style-d's
-`mixin/preferred_delimiters.rs`, not on main yet). Style/Next and
-Style/RescueModifier, also parked there earlier, now pass on main and landed.
+`style-c-wip` now only matters for Style/RedundantArgument (14/15; see
+below). The rest of what was parked there has landed.
 
 ## Left
 
@@ -103,16 +102,6 @@ once that lands.
 
 ## Blocked / principled failures
 
-- **auto-gen-config state through the shim** (owner: `runtime`, `spec/oxcop/`).
-  Some specs assert `cop.config_to_allow_offenses` or
-  `read_exclude_limit(cop, 'Max')` after `expect_offense`: Ruby cop-instance
-  state for `--auto-gen-config` (`exclude_limit`, `self.max = n`,
-  `config_to_allow_offenses = {...}`). The shim builds offenses from the
-  binary's JSON and never sets that state, so it is always `{}`. Needs a
-  channel binary → JSON → shim → Ruby cop object. Blocked cops (ported, on
-  `style-c-wip`, everything else in their specs passes):
-  - Style/NumberedParametersLimit (11/12; 1 auto-gen example)
-  - Style/NumericLiterals (24/28; 4 auto-gen examples)
 - **Invalid UTF-8 in a spec's cop config** (owner: `runtime`,
   `spec/oxcop/binary.rb`). `with_config` does `YAML.dump(config.to_h)`,
   which raises `ArgumentError: invalid byte sequence in UTF-8` for a config
@@ -120,15 +109,6 @@ once that lands.
   `ASCII-8BIT` encoding on invalid strings before dumping) would fix it; the
   binary side already decodes `!binary` values for this cop.
   - Style/RedundantArgument (14/15), on `style-c-wip`.
-- **Errors raised by a cop** (owner: `runtime`, `spec/oxcop/`). Some specs
-  expect the cop to raise for bad config: `raise_error(ArgumentError)` or
-  `raise_error('MinBodyLength needs to be a positive integer!')`. The binary
-  can only exit with an error, which the shim turns into
-  `Oxcop::Spec::Binary::Error`, so the class/message don't match. Needs the
-  binary to report the Ruby exception class and message and the shim to
-  re-raise it.
-  - Style/PercentLiteralDelimiters (65/66), on `style-c-wip`. (Style/Next's
-    `raise_error('MinBodyLength ...')` example passes now.)
 
 ## Mixins owned
 
@@ -138,6 +118,10 @@ once that lands.
   would give), so it works without `processed_source.tokens`.
 
 ## Shared-file edits
+
+- `cop/mixin/preferred_delimiters.rs` (style-d): added
+  `ensure_valid_preferred_delimiters` (raises `ArgumentError` for unknown
+  `PreferredDelimiters` keys), as upstream.
 
 - `cop/mixin/allowed_pattern.rs`: `allowed_pattern_regexes` and
   `config_regex` accept Ruby regexps in config (`!ruby/regexp /src/flags`, as
