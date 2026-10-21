@@ -66,36 +66,40 @@
 
 ## Pending / WIP branches (local, not on main)
 
-`style-c-pending`: green, waiting only on a landing window or on another
-agent's mixin. Land in this order once main's full gate is green:
+`style-c-pending` holds green cops waiting on a landing window (main's full
+gate) or on another agent's mixin. Each mixin it needs but doesn't own is a
+`TEMP:` commit copying the owner's file from their branch; when the owner
+lands it, drop that commit (`git rebase --onto main <TEMP-sha>
+style-c-pending`; `-i` isn't available). Commits, oldest first:
 
-1. `Port Style/RescueStandardError; add RescueNode mixin` (37) — shared
-   mixin, needs the full gate; doesn't depend on the TEMP commits, so
-   cherry-pick it onto `style-c` and land it alone.
-2. `TEMP: copy of style-d's ReparsedEquivalence` + Style/RedundantParentheses
-   (337). When style-d lands `mixin/reparsed_equivalence.rs`, drop the TEMP
-   commit (`git rebase --onto main <TEMP-sha> style-c-pending`).
-3. `TEMP: indentation helpers of layout-b's Alignment and its MatchRange` +
+1. `TEMP` style-d's ReparsedEquivalence; Style/RedundantParentheses (337).
+2. Style/RescueStandardError (37) + the RescueNode mixin (style-c's own;
+   full gate). It doesn't depend on any TEMP commit: cherry-pick it onto
+   `style-c` and land it alone first.
+3. `TEMP` layout-b's Alignment indentation helpers and MatchRange;
    Style/RedundantConditional (11), Style/ParallelAssignment (91),
-   Style/RedundantStringEscape (328). Drop TEMP once layout-b lands
-   `alignment.rs` and `match_range.rs` (their API is the same).
+   Style/RedundantStringEscape (328).
+4. `TEMP` lint-a's PercentLiteral and Utils::FormatString (both now on main:
+   drop those two files from the TEMP commit when rebasing), style-b's
+   MinBodyLength, OnNormalIfUnless, IfThenCorrector; `TEMP` style-d's
+   PreferredDelimiters; Style/RedundantCapitalW (13), Style/PercentQLiterals
+   (21), Style/RedundantInterpolation (29), Style/OneLineConditional (104),
+   Style/RedundantFormat (306).
+5. `TEMP` lint-b's SymbolHelp; Style/QuotedSymbols (97).
 
-`style-c-wip`: ported but blocked by a spec that can't pass yet (see below):
+All of these pass their whole spec on `style-c-pending` and clippy is clean.
+
+`style-c-wip` holds cops that pass all but a few examples blocked on the
+shim or runner (see below); some also need the pending branch's mixins:
 Style/NumberedParametersLimit, Style/NumericLiterals, Style/RedundantArgument,
-Style/RescueModifier.
+Style/RescueModifier, Style/Next, Style/PercentLiteralDelimiters.
 
 ## Left
 
-- Next (MinBodyLength: style-b), OneLineConditional (OnNormalIfUnless and
-  IfThenCorrector: style-b; Alignment: layout-b).
-- PercentLiteralDelimiters, PercentQLiterals, RedundantCapitalW,
-  RedundantInterpolation (PercentLiteral: lint-a).
-- QuotedSymbols (SymbolHelp: lint-b).
-- RedundantFormat (`utils/format_string`: lint-a).
-- RedundantLineContinuation (needs tokens, MatchRange, ReparsedEquivalence).
+- RedundantLineContinuation: needs `processed_source.tokens` (`tokens`),
+  plus MatchRange and ReparsedEquivalence.
 - RedundantRegexpEscape, RedundantRegexpCharacterClass: need a port of the
-  `regexp_parser` gem (`RegexpNode#parsed_tree`). Claimed by style-c as
-  `regexp_parser`; also unblocks several Lint cops.
+  `regexp_parser` gem (`RegexpNode#parsed_tree`), claimed by lint-b.
 
 ## Blocked / principled failures
 
@@ -122,6 +126,15 @@ Style/RescueModifier.
   RescueModifier offenses at 1:1 (ranges 0..13 and 0..22) and the spec
   expects both. Skipping the dedup in spec mode (`--raw-config`) would fix it.
   - Style/RescueModifier (19/20), on `style-c-wip`.
+- **Errors raised by a cop** (owner: `runtime`, `spec/oxcop/`). Some specs
+  expect the cop to raise for bad config: `raise_error(ArgumentError)` or
+  `raise_error('MinBodyLength needs to be a positive integer!')`. The binary
+  can only exit with an error, which the shim turns into
+  `Oxcop::Spec::Binary::Error`, so the class/message don't match. Needs the
+  binary to report the Ruby exception class and message and the shim to
+  re-raise it.
+  - Style/Next (71/72), Style/PercentLiteralDelimiters (65/66), on
+    `style-c-wip`.
 
 ## Mixins owned
 
