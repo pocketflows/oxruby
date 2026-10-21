@@ -133,7 +133,12 @@ impl<'a> Runner<'a> {
         let mut offenses: Vec<Offense> = offenses.into_iter().flatten().collect();
         offenses.retain(|offense| !offense.disabled());
         offenses.sort();
-        offenses.dedup();
+        // The runner's `offenses_by_iteration.flatten.uniq` merges offenses
+        // with the same line, column and message. RuboCop's specs look at the
+        // cop's own offenses, before that, so the spec shim keeps them all.
+        if !self.options.raw_config {
+            offenses.dedup();
+        }
         Ok(offenses)
     }
 
