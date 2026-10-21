@@ -22,12 +22,8 @@ use crate::cli::{Io, Sink};
 const STATUS_PANIC: i32 = 101;
 
 pub fn serve() -> i32 {
-    // A panic in one request becomes that request's stderr and exit status,
-    // as it would in a process of its own.
-    std::panic::set_hook(Box::new(|info| {
-        let _ = writeln!(crate::cli::stderr(), "thread 'main' {info}");
-    }));
-
+    // A panic in one request becomes that request's stderr (see
+    // `cli::install_panic_hook`) and exit status, as in a process of its own.
     let mut input = BufReader::new(std::io::stdin().lock());
     let mut output = std::io::stdout().lock();
     loop {

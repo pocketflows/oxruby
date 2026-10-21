@@ -4,11 +4,11 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
-use serde_yaml_ng::Value;
+use serde_yaml_ng::{Mapping, Value};
 
 use crate::config::Config;
 use crate::config_loader::{ConfigError, ConfigStore};
-use crate::cop::base::CopOptions;
+use crate::cop::base::{AutoGenState, CopError, CopOptions};
 use crate::cop::team::{Selection, Team};
 use crate::cop::{Offense, Severity};
 use crate::formatter::Formatter;
@@ -27,6 +27,50 @@ pub struct Runner<'a> {
     /// With `--stdin` and autocorrect, the corrected source to echo back.
     pub corrected_stdin: Option<String>,
     pub errors: Vec<String>,
+    /// `--spec-report`: what the spec shim needs besides the offenses.
+    pub spec_report: SpecReport,
+}
+
+/// Cop state RuboCop's specs inspect on the cop object or in class-level
+/// hashes, which the shim copies back into Ruby (see `spec/oxcop/`).
+#[derive(Debug, Default)]
+pub struct SpecReport {
+    /// Per cop, the state after the last investigation that had any.
+    pub auto_gen: std::collections::BTreeMap<String, AutoGenState>,
+    /// Errors raised by cops, in order.
+    pub raised: Vec<CopError>,
+}
+
+impl SpecReport {
+    pub fn to_json(&self) -> serde_json::Value {
+        let yaml_to_json =
+            |value: &Mapping| serde_json::to_value(value).unwrap_or(serde_json::Value::Null);
+        let mut config_to_allow_offenses = serde_json::Map::new();
+        let mut detected_styles = serde_json::Map::new();
+        let mut exclude_limits = serde_json::Map::new();
+        for (cop, state) in &self.auto_gen {
+            config_to_allow_offenses
+                .insert(cop.clone(), yaml_to_json(&state.config_to_allow_offenses));
+            detected_styles.insert(cop.clone(), serde_json::json!(state.detected_style));
+            let limits: Vec<serde_json::Value> = state
+                .exclude_limits
+                .iter()
+                .map(|(param, value)| serde_json::json!([param, value]))
+                .collect();
+            exclude_limits.insert(cop.clone(), limits.into());
+        }
+        let raised: Vec<serde_json::Value> = self
+            .raised
+            .iter()
+            .map(|e| serde_json::json!({ "class": e.class, "message": e.message }))
+            .collect();
+        serde_json::json!({
+            "config_to_allow_offenses": config_to_allow_offenses,
+            "detected_styles": detected_styles,
+            "exclude_limits": exclude_limits,
+            "raised": raised,
+        })
+    }
 }
 
 /// The per-file work, which needs nothing mutable from the runner, so files
@@ -46,6 +90,8 @@ struct FileResult {
     /// Errors reading or writing the file (`Runner#errors`).
     errors: Vec<String>,
     corrected_stdin: Option<String>,
+    raised: Vec<CopError>,
+    auto_gen: Vec<(&'static str, AutoGenState)>,
 }
 
 impl<'a> Runner<'a> {
@@ -65,6 +111,7 @@ impl<'a> Runner<'a> {
             },
             corrected_stdin: None,
             errors: Vec::new(),
+            spec_report: SpecReport::default(),
         }
     }
 
@@ -103,6 +150,10 @@ impl<'a> Runner<'a> {
                     let _ = writeln!(crate::cli::stderr(), "{error}");
                 }
                 runner.errors.extend(result.errors);
+                runner.spec_report.raised.extend(result.raised);
+                for (cop, state) in result.auto_gen {
+                    runner.spec_report.auto_gen.insert(cop.to_owned(), state);
+                }
                 if result.corrected_stdin.is_some() {
                     runner.corrected_stdin = result.corrected_stdin;
                 }
@@ -185,7 +236,7 @@ impl Inspector<'_> {
             },
         };
         let (corrected_source, offenses) =
-            self.do_inspection_loop(file, source, config, &mut result.cop_errors);
+            self.do_inspection_loop(file, source, config, &mut result);
 
         if let Some(corrected) = corrected_source {
             if stdin_source.is_some() {
@@ -218,7 +269,7 @@ impl Inspector<'_> {
         file: &Path,
         mut source: String,
         config: &Config,
-        cop_errors: &mut Vec<String>,
+        result: &mut FileResult,
     ) -> (Option<String>, Vec<Vec<Offense>>) {
         let ruby_version = target_ruby_version(config);
         let mut team = Team::new(config, &self.selection, self.cop_options);
@@ -243,7 +294,12 @@ impl Inspector<'_> {
                 let processed_source =
                     ProcessedSource::new(&source, &buffer_source, ruby_version, file);
                 let report = team.investigate(&processed_source);
-                cop_errors.extend(report.errors);
+                result.cop_errors.extend(report.errors);
+                result.raised.extend(report.raised);
+                for (cop, state) in report.auto_gen {
+                    result.auto_gen.retain(|(name, _)| *name != cop);
+                    result.auto_gen.push((cop, state));
+                }
                 offenses_by_iteration.push(report.offenses);
                 match report.corrector {
                     Some(corrector) if self.cop_options.autocorrect != AutocorrectMode::Off => {

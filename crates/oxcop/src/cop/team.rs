@@ -3,7 +3,7 @@
 
 use crate::comment_config::CommentConfig;
 use crate::config::Config;
-use crate::cop::base::CopOptions;
+use crate::cop::base::{AutoGenState, CopError, CopOptions};
 use crate::cop::commissioner::{self, CopReport};
 use crate::cop::{Cop, Corrector, Offense, registry};
 use crate::options::AutocorrectMode;
@@ -20,6 +20,10 @@ pub struct InvestigationReport {
     /// The merged corrections of every cop, when any were made.
     pub corrector: Option<Corrector>,
     pub errors: Vec<String>,
+    /// What cops raised (for the spec shim).
+    pub raised: Vec<CopError>,
+    /// Each cop's `--auto-gen-config` state, when it has any.
+    pub auto_gen: Vec<(&'static str, AutoGenState)>,
     pub comment_config: CommentConfig,
 }
 
@@ -145,14 +149,22 @@ impl<'a> Team<'a> {
 
         let mut offenses = Vec::new();
         let mut errors = Vec::new();
+        let mut raised = Vec::new();
+        let mut auto_gen = Vec::new();
         for report in reports {
             offenses.extend(report.offenses);
             errors.extend(report.errors);
+            raised.extend(report.raised);
+            if !report.auto_gen.is_empty() {
+                auto_gen.push((report.cop_name, report.auto_gen));
+            }
         }
         InvestigationReport {
             offenses,
             corrector,
             errors,
+            raised,
+            auto_gen,
             comment_config,
         }
     }

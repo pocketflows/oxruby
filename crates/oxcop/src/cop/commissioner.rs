@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use crate::ast::{Node, NodeType};
 use crate::comment_config::CommentConfig;
 use crate::config::Config;
-use crate::cop::base::CopOptions;
+use crate::cop::base::{AutoGenState, CopError, CopOptions, rescue_cop_error};
 use crate::cop::{Cop, Corrector, Investigation, Offense};
 use crate::processed_source::ProcessedSource;
 
@@ -16,6 +16,8 @@ pub struct CopReport {
     pub offenses: Vec<Offense>,
     pub corrector: Option<Corrector>,
     pub errors: Vec<String>,
+    pub raised: Vec<CopError>,
+    pub auto_gen: AutoGenState,
 }
 
 const TYPE_COUNT: usize = NodeType::ALL.len();
@@ -95,7 +97,7 @@ pub fn investigate(
 
     if processed_source.valid_syntax() {
         for (cop, cx) in cops.iter_mut().zip(cxs.iter_mut()) {
-            cop.on_new_investigation(cx);
+            guarded(cx, None, |cx| cop.on_new_investigation(cx));
         }
         if let Some(root) = processed_source.ast() {
             crate::cop::variable_force::investigate_cops(cops, &mut cxs, root);
@@ -105,27 +107,41 @@ pub fn investigate(
             walk(root, cops, &mut cxs, &callbacks);
         }
         for (cop, cx) in cops.iter_mut().zip(cxs.iter_mut()) {
-            cop.on_investigation_end(cx);
+            guarded(cx, None, |cx| cop.on_investigation_end(cx));
         }
     } else {
         for (cop, cx) in cops.iter_mut().zip(cxs.iter_mut()) {
-            cop.on_other_file(cx);
+            guarded(cx, None, |cx| cop.on_other_file(cx));
         }
     }
 
     cops.iter()
         .zip(cxs)
         .map(|(cop, cx)| {
-            let (offenses, corrector, errors) = cx.into_parts();
+            let parts = cx.into_parts();
             CopReport {
                 cop_name: cop.name(),
                 incompatible_with: cop.autocorrect_incompatible_with(),
-                offenses,
-                corrector,
-                errors,
+                offenses: parts.offenses,
+                corrector: parts.corrector,
+                errors: parts.errors,
+                raised: parts.raised,
+                auto_gen: parts.auto_gen,
             }
         })
         .collect()
+}
+
+/// `with_cop_error_handling`: an error the cop raises is recorded and the
+/// investigation goes on.
+fn guarded<'a, 'src>(
+    cx: &mut Investigation<'a, 'src>,
+    node: Option<Node<'a>>,
+    callback: impl FnOnce(&mut Investigation<'a, 'src>),
+) {
+    if let Err(error) = rescue_cop_error(|| callback(cx)) {
+        cx.record_error(error, node);
+    }
 }
 
 fn build_callbacks(cops: &[Box<dyn Cop>]) -> Callbacks {
@@ -207,13 +223,13 @@ fn walk<'a>(
         let is_send = matches!(ty, NodeType::Send | NodeType::Csend);
         if !visited {
             for &i in &callbacks.on[ty as usize] {
-                cops[i].on_node(&mut cxs[i], node);
+                guarded(&mut cxs[i], Some(node), |cx| cops[i].on_node(cx, node));
             }
             if is_send && !callbacks.restricted_on.is_empty() {
                 let targets: Vec<usize> =
                     restricted_targets(cops, &callbacks.restricted_on, node, false).collect();
                 for i in targets {
-                    cops[i].on_node(&mut cxs[i], node);
+                    guarded(&mut cxs[i], Some(node), |cx| cops[i].on_node(cx, node));
                 }
             }
             stack.push((node, true));
@@ -225,13 +241,13 @@ fn walk<'a>(
             }
         } else {
             for &i in &callbacks.after[ty as usize] {
-                cops[i].after_node(&mut cxs[i], node);
+                guarded(&mut cxs[i], Some(node), |cx| cops[i].after_node(cx, node));
             }
             if is_send && !callbacks.restricted_after.is_empty() {
                 let targets: Vec<usize> =
                     restricted_targets(cops, &callbacks.restricted_after, node, true).collect();
                 for i in targets {
-                    cops[i].after_node(&mut cxs[i], node);
+                    guarded(&mut cxs[i], Some(node), |cx| cops[i].after_node(cx, node));
                 }
             }
         }

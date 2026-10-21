@@ -131,6 +131,11 @@ pub struct Options {
     #[arg(long = "autocorrect-once", hide = true)]
     pub autocorrect_once: bool,
 
+    /// Write what the spec shim needs besides the offenses (cop errors,
+    /// `config_to_allow_offenses`, exclude limits) to FILE as JSON.
+    #[arg(long = "spec-report", hide = true, value_name = "FILE")]
+    pub spec_report: Option<PathBuf>,
+
     /// Print the names of cops that have been ported to oxcop, then exit.
     #[arg(long = "show-ported-cops", hide = true)]
     pub show_ported_cops: bool,

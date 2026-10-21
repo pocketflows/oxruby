@@ -54,6 +54,33 @@ Owner: `runtime` (see the roster in `docs/PARALLEL.md`).
   when the file contains `<%`. **`inherit_gem`** resolves through
   `OXCOP_GEMS`; without the launcher it warns and is skipped.
 
+## API for cop authors (shim support)
+
+- **Raising from a cop** (`raise ArgumentError, "..."` upstream): call
+  `crate::cop::base::raise("ArgumentError", message)`; a plain `panic!("msg")`
+  is a `RuntimeError` with that message. The Commissioner rescues it per
+  callback (`with_cop_error_handling`) and the run goes on; the error is
+  printed as RuboCop does ("An error occurred while X cop was inspecting
+  file:line:col." or, for `RuboCop::Warning`, "msg (from file: ...)").
+  In specs the shim re-raises the first error as that class (any constant
+  name works: `RuboCop::Warning`, `RuboCop::ValidationError`, ...), so
+  `expect { ... }.to raise_error(...)` passes.
+- **`config_to_allow_offenses`**: `cx.config_to_allow_offenses()` gives the
+  `&mut Mapping`; `cx.auto_gen.detected_style` is `detected_style`.
+  `configurable_enforced_style::{correct_style_detected,
+  opposite_style_detected, unexpected_style_detected,
+  ambiguous_style_detected, style_detected, no_acceptable_style,
+  no_acceptable_style_bang, conflicting_styles_detected,
+  unrecognized_style_detected}` take the style parameter name
+  (`"EnforcedStyle"` for the default `style_parameter_name`). The shim
+  copies the state into `DisabledConfigFormatter` after each offenses call,
+  so `cop.config_to_allow_offenses` works.
+- **`exclude_limit`** setters (`self.max = n`): `cx.set_exclude_limit("Max",
+  n)` where upstream calls the setter. The shim appends to
+  `ExcludeLimit.tmp_dir`, so `read_exclude_limit(cop, 'Max')` works.
+- Plumbing: hidden `--spec-report FILE` writes `{config_to_allow_offenses,
+  detected_styles, exclude_limits, raised}` as JSON (`runner::SpecReport`).
+
 ## Left
 
 - Debug oxcop on the full ../code compare was ~225 s with ~170 cops, and

@@ -84,9 +84,12 @@ module Oxcop
         def offenses(source, path:, config:, cop_name:)
           @investigations = investigations.to_i + 1
           with_config(config) do |config_path|
-            stdout, = run("--stdin", path, "-c", config_path, "--raw-config", "--only", cop_name,
-                          "--format", "json", "--no-display-cop-names", stdin: source)
-            JSON.parse(stdout).fetch("files").flat_map { |file| file["offenses"] }
+            with_report do |report_path|
+              stdout, = run("--stdin", path, "-c", config_path, "--raw-config", "--only", cop_name,
+                            "--format", "json", "--no-display-cop-names", "--spec-report", report_path,
+                            stdin: source)
+              JSON.parse(stdout).fetch("files").flat_map { |file| file["offenses"] }
+            end
           end
         end
 
@@ -94,14 +97,57 @@ module Oxcop
         # more changes are made.
         def autocorrect(source, path:, config:, cop_name:, once: false)
           with_config(config) do |config_path|
-            stdout, = run("--stdin", path, "-c", config_path, "--raw-config", "--persist-cops",
-                          *("--autocorrect-once" if once),
-                          "--only", cop_name, "-A", "--format", "quiet", "--stderr", stdin: source)
-            stdout
+            with_report(apply: false) do |report_path|
+              stdout, = run("--stdin", path, "-c", config_path, "--raw-config", "--persist-cops",
+                            *("--autocorrect-once" if once),
+                            "--only", cop_name, "-A", "--format", "quiet", "--stderr",
+                            "--spec-report", report_path, stdin: source)
+              stdout
+            end
           end
         end
 
+        # The binary's `--spec-report`: re-raises what a cop raised (RuboCop's
+        # specs run cops with `raise_error: true`) and, with `apply`, copies
+        # the `--auto-gen-config` state into Ruby, where the specs read it
+        # (`cop.config_to_allow_offenses`, `read_exclude_limit`).
+        def with_report(apply: true)
+          path = File.join(Dir.tmpdir, "oxcop-spec-report-#{Process.pid}.json")
+          File.delete(path) if File.exist?(path)
+          result = yield path
+          report = File.exist?(path) ? JSON.parse(File.read(path)) : {}
+          if (error = report.fetch("raised", []).first)
+            raise error_class(error.fetch("class")), error.fetch("message")
+          end
+          apply_auto_gen_state(report) if apply
+          result
+        end
+
         private
+
+        def error_class(name)
+          klass = Object.const_get(name)
+          klass.is_a?(Class) && klass <= Exception ? klass : RuntimeError
+        rescue NameError
+          RuntimeError
+        end
+
+        def apply_auto_gen_state(report)
+          formatter = RuboCop::Formatter::DisabledConfigFormatter
+          report.fetch("config_to_allow_offenses", {}).each do |cop, config|
+            formatter.config_to_allow_offenses[cop] = config
+          end
+          report.fetch("detected_styles", {}).each do |cop, styles|
+            formatter.detected_styles[cop] = styles
+          end
+          report.fetch("exclude_limits", {}).each do |cop, limits|
+            cop_dir = RuboCop::ExcludeLimit.cop_dir_for(cop) or next
+            limits.each do |parameter, value|
+              cop_dir.mkpath
+              cop_dir.join(parameter).write("#{value}\n", mode: "a")
+            end
+          end
+        end
 
         def with_config(config)
           Tempfile.create(["oxcop-spec", ".yml"]) do |file|

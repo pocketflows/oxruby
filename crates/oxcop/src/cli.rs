@@ -93,11 +93,31 @@ pub fn stderr() -> Sink {
 }
 
 pub fn run(args: impl IntoIterator<Item = OsString>) -> i32 {
+    install_panic_hook();
     let args: Vec<OsString> = args.into_iter().collect();
     if args.get(1).is_some_and(|arg| arg == "--server") {
         return crate::server::serve();
     }
     run_with(args, &mut Io::process())
+}
+
+/// Panics inside cop callbacks are cop errors the Commissioner rescues and
+/// reports, so they print nothing here. Other panics go to the run's
+/// stderr (the `--server` client's buffer) or, outside the server, through
+/// the default hook.
+fn install_panic_hook() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if crate::cop::base::in_cop_callback() {
+            return;
+        }
+        match stderr() {
+            Sink::Buffer(_) => {
+                let _ = writeln!(stderr(), "thread 'main' {info}");
+            }
+            _ => default(info),
+        }
+    }));
 }
 
 /// Runs one command line with the given streams.
@@ -206,6 +226,10 @@ fn execute_runner(options: &Options, io: &mut Io) -> Result<i32, String> {
 
     for error in &runner.errors {
         let _ = writeln!(io.stderr, "{error}");
+    }
+    if let Some(path) = &options.spec_report {
+        std::fs::write(path, runner.spec_report.to_json().to_string())
+            .map_err(|e| format!("{}: {e}", path.display()))?;
     }
     Ok(if !runner.errors.is_empty() {
         STATUS_ERROR

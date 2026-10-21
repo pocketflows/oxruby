@@ -140,6 +140,90 @@ pub struct CopOptions {
     pub ignore_disable_comments: bool,
 }
 
+/// An exception raised by a cop: a Ruby `raise` in the port. `class` is the
+/// Ruby class the spec expects (`RuntimeError` for a plain `raise "..."`,
+/// `ArgumentError`, `RuboCop::Warning`, `RuboCop::ValidationError`, ...).
+/// Raise one with [`raise`]; a plain `panic!` counts as a `RuntimeError`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CopError {
+    pub class: String,
+    pub message: String,
+}
+
+impl CopError {
+    fn from_panic(payload: Box<dyn std::any::Any + Send>) -> Self {
+        let payload = match payload.downcast::<CopError>() {
+            Ok(error) => return *error,
+            Err(payload) => payload,
+        };
+        let message = match payload.downcast::<String>() {
+            Ok(message) => *message,
+            Err(payload) => payload
+                .downcast_ref::<&str>()
+                .map_or_else(|| "Box<dyn Any>".to_owned(), |s| (*s).to_owned()),
+        };
+        CopError {
+            class: "RuntimeError".to_owned(),
+            message,
+        }
+    }
+}
+
+/// `raise class, message` from a cop. The Commissioner rescues it, as
+/// `with_cop_error_handling` does, and reports it as an error of that cop.
+pub fn raise(class: &str, message: impl Into<String>) -> ! {
+    std::panic::panic_any(CopError {
+        class: class.to_owned(),
+        message: message.into(),
+    })
+}
+
+thread_local! {
+    static IN_COP_CALLBACK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether a panic now would be a cop error the Commissioner rescues (the
+/// panic hook stays quiet for those).
+pub fn in_cop_callback() -> bool {
+    IN_COP_CALLBACK.with(std::cell::Cell::get)
+}
+
+/// Runs a cop callback, rescuing what it raises (`with_cop_error_handling`).
+pub fn rescue_cop_error<R>(f: impl FnOnce() -> R) -> Result<R, CopError> {
+    let previous = IN_COP_CALLBACK.with(|flag| flag.replace(true));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    IN_COP_CALLBACK.with(|flag| flag.set(previous));
+    result.map_err(CopError::from_panic)
+}
+
+/// State a cop keeps for `--auto-gen-config`
+/// (`Formatter::DisabledConfigFormatter`'s class-level hashes and
+/// `ExcludeLimit`'s files). Only the spec shim reads it so far.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct AutoGenState {
+    /// `config_to_allow_offenses`.
+    pub config_to_allow_offenses: Mapping,
+    /// `detected_style` (`ConfigurableEnforcedStyle`).
+    pub detected_style: Option<Vec<String>>,
+    /// Values given to `exclude_limit` setters (`self.max = n`), in order.
+    pub exclude_limits: Vec<(String, String)>,
+}
+
+impl AutoGenState {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// What an investigation leaves behind.
+pub struct InvestigationParts {
+    pub offenses: Vec<Offense>,
+    pub corrector: Option<Corrector>,
+    pub errors: Vec<String>,
+    pub raised: Vec<CopError>,
+    pub auto_gen: AutoGenState,
+}
+
 /// The state of one cop inspecting one file: what `Base` keeps in
 /// `@current_offenses`, `@current_corrector` and friends, plus access to the
 /// processed source and configuration.
@@ -156,6 +240,10 @@ pub struct Investigation<'a, 'src> {
     offense_ranges: HashSet<Range>,
     /// Errors raised by the cop (RuboCop's `ErrorWithAnalyzedFileLocation`).
     pub errors: Vec<String>,
+    /// What the cop raised, for the spec shim to re-raise.
+    pub raised: Vec<CopError>,
+    /// `--auto-gen-config` bookkeeping.
+    pub auto_gen: AutoGenState,
 }
 
 impl<'a, 'src> Investigation<'a, 'src> {
@@ -180,6 +268,8 @@ impl<'a, 'src> Investigation<'a, 'src> {
                 .then(|| Corrector::new(processed_source.raw_source().len())),
             offense_ranges: HashSet::new(),
             errors: Vec::new(),
+            raised: Vec::new(),
+            auto_gen: AutoGenState::default(),
         }
     }
 
@@ -484,7 +574,50 @@ impl<'a, 'src> Investigation<'a, 'src> {
         }
     }
 
-    pub fn into_parts(self) -> (Vec<Offense>, Option<Corrector>, Vec<String>) {
-        (self.offenses, self.corrector, self.errors)
+    /// Records an error the cop raised while handling `node`
+    /// (`Team#process_errors`'s message).
+    pub fn record_error(&mut self, error: CopError, node: Option<Node<'_>>) {
+        let mut location = self.processed_source.path().display().to_string();
+        if let Some(node) = node {
+            let begin = node.source_range().begin_pos;
+            location = format!(
+                "{location}:{}:{}",
+                self.processed_source.line_of(begin),
+                self.processed_source.column_of(begin)
+            );
+        }
+        self.errors.push(if error.class == "RuboCop::Warning" {
+            format!("{} (from file: {location})", error.message)
+        } else {
+            format!(
+                "An error occurred while {} cop was inspecting {location}.\n\
+                 To see the complete backtrace run rubocop -d.",
+                self.cop_name
+            )
+        });
+        self.raised.push(error);
+    }
+
+    /// `config_to_allow_offenses` (`Base#config_to_allow_offenses`).
+    pub fn config_to_allow_offenses(&mut self) -> &mut Mapping {
+        &mut self.auto_gen.config_to_allow_offenses
+    }
+
+    /// An `exclude_limit` setter (`self.max = value` for `exclude_limit
+    /// 'Max'`). Call it where upstream does.
+    pub fn set_exclude_limit(&mut self, parameter_name: &str, value: impl std::fmt::Display) {
+        self.auto_gen
+            .exclude_limits
+            .push((parameter_name.to_owned(), value.to_string()));
+    }
+
+    pub fn into_parts(self) -> InvestigationParts {
+        InvestigationParts {
+            offenses: self.offenses,
+            corrector: self.corrector,
+            errors: self.errors,
+            raised: self.raised,
+            auto_gen: self.auto_gen,
+        }
     }
 }
