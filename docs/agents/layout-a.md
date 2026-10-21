@@ -2,40 +2,31 @@
 
 ## Landed on main (whole upstream spec passes; example counts)
 
-BlockEndNewline 18, ClassStructure 41, ClosingHeredocIndentation 11,
-DotPosition 40, EmptyComment 15,
-EmptyLineAfterGuardClause 59, EmptyLineAfterMultilineCondition 22,
-EmptyLineBetweenDefs 46, EmptyLinesAfterModuleInclusion 61,
-EmptyLinesAroundArguments 22, EmptyLinesAroundAttributeAccessor 20,
-HeredocArgumentClosingParenthesis 82, IndentationStyle 25.
-
-## Done on `layout-a`, waiting for main's full gate to go green
-
-These touch shared files (new mixins, `node.rs`, `config.rs`), so they
-need the full gate, which the coordinator asked us not to run until main is
-green. Each spec passes in full against the binary:
-
 AccessModifierIndentation 41, ArgumentAlignment 55, ArrayAlignment 25,
-AssignmentIndentation 10, BlockAlignment 94, CaseIndentation 50,
+AssignmentIndentation 10, BlockAlignment 94, BlockEndNewline 18,
+CaseIndentation 50, ClassStructure 41, ClosingHeredocIndentation 11,
 ClosingParenthesisIndentation 44, CommentIndentation 33,
-ConditionPosition 18, ElseAlignment 62, EmptyLines 5,
-EmptyLinesAroundAccessModifier 176, EmptyLinesAroundBeginBody 11,
+ConditionPosition 18, DotPosition 40, ElseAlignment 62, EmptyComment 15,
+EmptyLineAfterGuardClause 59, EmptyLineAfterMultilineCondition 22,
+EmptyLineBetweenDefs 46, EmptyLines 5, EmptyLinesAfterModuleInclusion 61,
+EmptyLinesAroundAccessModifier 176, EmptyLinesAroundArguments 22,
+EmptyLinesAroundAttributeAccessor 20, EmptyLinesAroundBeginBody 11,
 EmptyLinesAroundBlockBody 20, EmptyLinesAroundClassBody 46,
 EmptyLinesAroundExceptionHandlingKeywords 24, EmptyLinesAroundMethodBody 14,
 EmptyLinesAroundModuleBody 37, ExtraSpacing 94, FirstArgumentIndentation
 139, FirstArrayElementIndentation 56, FirstArrayElementLineBreak 14,
 FirstHashElementIndentation 60, FirstHashElementLineBreak 11,
 FirstMethodArgumentLineBreak 14, FirstMethodParameterLineBreak 11,
-FirstParameterIndentation 22, HashAlignment 142 (1 example raises inside
-the Ruby cop before reaching the binary: the invalid-style example),
-HeredocIndentation 104, IndentationConsistency 53, IndentationWidth 188
-(2 pending upstream), InitialIndentation 8.
+FirstParameterIndentation 22, HashAlignment 142 (1 example, the
+invalid-style one, raises in the Ruby cop before reaching the binary),
+HeredocArgumentClosingParenthesis 82, HeredocIndentation 104,
+IndentationConsistency 53, IndentationStyle 25, IndentationWidth 188
+(2 pending upstream), InitialIndentation 8. That is 45 of the 50 A–I cops.
 
-The branch carries other agents' unlanded commits, cherry-picked unchanged
-so a rebase drops them once they land: layout-b's Alignment /
-AlignmentCorrector / EmptyLineCorrector / MultilineLiteralBraceLayout commit
-(with its 9 cops), `tokens`' token builder commits, and copies of
-layout-b's `ast/token.rs` and `mixin/preceding_following_alignment.rs`.
+The landing carried layout-b's unlanded Alignment / AlignmentCorrector /
+EmptyLineCorrector / MultilineLiteralBraceLayout commit (cherry-picked
+unchanged, with its 9 cops) and copies of layout-b's `ast/token.rs` and
+`mixin/preceding_following_alignment.rs`.
 In `preceding_following_alignment.rs` I made four helpers `pub`
 (`aligned_comment_lines`, `relevant_assignment_lines`,
 `definition_boundary_lines`, `assignment_tokens`) for ExtraSpacing.
@@ -46,8 +37,8 @@ In `preceding_following_alignment.rs` I made four helpers `pub`
 - **`config_to_allow_offenses`** (needs a binary → JSON → shim channel;
   owner `runtime`, same need as depts, style-c, layout-b): BeginEndAlignment,
   DefEndAlignment, EndAlignment (105 of its 216 examples assert it, via
-  `spec/support/alignment_examples.rb`). EndAlignment is ported and passes
-  everything else; it is parked on `layout-a-wip`. The Ruby side would also
+  `spec/support/alignment_examples.rb`). All three are ported and pass
+  everything else; they are parked on `layout-a-wip`. The Ruby side would also
   need `ConfigurableEnforcedStyle`'s detection calls (`correct_style_detected`,
   `opposite_style_detected`, ...), which the Rust mixin doesn't port yet.
 - **ValidationError from `validate_config`** (owner `runtime`: the binary
@@ -56,6 +47,8 @@ In `preceding_following_alignment.rs` I made four helpers `pub`
 - **Non-UTF-8 source** (`# encoding: iso-8859-15` files fail with "stream did
   not contain valid UTF-8"; owner `runtime`/processed source): EndOfLine
   (4 of 17 examples). Ported, parked on `layout-a-wip`.
+- EmptyLineAfterMagicComment is ported too (26 of 30 pass), on
+  `layout-a-wip`.
 
 ## Shared helpers I own
 
