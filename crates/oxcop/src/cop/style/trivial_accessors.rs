@@ -66,11 +66,7 @@ fn in_module_or_instance_eval(node: Node<'_>) -> bool {
         match pnode.ty() {
             NodeType::Class | NodeType::Sclass => return false,
             NodeType::Module => return true,
-            _ if pnode.is_any_block() => {
-                if pnode.is_method("instance_eval") {
-                    return true;
-                }
-            }
+            _ if pnode.is_any_block() && pnode.is_method("instance_eval") => return true,
             _ => {}
         }
     }
