@@ -45,6 +45,10 @@ gate() {
   local oxcop=false oxtree=false
   grep -qvE '^(crates/oxtree/|gems/oxtree/|rakelib/oxtree|script/compare_with_stree|docs/)' <<<"$changed" && oxcop=true
   grep -qE '^(crates/oxtree/|gems/oxtree/|rakelib/oxtree|script/compare_with_stree|Cargo\.(toml|lock))' <<<"$changed" && oxtree=true
+  if [[ -n "${FULL:-}" ]]; then
+    oxcop=true
+    oxtree=true
+  fi
 
   if $oxtree; then
     cargo clippy -p oxtree --all-targets -- -D warnings
@@ -73,9 +77,14 @@ gate() {
 
     if $shared || [[ -n "${FULL:-}" ]]; then
       bundle exec rspec
-      if [[ -d ../code ]]; then
+      # ../code relative to the main checkout (worktrees live in .worktrees/).
+      local code
+      code="$(cd "$(git rev-parse --git-common-dir)/../.." && pwd)/code"
+      if [[ -d "$code" ]]; then
         local out
-        out=$(script/compare_with_rubocop ../code 2>&1 | tail -1)
+        # Exit status is ignored: files only one side inspects (bin/*, until
+        # plugin default configs load) make it non-zero. Mismatches gate.
+        out=$( (OXCOP_BINARY="$PWD/target/debug/oxcop" script/compare_with_rubocop "$code" 2>&1 || true) | tail -1)
         echo "land: compare_with_rubocop: $out"
         [[ "$out" == "mismatched files: 0" ]] || return 1
       fi

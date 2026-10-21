@@ -12,9 +12,11 @@ start, together with `AGENTS.md`, `docs/ROADMAP.md` (oxcop) and
   is visible to every agent: `git log other-agent`, `git show`.
 - `main` is not checked out anywhere, and you never check it out. It only
   moves through `script/land`.
-- References, read-only: `../rubocop` (RuboCop 1.91.0), `../syntax_tree`,
-  `../syntax_tree-erb`, and `../code`, the user's app and the real-world
-  test corpus. Never write to any of them, and never run `bundle install`,
+- References, read-only, under `/Users/teddy/_startup/rubocop-rs/`:
+  `rubocop` (RuboCop 1.91.0), `syntax_tree`, `syntax_tree-erb`, and `code`,
+  the user's app and the real-world test corpus. Docs say `../rubocop`
+  relative to the main checkout. From a worktree that is
+  `../../../rubocop`, so use the absolute paths. Never write to any of them, and never run `bundle install`,
   `npm ci` or anything else that changes them.
 
 ## Landing work on main: `script/land`
