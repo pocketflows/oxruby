@@ -6,7 +6,7 @@ with prebuilt native binaries.
 
 | Gem | Replaces | Status |
 | --- | --- | --- |
-| [`oxcop`](gems/oxcop) | [RuboCop](https://github.com/rubocop/rubocop) 1.91.0 | Early: CLI, config, formatters and 2 cops |
+| [`oxcop`](gems/oxcop) | [RuboCop](https://github.com/rubocop/rubocop) 1.91.0 | Early: CLI, config, formatters and 18 cops |
 | *(planned)* | [syntax_tree](https://github.com/ruby-syntax-tree/syntax_tree) + ERB | Not started; see [docs/ROADMAP.md](docs/ROADMAP.md) |
 
 ## oxcop
@@ -29,12 +29,12 @@ Rust binary, so `plugins:`/`require:` entries (rubocop-rails, rubocop-rspec,
 custom cops) are ignored with a warning. The intended use is running oxcop for
 the core cops and RuboCop with `--only` for the rest, or plugin ports later.
 
-Ported cops so far: `Layout/TrailingWhitespace`, which passes its full
-upstream spec, and `Lint/Syntax`, which is implemented but not verified: its
-upstream spec drives RuboCop's Commissioner directly, so it never reaches
-oxcop, and its messages come from Prism rather than the `parser` gem.
-`oxcop --show-ported-cops` prints the current list. Every other cop is
-skipped.
+Ported cops so far: 18 (every core cop `../code` enables, plus
+`Layout/TrailingWhitespace` and `Lint/Syntax`), each passing its full upstream
+spec. `Lint/Syntax`'s spec drives RuboCop's Commissioner directly, so it never
+reaches oxcop, and its messages come from Prism. `oxcop --show-ported-cops`
+prints the list; every other cop is skipped. See `docs/ROADMAP.md` for status
+and next steps.
 
 ## Layout
 
