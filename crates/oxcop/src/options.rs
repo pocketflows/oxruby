@@ -87,7 +87,7 @@ pub struct Options {
     #[arg(short = 'C', long = "cache", value_name = "FLAG", num_args = 0..=1, default_missing_value = "true")]
     pub cache: Option<String>,
 
-    /// Accepted for compatibility.
+    /// Inspect files in parallel (the default).
     #[arg(short = 'P', long = "parallel", action = ArgAction::SetTrue)]
     pub parallel: bool,
 

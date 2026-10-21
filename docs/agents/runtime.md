@@ -43,11 +43,19 @@ Owner: `runtime` (see the roster in `docs/PARALLEL.md`).
   `merge`, `resolve_inheritance` ported (department overrides, Include path
   fixing), `merge_with_default` uses the user's `inherit_mode`.
 
+- **Parallel inspection** (rayon), on by default as in RuboCop
+  (`--no-parallel` turns it off; `RAYON_NUM_THREADS` caps it). Configs
+  are resolved first, files inspected on the pool, then reported in file
+  order, so output is byte-identical to `--no-parallel` (checked on
+  ../code app/ + lib/: 3.1 s vs 11.9 s, debug). `--stdin` stays serial.
+
 ## Left
 
-- Debug oxcop on ../code is now ~225 s (rubocop: 26 s) with ~170 cops:
-  the gate's full compare is dominated by it. Next: rayon parallel
-  inspection, and find any pathologically slow cop.
+- Debug oxcop on the full ../code compare was ~225 s with ~170 cops, and
+  almost all of it is **Style/RedundantFreeze**: 55 s on app/models alone
+  (every other cop < 1 s). It calls `frozen_string_literals_enabled` per
+  `.freeze`, which re-reads the leading comments through `MagicComment`
+  each time (the coordinator has a MagicComment perf fix pending).
 - Plugins whose `rules` aren't `config/default.yml` (`type: :object`).
 - ERB in `.rubocop.yml`, `inherit_gem`, `inherit_from` globs,
   `handle_disabled_by_default`, `add_missing_namespaces`,

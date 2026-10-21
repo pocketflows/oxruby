@@ -3,6 +3,7 @@
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
+use rayon::prelude::*;
 use serde_yaml_ng::Value;
 
 use crate::config::Config;
@@ -22,11 +23,29 @@ pub const MAX_ITERATIONS: usize = 200;
 pub struct Runner<'a> {
     options: &'a Options,
     config_store: ConfigStore,
-    selection: Selection,
-    cop_options: CopOptions,
+    inspector: Inspector<'a>,
     /// With `--stdin` and autocorrect, the corrected source to echo back.
     pub corrected_stdin: Option<String>,
     pub errors: Vec<String>,
+}
+
+/// The per-file work, which needs nothing mutable from the runner, so files
+/// can be inspected on rayon's threads (`--parallel`, the default).
+struct Inspector<'a> {
+    options: &'a Options,
+    selection: Selection,
+    cop_options: CopOptions,
+}
+
+/// What inspecting one file produced, reported in file order.
+#[derive(Default)]
+struct FileResult {
+    offenses: Vec<Offense>,
+    /// Errors raised by cops, printed when the file is reported.
+    cop_errors: Vec<String>,
+    /// Errors reading or writing the file (`Runner#errors`).
+    errors: Vec<String>,
+    corrected_stdin: Option<String>,
 }
 
 impl<'a> Runner<'a> {
@@ -36,11 +55,14 @@ impl<'a> Runner<'a> {
         Self {
             options,
             config_store,
-            selection: Selection {
-                only: options.only.clone(),
-                except: options.except.clone(),
+            inspector: Inspector {
+                options,
+                selection: Selection {
+                    only: options.only.clone(),
+                    except: options.except.clone(),
+                },
+                cop_options,
             },
-            cop_options,
             corrected_stdin: None,
             errors: Vec::new(),
         }
@@ -75,21 +97,62 @@ impl<'a> Runner<'a> {
         formatter.started(&files);
         let mut all_passed = true;
         let mut inspected = Vec::new();
-        for file in &files {
-            formatter.file_started(file);
-            let offenses = self.file_offenses(file, stdin_source.as_deref())?;
-            let fail_level = self.minimum_severity_to_fail(file)?;
-            if offenses
+        let mut report =
+            |runner: &mut Self, formatter: &mut dyn Formatter, file: &Path, result: FileResult| {
+                for error in &result.cop_errors {
+                    let _ = writeln!(crate::cli::stderr(), "{error}");
+                }
+                runner.errors.extend(result.errors);
+                if result.corrected_stdin.is_some() {
+                    runner.corrected_stdin = result.corrected_stdin;
+                }
+                let fail_level = runner.minimum_severity_to_fail(file)?;
+                if result
+                    .offenses
+                    .iter()
+                    .any(|offense| !offense.corrected() && offense.severity >= fail_level)
+                {
+                    all_passed = false;
+                }
+                formatter.file_finished(file, &result.offenses);
+                inspected.push(file.to_path_buf());
+                Ok::<(), ConfigError>(())
+            };
+
+        if self.run_in_parallel(&files) {
+            let configs = files
                 .iter()
-                .any(|offense| !offense.corrected() && offense.severity >= fail_level)
-            {
-                all_passed = false;
+                .map(|file| self.config_store.for_file(file))
+                .collect::<Result<Vec<_>, _>>()?;
+            let configs: Vec<&Config> = configs.iter().map(|config| &**config).collect();
+            let inspector = &self.inspector;
+            let results: Vec<FileResult> = files
+                .par_iter()
+                .zip(configs.par_iter())
+                .map(|(file, config)| inspector.file_offenses(file, None, config))
+                .collect();
+            for (file, result) in files.iter().zip(results) {
+                formatter.file_started(file);
+                report(self, formatter, file, result)?;
             }
-            formatter.file_finished(file, &offenses);
-            inspected.push(file.clone());
+        } else {
+            for file in &files {
+                formatter.file_started(file);
+                let config = self.config_store.for_file(file)?;
+                let result = self
+                    .inspector
+                    .file_offenses(file, stdin_source.as_deref(), &config);
+                report(self, formatter, file, result)?;
+            }
         }
         formatter.finished(&inspected);
         Ok(all_passed)
+    }
+
+    /// `Runner#run_in_parallel?`. Parallel by default, as RuboCop is; the
+    /// offenses and their order are the same either way.
+    fn run_in_parallel(&self, files: &[PathBuf]) -> bool {
+        !self.options.no_parallel && self.options.stdin.is_none() && files.len() > 1
     }
 
     fn minimum_severity_to_fail(&mut self, file: &Path) -> Result<Severity, ConfigError> {
@@ -101,33 +164,37 @@ impl<'a> Runner<'a> {
             .and_then(Severity::from_name)
             .unwrap_or(Severity::Refactor))
     }
+}
 
+impl Inspector<'_> {
     fn file_offenses(
-        &mut self,
+        &self,
         file: &Path,
         stdin_source: Option<&str>,
-    ) -> Result<Vec<Offense>, ConfigError> {
+        config: &Config,
+    ) -> FileResult {
+        let mut result = FileResult::default();
         let source = match stdin_source {
             Some(source) => source.to_owned(),
             None => match std::fs::read(file) {
                 Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
                 Err(e) => {
-                    self.errors.push(format!("{}: {e}", file.display()));
-                    return Ok(Vec::new());
+                    result.errors.push(format!("{}: {e}", file.display()));
+                    return result;
                 }
             },
         };
-        let config = self.config_store.for_file(file)?;
-        let (corrected_source, offenses) = self.do_inspection_loop(file, source, &config);
+        let (corrected_source, offenses) =
+            self.do_inspection_loop(file, source, config, &mut result.cop_errors);
 
         if let Some(corrected) = corrected_source {
             if stdin_source.is_some() {
-                self.corrected_stdin = Some(corrected);
+                result.corrected_stdin = Some(corrected);
             } else if let Err(e) = std::fs::write(file, corrected) {
-                self.errors.push(format!("{}: {e}", file.display()));
+                result.errors.push(format!("{}: {e}", file.display()));
             }
         } else if stdin_source.is_some() {
-            self.corrected_stdin = Some(source_for_stdin(stdin_source));
+            result.corrected_stdin = Some(source_for_stdin(stdin_source));
         }
 
         let mut offenses: Vec<Offense> = offenses.into_iter().flatten().collect();
@@ -139,7 +206,8 @@ impl<'a> Runner<'a> {
         if !self.options.raw_config {
             offenses.dedup();
         }
-        Ok(offenses)
+        result.offenses = offenses;
+        result
     }
 
     /// Inspects (and with autocorrect, re-inspects) until no more corrections
@@ -150,6 +218,7 @@ impl<'a> Runner<'a> {
         file: &Path,
         mut source: String,
         config: &Config,
+        cop_errors: &mut Vec<String>,
     ) -> (Option<String>, Vec<Vec<Offense>>) {
         let ruby_version = target_ruby_version(config);
         let mut team = Team::new(config, &self.selection, self.cop_options);
@@ -174,9 +243,7 @@ impl<'a> Runner<'a> {
                 let processed_source =
                     ProcessedSource::new(&source, &buffer_source, ruby_version, file);
                 let report = team.investigate(&processed_source);
-                for error in &report.errors {
-                    let _ = writeln!(crate::cli::stderr(), "{error}");
-                }
+                cop_errors.extend(report.errors);
                 offenses_by_iteration.push(report.offenses);
                 match report.corrector {
                     Some(corrector) if self.cop_options.autocorrect != AutocorrectMode::Off => {
