@@ -40,6 +40,7 @@ pub mod percent_literal;
 pub mod preceding_following_alignment;
 pub mod range_help;
 pub mod rational_literal;
+pub mod reparsed_equivalence;
 pub mod rescue_node;
 pub mod safe_assignment;
 pub mod statement_modifier;
