@@ -45,7 +45,9 @@ module Oxcop
         "OXCOP_RUBY_VERSION" => RUBY_VERSION,
         "OXCOP_RUBY_PATCHLEVEL" => RUBY_PATCHLEVEL.to_s,
         "OXCOP_RUBY_PLATFORM" => RUBY_PLATFORM,
-        "OXCOP_GEMS" => gems
+        "OXCOP_GEMS" => gems,
+        # Renders ERB in .rubocop.yml files.
+        "OXCOP_RUBY" => RbConfig.ruby
       }
     end
 

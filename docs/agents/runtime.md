@@ -49,6 +49,11 @@ Owner: `runtime` (see the roster in `docs/PARALLEL.md`).
   order, so output is byte-identical to `--no-parallel` (checked on
   ../code app/ + lib/: 3.1 s vs 11.9 s, debug). `--stdin` stays serial.
 
+- **ERB** in config files: rendered by `ruby -rerb` in the file's
+  directory (`OXCOP_RUBY` from the launcher, else `ruby` on PATH), only
+  when the file contains `<%`. **`inherit_gem`** resolves through
+  `OXCOP_GEMS`; without the launcher it warns and is skipped.
+
 ## Left
 
 - Debug oxcop on the full ../code compare was ~225 s with ~170 cops, and
@@ -57,7 +62,7 @@ Owner: `runtime` (see the roster in `docs/PARALLEL.md`).
   `.freeze`, which re-reads the leading comments through `MagicComment`
   each time (the coordinator has a MagicComment perf fix pending).
 - Plugins whose `rules` aren't `config/default.yml` (`type: :object`).
-- ERB in `.rubocop.yml`, `inherit_gem`, `inherit_from` globs,
+- `inherit_from` globs, remote configs,
   `handle_disabled_by_default`, `add_missing_namespaces`,
   `add_excludes_from_files`, ConfigFinder's project-root stop.
 - Directive cops, pending-cops warning, CLI options, result cache, rayon.

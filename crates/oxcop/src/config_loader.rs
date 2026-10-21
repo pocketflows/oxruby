@@ -5,9 +5,10 @@
 //! `plugin/configuration_integrator.rb`, from the gems the Ruby launcher lists
 //! in `OXCOP_GEMS` (see `Gems`).
 //!
-//! Not yet ported: `inherit_gem`, remote `inherit_from` URLs, `inherit_from`
-//! globs, `DisabledByDefault` handling of user-enabled cops, and ERB in
-//! config files.
+//! ERB in config files is rendered by Ruby (see `render_erb`).
+//!
+//! Not yet ported: remote `inherit_from` URLs, `inherit_from` globs,
+//! `DisabledByDefault` handling of user-enabled cops.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -178,9 +179,7 @@ impl ConfigLoader {
         let plugins = hash.shift_remove("plugins");
         self.resolve_plugins(plugins.as_ref(), "plugins")?;
         self.resolve_requires(path, &mut hash)?;
-        if hash.contains_key("inherit_gem") {
-            warn_once("`inherit_gem` is not supported yet and will be ignored");
-        }
+        self.resolve_inheritance_from_gems(&mut hash)?;
         self.resolve_inheritance(path, &mut hash)?;
         hash.shift_remove("inherit_from");
 
@@ -268,6 +267,54 @@ impl ConfigLoader {
             ));
         }
         Ok(())
+    }
+
+    /// Port of `ConfigLoaderResolver#resolve_inheritance_from_gems`: each
+    /// `inherit_gem` entry is prepended to `inherit_from`.
+    fn resolve_inheritance_from_gems(&self, hash: &mut Mapping) -> Result<(), ConfigError> {
+        let Some(Value::Mapping(gems)) = hash.shift_remove("inherit_gem") else {
+            return Ok(());
+        };
+        for (gem_name, config_path) in &gems {
+            let Some(gem_name) = gem_name.as_str() else {
+                continue;
+            };
+            if gem_name == "rubocop" {
+                return Err(ConfigError(
+                    "can't inherit configuration from the rubocop gem".to_owned(),
+                ));
+            }
+            let Some(gem_dir) = self.gem_dir(gem_name)? else {
+                continue;
+            };
+            let mut inherit_from = array(hash.get("inherit_from"));
+            for path in array(Some(config_path)).iter().rev() {
+                let Some(path) = path.as_str() else {
+                    continue;
+                };
+                let full = gem_dir.join(path).to_string_lossy().into_owned();
+                inherit_from.insert(0, Value::String(full));
+            }
+            hash.insert("inherit_from".into(), Value::Sequence(inherit_from));
+        }
+        Ok(())
+    }
+
+    /// The gem's directory for `gem_config_path`; `None` (with a warning)
+    /// when the binary runs without the launcher and so knows no gems.
+    fn gem_dir(&self, gem_name: &str) -> Result<Option<PathBuf>, ConfigError> {
+        let Some(gems) = &self.gems.by_name else {
+            warn_once(&format!(
+                "`inherit_gem` needs the oxcop gem's launcher to find gems; ignoring {gem_name}"
+            ));
+            return Ok(None);
+        };
+        match gems.get(gem_name) {
+            Some(gem) => Ok(Some(gem.dir.clone())),
+            None => Err(ConfigError(format!(
+                "Unable to find gem {gem_name}; is the gem installed?"
+            ))),
+        }
     }
 
     /// Port of `Plugin::ConfigurationIntegrator.integrate_plugins_into_rubocop_config`.
@@ -463,7 +510,7 @@ fn merge_all_cop_settings(
     Value::Mapping(combined)
 }
 
-/// Port of `ConfigLoader.load_yaml_configuration` (without ERB).
+/// Port of `ConfigLoader.load_yaml_configuration`.
 fn load_yaml_configuration(path: &Path) -> Result<Mapping, ConfigError> {
     let contents = std::fs::read_to_string(path).map_err(|e| {
         ConfigError(format!(
@@ -471,6 +518,7 @@ fn load_yaml_configuration(path: &Path) -> Result<Mapping, ConfigError> {
             path.display()
         ))
     })?;
+    let contents = render_erb(contents, path)?;
     let value: Value = serde_yaml_ng::from_str(&contents)
         .map_err(|e| ConfigError(format!("{}: {e}", path.display())))?;
     match value {
@@ -481,6 +529,37 @@ fn load_yaml_configuration(path: &Path) -> Result<Mapping, ConfigError> {
             path.display()
         ))),
     }
+}
+
+/// `Dir.chdir(File.dirname(path)) { ERB.new(file_contents).result }`. ERB
+/// is Ruby, so a file with ERB tags is rendered by `ruby -rerb` (the
+/// launcher's Ruby, `OXCOP_RUBY`, or `ruby` on PATH). A file without tags
+/// renders to itself.
+fn render_erb(contents: String, path: &Path) -> Result<String, ConfigError> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    if !contents.contains("<%") {
+        return Ok(contents);
+    }
+    let ruby = std::env::var_os("OXCOP_RUBY").unwrap_or_else(|| "ruby".into());
+    let error = |message: String| ConfigError(format!("{}: ERB: {message}", path.display()));
+    let mut child = Command::new(&ruby)
+        .args(["-rerb", "-e", "print ERB.new($stdin.read).result"])
+        .current_dir(path.parent().unwrap_or(Path::new(".")))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| error(format!("running {}: {e}", ruby.to_string_lossy())))?;
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    let writer = std::thread::spawn(move || stdin.write_all(contents.as_bytes()));
+    let output = child.wait_with_output().map_err(|e| error(e.to_string()))?;
+    let _ = writer.join();
+    if !output.status.success() {
+        return Err(error(String::from_utf8_lossy(&output.stderr).into_owned()));
+    }
+    String::from_utf8(output.stdout).map_err(|e| error(e.to_string()))
 }
 
 /// Port of `ConfigLoaderResolver#fix_include_paths`.
@@ -863,5 +942,28 @@ mod tests {
         );
         assert!(!default_configuration().contains_key("Fake/Cop"));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn erb_is_rendered_in_the_config_directory_and_inherit_gem_resolves() {
+        let dir = std::env::temp_dir().join(format!("oxcop-erb-test-{}", std::process::id()));
+        let gem = dir.join("style-gem");
+        std::fs::create_dir_all(gem.join("config")).unwrap();
+        std::fs::write(gem.join("config/style.yml"), "Style/Foo:\n  Max: 3\n").unwrap();
+        std::fs::write(dir.join("version.txt"), "3.4.1\n").unwrap();
+        std::fs::write(
+            dir.join(".rubocop.yml"),
+            "inherit_gem:\n  style-gem: config/style.yml\nAllCops:\n  TargetRubyVersion: \
+             <%= File.read('version.txt')[/\\d+\\.\\d+/] %>\nStyle/Foo:\n  Enabled: true\n",
+        )
+        .unwrap();
+        let gems = Gems::parse(&format!("style-gem\t{}\t\n", gem.display()));
+        let mut loader = ConfigLoader::new(gems);
+        let hash = loader.load_file(&dir.join(".rubocop.yml")).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(hash["AllCops"]["TargetRubyVersion"], Value::from(3.4));
+        assert_eq!(hash["Style/Foo"]["Max"], Value::from(3));
+        assert_eq!(hash["Style/Foo"]["Enabled"], Value::Bool(true));
+        assert!(!hash.contains_key("inherit_from"));
     }
 }
