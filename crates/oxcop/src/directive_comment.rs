@@ -69,6 +69,11 @@ pub trait CopRegistry {
     fn enabled_by_option(&self, _cop_name: &str) -> bool {
         false
     }
+    /// In `processed_source.registry` (the mobilized cops), whose
+    /// `disabled_names` CommentConfig uses.
+    fn mobilized(&self, _cop_name: &str) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -275,7 +280,7 @@ impl<'src> DirectiveComment<'src> {
         self.raw_cop_names().len()
     }
 
-    fn parsed_cop_names(&self, registry: &dyn CopRegistry) -> Vec<String> {
+    pub fn parsed_cop_names(&self, registry: &dyn CopRegistry) -> Vec<String> {
         let mut cops = Vec::new();
         for name in self.raw_cop_names() {
             if registry.is_department(&name) {

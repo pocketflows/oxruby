@@ -96,6 +96,9 @@ impl crate::directive_comment::CopRegistry for KnownCops {
 pub struct SelectedCops<'a> {
     pub known: &'a KnownCops,
     pub only: &'a [String],
+    pub except: &'a [String],
+    /// Under `--raw-config`: the registry is this configuration's cops.
+    pub config: Option<&'a Config>,
 }
 
 impl crate::directive_comment::CopRegistry for SelectedCops<'_> {
@@ -113,6 +116,16 @@ impl crate::directive_comment::CopRegistry for SelectedCops<'_> {
 
     fn enabled_by_option(&self, cop_name: &str) -> bool {
         self.only.iter().any(|name| name == cop_name)
+    }
+
+    /// `Runner#mobilize_cop_badge?`: `processed_source.registry` holds only
+    /// the cops `--only`/`--except` select.
+    fn mobilized(&self, cop_name: &str) -> bool {
+        if let Some(config) = self.config {
+            return config.get(cop_name).is_some() || self.enabled_by_option(cop_name);
+        }
+        !crate::cop::registry::matches(cop_name, self.except)
+            && (self.only.is_empty() || crate::cop::registry::matches(cop_name, self.only))
     }
 }
 

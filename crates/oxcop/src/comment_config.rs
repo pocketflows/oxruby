@@ -55,6 +55,8 @@ pub struct CommentConfig {
     /// `detached_next_directives`: `disable-next` and friends with no code
     /// to apply to.
     pub detached_next_directives: Vec<usize>,
+    /// `registry.disabled_names(config)` (for `extra_enabled_comments`).
+    pub disabled_names: Vec<String>,
 }
 
 /// The parts of a directive later consumers need.
@@ -137,6 +139,7 @@ impl CommentConfig {
                 })
                 .collect(),
             detached_next_directives: analyzer.detached,
+            disabled_names: disabled_names(config, registry),
         }
     }
 
@@ -242,12 +245,7 @@ impl Analyzer<'_, '_> {
         let mut analyses: HashMap<String, CopAnalysis> = HashMap::new();
 
         // inject_disabled_cops_directives
-        for cop_name in self
-            .config
-            .disabled_cop_names(self.registry.names())
-            .into_iter()
-            .filter(|name| !self.registry.enabled_by_option(name))
-        {
+        for cop_name in disabled_names(self.config, self.registry) {
             let analysis = analyses.entry(cop_name).or_default();
             // A synthetic `# rubocop:disable Cop` at line -infinity.
             *analysis = CopAnalysis {
@@ -580,4 +578,20 @@ impl Analyzer<'_, '_> {
             start_directive: analysis.start_directive,
         };
     }
+}
+
+/// `registry.disabled_names(config)`, with `processed_source.registry`'s
+/// cops (the mobilized ones; `--only` names count as enabled).
+pub fn disabled_names(config: &Config, registry: &dyn CopRegistry) -> Vec<String> {
+    let mobilized: Vec<String> = registry
+        .names()
+        .iter()
+        .filter(|name| registry.mobilized(name))
+        .cloned()
+        .collect();
+    config
+        .disabled_cop_names(&mobilized)
+        .into_iter()
+        .filter(|name| !registry.enabled_by_option(name))
+        .collect()
 }

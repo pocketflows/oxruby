@@ -112,6 +112,7 @@ impl<'a> Runner<'a> {
                 selection: Selection {
                     only: options.only.clone(),
                     except: options.except.clone(),
+                    registry_from_config: options.raw_config,
                 },
                 cop_options,
                 auto_gen_seed: options

@@ -13,6 +13,10 @@ use crate::processed_source::ProcessedSource;
 pub struct Selection {
     pub only: Vec<String>,
     pub except: Vec<String>,
+    /// `--raw-config` (RuboCop's specs): `processed_source.registry` is the
+    /// cops the configuration names plus the cop under test, as
+    /// `CopHelper#registry` builds it.
+    pub registry_from_config: bool,
 }
 
 pub struct InvestigationReport {
@@ -121,6 +125,8 @@ impl<'a> Team<'a> {
         let registry = crate::config::SelectedCops {
             known: self.config.known_cops(),
             only: &self.selection.only,
+            except: &self.selection.except,
+            config: self.selection.registry_from_config.then_some(self.config),
         };
         let comment_config = CommentConfig::new(processed_source, self.config, &registry);
         let persisted = self.persisted.borrow_mut().take();
