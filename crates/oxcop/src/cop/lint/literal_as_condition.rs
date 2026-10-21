@@ -225,10 +225,11 @@ fn check_node<'a>(cx: &mut Investigation<'a, '_>, node: Node<'a>) {
         for op in node.child_nodes() {
             handle_node(cx, op);
         }
-    } else if node.is(NodeType::Begin) && node.children().len() == 1 {
-        if let Some(first) = node.child(0) {
-            handle_node(cx, first);
-        }
+    } else if node.is(NodeType::Begin)
+        && node.children().len() == 1
+        && let Some(first) = node.child(0)
+    {
+        handle_node(cx, first);
     }
 }
 

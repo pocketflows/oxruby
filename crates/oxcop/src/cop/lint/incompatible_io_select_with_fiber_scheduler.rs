@@ -33,7 +33,7 @@ impl Cop for IncompatibleIoSelectWithFiberScheduler {
             .unwrap_or_default();
         let (read, write, excepts, timeout) =
             (args.first().copied(), args.get(1).copied(), args.get(2).copied(), args.get(3).copied());
-        if excepts.is_some_and(|e| e.children().len() > 0) {
+        if excepts.is_some_and(|e| !e.children().is_empty()) {
             return;
         }
         if !(scheduler_compatible(read, write) || scheduler_compatible(write, read)) {
