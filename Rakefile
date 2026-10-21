@@ -102,7 +102,8 @@ end
 namespace :vendor do
   desc "Re-sync vendor/rubocop and the cop specs from the ../rubocop checkout"
   task :rubocop do
-    upstream = File.expand_path("../rubocop", ROOT)
+    # rakelib/oxtree.rake: finds ../rubocop from the main checkout or a worktree.
+    upstream = oxtree_sibling("rubocop")
     tag = `git -C #{upstream} describe --tags`.strip
     FileUtils.cp(File.join(upstream, "config", "default.yml"), File.join(ROOT, "vendor/rubocop/config/default.yml"))
     FileUtils.cp(File.join(upstream, "LICENSE.txt"), File.join(ROOT, "vendor/rubocop/LICENSE.txt"))

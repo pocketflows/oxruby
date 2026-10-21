@@ -23,6 +23,23 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 2
 fi
 
+# Diff the ported cops (or just $1, comma separated) against real RuboCop on
+# ../code; any mismatched file fails the gate.
+compare() {
+  # ../code relative to the main checkout (worktrees live in .worktrees/).
+  local code out
+  code="$(cd "$(git rev-parse --git-common-dir)/../.." && pwd)/code"
+  [[ -d "$code" ]] || return 0
+  # Exit status is ignored: files only one side inspects (bin/*, until
+  # plugin default configs load) make it non-zero. Mismatches gate.
+  out=$( (ONLY="$1" OXCOP_BINARY="$PWD/target/debug/oxcop" script/compare_with_rubocop "$code" 2>&1 || true) )
+  echo "land: compare_with_rubocop${1:+ ($1)}: $(tail -1 <<<"$out")"
+  if [[ "$(tail -1 <<<"$out")" != "mismatched files: 0" ]]; then
+    tail -40 <<<"$out" | cut -c1-400
+    return 1
+  fi
+}
+
 gate() {
   local changed
   changed=$(git diff --name-only main...HEAD)
@@ -60,12 +77,13 @@ gate() {
     cargo test -p oxcop
     cargo build -p oxcop
 
-    # Only cop files changed: run their own specs. Anything shared changed
-    # (mixins, ast/, config, the shim, ...): run every ported spec and diff
-    # against real RuboCop on ../code.
-    local specs=() shared=false
+    # Only cop files changed: run their own specs, and diff just those cops
+    # against real RuboCop on ../code. Anything shared changed (mixins, ast/,
+    # config, the shim, ...): run every ported spec and the full diff.
+    local specs=() cop_files=() shared=false
     while IFS= read -r path; do
       if [[ "$path" =~ ^crates/oxcop/src/cop/([a-z_]+)/([a-z0-9_]+)\.rs$ && "${BASH_REMATCH[2]}" != "mod" ]]; then
+        cop_files+=("${BASH_REMATCH[1]}/${BASH_REMATCH[2]}")
         local spec="spec/rubocop/cop/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}_spec.rb"
         [[ -f "$spec" ]] && specs+=("$spec")
       elif [[ "$path" =~ ^docs/ ]]; then
@@ -77,19 +95,21 @@ gate() {
 
     if $shared || [[ -n "${FULL:-}" ]]; then
       bundle exec rspec
-      # ../code relative to the main checkout (worktrees live in .worktrees/).
-      local code
-      code="$(cd "$(git rev-parse --git-common-dir)/../.." && pwd)/code"
-      if [[ -d "$code" ]]; then
-        local out
-        # Exit status is ignored: files only one side inspects (bin/*, until
-        # plugin default configs load) make it non-zero. Mismatches gate.
-        out=$( (OXCOP_BINARY="$PWD/target/debug/oxcop" script/compare_with_rubocop "$code" 2>&1 || true) | tail -1)
-        echo "land: compare_with_rubocop: $out"
-        [[ "$out" == "mismatched files: 0" ]] || return 1
+      compare ""
+    elif ((${#cop_files[@]})); then
+      if ((${#specs[@]})); then
+        bundle exec rspec "${specs[@]}"
       fi
-    elif ((${#specs[@]})); then
-      bundle exec rspec "${specs[@]}"
+      # department/file_name -> Department/CopName, as the binary names them.
+      local cops
+      cops=$(target/debug/oxcop --show-ported-cops | ruby -rset -e '
+        files = ARGV.to_set
+        snake = ->(s) { s.gsub(/([A-Z]+)([A-Z][a-z])/, "\\1_\\2").gsub(/([a-z\d])([A-Z])/, "\\1_\\2").downcase }
+        puts $stdin.each_line(chomp: true).select { |name| files.include?(snake.(name)) }.join(",")
+      ' "${cop_files[@]}")
+      if [[ -n "$cops" ]]; then
+        compare "$cops"
+      fi
     fi
   fi
 }

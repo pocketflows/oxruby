@@ -6,8 +6,11 @@
 # diffs their JSON reports.
 #
 #   script/compare_with_rubocop [PROJECT_DIR] [-- extra args for both tools]
+#   ONLY=Style/Foo,Layout/Bar script/compare_with_rubocop   # just these cops
 #
 # PROJECT_DIR defaults to ../code, the sibling checkout used as our corpus.
+# ONLY restricts the comparison to the given ported cops (script/land uses it
+# for landings that only add or change cops).
 
 require "json"
 require "open3"
@@ -22,7 +25,16 @@ abort "oxcop binary not found at #{oxcop}; run `cargo build --release`" unless F
 
 ported, status = Open3.capture2(oxcop, "--show-ported-cops")
 abort "could not list ported cops" unless status.success?
-only = ["--only", ported.lines(chomp: true).join(","), "--format", "json", "--cache", "false", *extra]
+cops = ported.lines(chomp: true)
+unless ENV["ONLY"].to_s.empty?
+  cops &= ENV["ONLY"].split(",").map(&:strip)
+  if cops.empty?
+    puts "no ported cops in ONLY=#{ENV["ONLY"]}; nothing to compare", "mismatched files: 0"
+    exit 0
+  end
+  warn "comparing only #{cops.join(", ")}"
+end
+only = ["--only", cops.join(","), "--format", "json", "--cache", "false", *extra]
 
 def report(label, command, dir)
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
