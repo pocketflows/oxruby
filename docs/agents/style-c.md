@@ -86,9 +86,9 @@
 
 ## WIP branch (local, not on main)
 
-`style-c-wip` holds Style/RedundantArgument (14/15; blocker below). Every
-other N–R cop has landed; `style-c-pending` is fully landed and can be
-deleted.
+`style-c-wip` holds Style/RedundantArgument (14/15; blocker below; the
+other cops on that branch have since landed from main). Every other N–R cop
+is on main.
 
 ## Left
 
