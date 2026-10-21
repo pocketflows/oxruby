@@ -415,6 +415,12 @@ impl<'a, 'src> Investigation<'a, 'src> {
         });
     }
 
+    /// Whether `add_offense(range) { ... }` would run its block: a new
+    /// offense on an enabled line.
+    pub fn offense_yields(&self, range: Range) -> bool {
+        !self.offense_ranges.contains(&range) && self.enabled_lines(range)
+    }
+
     /// `add_offense(range, message:) { ... }` with a block that doesn't
     /// correct but updates the cop (`self.max = n`, `ignore_node`, style
     /// detection): `block` runs when RuboCop would yield, for a new offense
@@ -425,7 +431,7 @@ impl<'a, 'src> Investigation<'a, 'src> {
         message: &str,
         block: impl FnOnce(&mut Self),
     ) {
-        let yields = !self.offense_ranges.contains(&range) && self.enabled_lines(range);
+        let yields = self.offense_yields(range);
         self.add_offense(range, message);
         if yields {
             block(self);

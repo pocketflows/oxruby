@@ -61,7 +61,8 @@ module Oxcop
                             end
                           end
         # The final source of oxcop's correction loop was investigated there.
-        offenses = Binary.offenses(source, warnings: !@oxcop_corrected_sources.include?(source), **options)
+        offenses = Binary.offenses(source, warnings: !@oxcop_corrected_sources.include?(source),
+                                           autocorrect: cop_options[:autocorrect] ? true : false, **options)
         @oxcop_priors << [options[:path], source]
         offenses.map { |offense| to_offense(offense, processed_source, cop) }
       end

@@ -86,13 +86,18 @@ module Oxcop
         # binary replays first so the cop's state carries over. With
         # `real_file`, the binary inspects `path` on disk (where the spec
         # wrote `source`) instead of reading `--stdin`.
+        # With `autocorrect` (the cop's `@options[:autocorrect]`, which
+        # `expect_offense` sets), the cop investigates as it would when
+        # correcting (`autocorrect?` is true), but only once and without
+        # writing anything back.
         def offenses(source, path:, config:, cop_name:, priors: [], real_file: false, offenses_to_check: nil,
-                     warnings: true)
+                     warnings: true, autocorrect: false)
           @investigations = investigations.to_i + 1
+          correct = autocorrect && !real_file ? ["-A", "--autocorrect-once"] : []
           stdout, = invoke(source, path: path, config: config, cop_name: cop_name, priors: priors,
                                    real_file: real_file, offenses_to_check: offenses_to_check,
                                    warnings: warnings,
-                                   args: ["--format", "json", "--no-display-cop-names"])
+                                   args: [*correct, "--format", "json", "--no-display-cop-names"])
           JSON.parse(stdout).fetch("files").flat_map { |file| file["offenses"] }
         end
 
@@ -228,9 +233,21 @@ module Oxcop
           end
         end
 
+        # Strings that aren't valid in their encoding (`"\x82"` in a cop's
+        # config) can't be dumped as text; as binary strings Psych writes
+        # them as `!binary`, which the binary decodes.
+        def dumpable(value)
+          case value
+          when Hash then value.to_h { |key, val| [dumpable(key), dumpable(val)] }
+          when Array then value.map { |element| dumpable(element) }
+          when String then value.valid_encoding? ? value : value.b
+          else value
+          end
+        end
+
         def with_config(config)
           Tempfile.create(["oxcop-spec", ".yml"]) do |file|
-            file.write(YAML.dump(config.to_h))
+            file.write(YAML.dump(dumpable(config.to_h)))
             file.flush
             yield file.path
           end
