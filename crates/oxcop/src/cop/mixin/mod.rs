@@ -19,6 +19,7 @@ pub mod duplication;
 pub mod empty_lines_around_body;
 pub mod empty_parameter;
 pub mod end_keyword_alignment;
+pub mod endless_method_rewriter;
 pub mod first_element_line_break;
 pub mod frozen_string_literal;
 pub mod gem_declaration;
