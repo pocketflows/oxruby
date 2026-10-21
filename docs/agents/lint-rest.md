@@ -12,10 +12,10 @@ only work with a `rubydex` project index (decision pending with the user).
 - MisplacedMagicComment 16 (`sorted_tokens`; `known_encoding?` uses Ruby
   3.3's `Encoding.name_list`, downcased, since `Encoding.find` is
   case-insensitive)
-- DuplicateMagicComment, OrderedMagicComments (21 together;
-  `FrozenStringLiteral#leading_magic_comments` added to the mixin)
+- DuplicateMagicComment 8, OrderedMagicComments 13
+  (`FrozenStringLiteral#leading_magic_comments` added to the mixin)
 - DuplicateRegexpCharacterClassElement 16, MixedCaseRange 31,
-  MixedRegexpCaptureTypes and OutOfRangeRegexpRef (133 together)
+  MixedRegexpCaptureTypes 12, OutOfRangeRegexpRef 121
 - CopDirectiveSyntax 51. The registry is `config.known_cops()` (every core
   cop from `default.yml`, plus cops the config names), so unported cops are
   known too. `Registry#qualified_cop_name(name, nil, warn: false)` (with
@@ -36,6 +36,8 @@ All ten match RuboCop 1.91.0 (`--only` these cops, a plain config with
 
 ## Notes
 
+- CopDirectiveSyntax's near-miss keyword regexp spells upstream's `[\w-]`
+  as `[A-Za-z0-9_-]`: Ruby's `\w` is ASCII-only, onig's is not.
 - NameSimilarity ranks `known_cops().names()`, which are sorted; Ruby's
   `Registry#names` is in registration order. Only exact ties could differ.
 
