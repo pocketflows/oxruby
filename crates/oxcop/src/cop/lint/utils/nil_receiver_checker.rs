@@ -47,6 +47,8 @@ impl<'a, 'm> NilReceiverChecker<'a, 'm> {
             || self.cant_be_nil_at(receiver.parent(), receiver)
     }
 
+    // Each arm mirrors a `when` of the Ruby `case`.
+    #[allow(clippy::collapsible_match)]
     fn cant_be_nil_at(&mut self, node: Option<Node<'a>>, receiver: Node<'a>) -> bool {
         let Some(node) = node else {
             return false;
