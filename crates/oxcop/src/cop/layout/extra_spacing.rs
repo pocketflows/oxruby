@@ -14,11 +14,15 @@ use crate::processed_source::{ProcessedSource, Range};
 
 const MSG_UNNECESSARY: &str = "Unnecessary spacing detected.";
 
+/// `typed[[column, type]]`: the lines and spacings of tokens of a type at a
+/// column.
+type Typed = HashMap<(usize, &'static str), (Vec<usize>, Vec<isize>)>;
+
 /// `by_column` and `typed` of a group profile.
 #[derive(Default)]
 struct GroupProfile {
     by_column: HashMap<usize, Vec<(usize, isize)>>,
-    typed: HashMap<(usize, &'static str), (Vec<usize>, Vec<isize>)>,
+    typed: Typed,
 }
 
 #[derive(Default)]
