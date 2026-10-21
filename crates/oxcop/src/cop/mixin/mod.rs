@@ -23,6 +23,7 @@ pub mod ignored_node;
 pub mod integer_node;
 pub mod interpolation;
 pub mod method_preference;
+pub mod multiline_element_indentation;
 pub mod multiline_element_line_breaks;
 pub mod multiline_literal_brace_layout;
 pub mod negative_conditional;
