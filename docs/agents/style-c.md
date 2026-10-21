@@ -47,6 +47,9 @@
 - Style/RedundantRegexpConstructor 11
 - Style/RedundantSelfAssignmentBranch 22
 - Style/RedundantSelfAssignment 14
+- Style/RedundantSelf 65
+- Style/RedundantSort 50
+- Style/RedundantReturn 39
 - Style/RedundantSortBy 8
 - Style/RedundantStructKeywordInit 12
 - Style/ReturnNil 5
