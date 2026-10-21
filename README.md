@@ -7,7 +7,7 @@ with prebuilt native binaries.
 | Gem | Replaces | Status |
 | --- | --- | --- |
 | [`oxcop`](gems/oxcop) | [RuboCop](https://github.com/rubocop/rubocop) 1.91.0 | Early: CLI, config, formatters and 18 cops |
-| *(planned)* | [syntax_tree](https://github.com/ruby-syntax-tree/syntax_tree) + ERB | Not started; see [docs/ROADMAP.md](docs/ROADMAP.md) |
+| `oxtree` (crate; gem pending) | [syntax_tree](https://github.com/ruby-syntax-tree/syntax_tree) 6.3.0 + ERB | Formatter complete (all upstream fixtures pass); CLI and gem pending, see [docs/OXTREE.md](docs/OXTREE.md) |
 
 ## oxcop
 

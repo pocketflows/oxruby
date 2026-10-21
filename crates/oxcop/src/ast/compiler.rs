@@ -1652,7 +1652,7 @@ impl<'s> Compiler<'s> {
                             range(&key.location()),
                         ))));
                     }
-                    let value_loc = Some(sym.content_loc()).unwrap();
+                    let value_loc = sym.content_loc();
                     let s = self
                         .builder
                         .string_internal_bytes(sym.unescaped(), range(&value_loc));
@@ -1671,7 +1671,7 @@ impl<'s> Compiler<'s> {
                 ));
             }
             let sym = key.as_symbol_node().unwrap();
-            let value_loc = Some(sym.content_loc()).unwrap();
+            let value_loc = sym.content_loc();
             let inner = implicit.value();
             let implicit_value = match inner {
                 Node::CallNode { .. } => {
@@ -1731,7 +1731,7 @@ impl<'s> Compiler<'s> {
         let (opening, parts, closing) = if let Some(sym) = key.as_symbol_node() {
             let s = self
                 .builder
-                .string_internal_bytes(sym.unescaped(), range(&Some(sym.content_loc()).unwrap()));
+                .string_internal_bytes(sym.unescaped(), range(&sym.content_loc()));
             (sym.opening_loc(), vec![s], sym.closing_loc())
         } else {
             let sym = key.as_interpolated_symbol_node().unwrap();
@@ -2261,12 +2261,11 @@ impl<'s> Compiler<'s> {
                 }
             }
             Some(closing) => {
-                let value = Some(n.content_loc());
-                let value_slice = value.as_ref().map_or(&b""[..], Location::as_slice);
+                let value = n.content_loc();
+                let value_slice = value.as_slice();
                 let parts = if value_slice.is_empty() {
                     Vec::new()
                 } else if value_slice.contains(&b'\n') {
-                    let value = value.unwrap();
                     self.string_nodes_from_line_continuations(
                         n.unescaped(),
                         value_slice,
@@ -2276,7 +2275,7 @@ impl<'s> Compiler<'s> {
                 } else {
                     vec![
                         self.builder
-                            .string_internal_bytes(n.unescaped(), range(&value.unwrap())),
+                            .string_internal_bytes(n.unescaped(), range(&value)),
                     ]
                 };
                 self.builder

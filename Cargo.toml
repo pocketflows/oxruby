@@ -23,3 +23,8 @@ walkdir = "2"
 lto = "fat"
 codegen-units = 1
 strip = true
+
+# oxtree links oxc's formatter crates from git; oxc-css-parser (crates.io)
+# needs the same oxc_allocator instance (oxc's own workspace patches it too).
+[patch.crates-io]
+oxc_allocator = { git = "https://github.com/oxc-project/oxc", tag = "oxfmt_v0.72.0" }
