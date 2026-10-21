@@ -1,0 +1,14 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# An `stree`-named alias for oxtree. Only installed when the gem was built
+# with OXTREE_STREE=1 (see oxtree.gemspec), so it doesn't shadow
+# syntax_tree's own `stree` by default.
+require_relative "../lib/oxtree"
+
+begin
+  Oxtree.exec(ARGV)
+rescue Oxtree::ExecutableNotFound => e
+  warn("ERROR: #{e.message}")
+  exit 2
+end

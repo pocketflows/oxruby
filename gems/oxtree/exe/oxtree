@@ -1,0 +1,11 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../lib/oxtree"
+
+begin
+  Oxtree.exec(ARGV)
+rescue Oxtree::ExecutableNotFound => e
+  warn("ERROR: #{e.message}")
+  exit 2
+end
