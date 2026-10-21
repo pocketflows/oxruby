@@ -330,3 +330,25 @@ fn symbol_name_is_simple(name: &str) -> bool {
 pub fn parse_regexp(text: &str) -> Option<crate::regexp_parser::Tree> {
     crate::regexp_parser::parse(text, false, false).ok()
 }
+
+/// `Regexp.escape(string)`.
+pub fn regexp_escape(string: &str) -> String {
+    let mut out = String::with_capacity(string.len());
+    for c in string.chars() {
+        match c {
+            '[' | ']' | '{' | '}' | '(' | ')' | '|' | '-' | '*' | '.' | '\\' | '?' | '+' | '^'
+            | '$' | '#' => {
+                out.push('\\');
+                out.push(c);
+            }
+            ' ' => out.push_str("\\ "),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            '\r' => out.push_str("\\r"),
+            '\x0c' => out.push_str("\\f"),
+            '\x0b' => out.push_str("\\v"),
+            c => out.push(c),
+        }
+    }
+    out
+}
