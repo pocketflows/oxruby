@@ -45,8 +45,8 @@ def report(label, command, dir)
           "GEM_HOME" => nil, "GEM_PATH" => nil }
   stdout, stderr, status = Open3.capture3(env, *command, chdir: dir)
   elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
-  if status.exitstatus > 1 || stdout.empty?
-    abort "#{label} failed (exit #{status.exitstatus}):\n#{stderr}"
+  if status.exitstatus.nil? || status.exitstatus > 1 || stdout.empty?
+    abort "#{label} failed (#{status}):\n#{stderr}"
   end
   warn format("%-8s %6.2fs", label, elapsed)
   json = JSON.parse(stdout)
@@ -54,7 +54,14 @@ def report(label, command, dir)
 end
 
 expected = Bundler.with_unbundled_env { report("rubocop", ["bundle", "exec", "rubocop", *only], project) }
-actual = Bundler.with_unbundled_env { report("oxcop", [oxcop, *only], project) }
+# oxcop runs through its Ruby launcher inside the project's bundle, as
+# `bundle exec oxcop` would, so `plugins:` resolve to the bundle's gems. The
+# launcher isn't in the project's Gemfile, so it's run as a plain script.
+launcher = File.join(root, "gems", "oxcop", "exe", "oxcop")
+actual = Bundler.with_unbundled_env do
+  ENV["OXCOP_BINARY"] = oxcop
+  report("oxcop", ["bundle", "exec", "ruby", launcher, *only], project)
+end
 
 only_rubocop = expected.keys - actual.keys
 only_oxcop = actual.keys - expected.keys

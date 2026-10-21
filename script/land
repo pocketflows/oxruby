@@ -24,25 +24,25 @@ if [[ -n "$(git status --porcelain)" ]]; then
 fi
 
 # Diff the ported cops (or just $1, comma separated) against real RuboCop on
-# ../code; any mismatched file fails the gate.
+# ../code; any difference fails the gate.
 compare() {
   # ../code relative to the main checkout (worktrees live in .worktrees/).
-  local code out
+  local code out status=0
   code="$(cd "$(git rev-parse --git-common-dir)/../.." && pwd)/code"
   [[ -d "$code" ]] || return 0
-  # Exit status is ignored: files only one side inspects (bin/*, until
-  # plugin default configs load) make it non-zero. Mismatches gate.
-  out=$( (ONLY="$1" OXCOP_BINARY="$PWD/target/debug/oxcop" script/compare_with_rubocop "$code" 2>&1 || true) )
-  echo "land: compare_with_rubocop${1:+ ($1)}: $(tail -1 <<<"$out")"
-  if [[ "$(tail -1 <<<"$out")" != "mismatched files: 0" ]]; then
+  # Fails on mismatched offenses and on files only one side inspects.
+  out=$(ONLY="$1" OXCOP_BINARY="$PWD/target/debug/oxcop" script/compare_with_rubocop "$code" 2>&1) || status=$?
+  echo "land: compare_with_rubocop${1:+ ($1)}: $(tail -1 <<<"$out") (exit $status)"
+  if ((status != 0)); then
     tail -40 <<<"$out" | cut -c1-400
     return 1
   fi
 }
 
+# gate [RANGE]: gate the files changed in RANGE (default: this branch).
 gate() {
   local changed
-  changed=$(git diff --name-only main...HEAD)
+  changed=$(git diff --name-only "${1:-main...HEAD}")
   if [[ -z "$changed" ]]; then
     echo "land: nothing to land"
     return 0
@@ -115,13 +115,24 @@ gate() {
 }
 
 for attempt in 1 2 3 4 5 6 7 8; do
+  previous=${base:-}
   base=$(git rev-parse main)
   if ! git rebase main; then
     git rebase --abort || true
     echo "land: rebase onto main conflicts; run 'git rebase main', resolve, then land again" >&2
     exit 1
   fi
-  gate
+  # On a retry, our changes already passed their gates on the previous main.
+  # When main only gained cop files since, gating those cops on top of our
+  # rebased branch covers the combination, so a full gate isn't starved by
+  # a stream of cop landings.
+  if [[ -n "$previous" && -z "${FULL:-}" ]] &&
+    ! git diff --name-only "$previous" "$base" | grep -qvE '^(crates/oxcop/src/cop/[a-z_]+/[a-z0-9_]+\.rs|docs/.*)$'; then
+    echo "land: main gained only cops/docs since the last gate; gating those"
+    gate "$previous..$base"
+  else
+    gate
+  fi
   if $dry_run; then
     echo "land: gates passed (dry run, main not moved)"
     exit 0

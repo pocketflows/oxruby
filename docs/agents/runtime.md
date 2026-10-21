@@ -24,10 +24,34 @@ Owner: `runtime` (see the roster in `docs/PARALLEL.md`).
     `eprintln!` from cops; report errors through the investigation's
     `errors`, or write to `crate::cli::stderr()`.
 
+- **`--only`** enables a cop the config disables, only when named exactly
+  (not by department), as `Registry#enabled_cop_name?` does.
+- **Gate:** cop-only landings run `compare_with_rubocop` restricted to the
+  changed cops (`ONLY=Dept/Cop,...`). Compare must exit 0 (no mismatches
+  and no files only one side inspects). On a CAS retry, if main only gained
+  cop/docs files, only those are re-gated on top of the rebased branch.
+- **Plugin default configs.** The launcher passes `OXCOP_GEMS` (every gem
+  in the bundle, or the latest installed versions: name, path,
+  `default_lint_roller_plugin`). `plugins:` (and `require:` of a plugin gem)
+  load `<gem>/config/default.yml` and are integrated into a per-run default
+  configuration as `ConfigurationIntegrator` does (first-in-wins AllCops,
+  arrays unioned, `unset_nil: false`). Without the launcher the old warning
+  is kept; with it, an unknown plugin is RuboCop's `Plugin::LoadError`.
+  `compare_with_rubocop` runs the launcher with `bundle exec ruby` inside
+  ../code's bundle: `rubocop=5692 oxcop=5692`, 0 mismatched, exit 0.
+- **`inherit_mode`** (root, hash-level and per-cop; merge and override) in
+  `merge`, `resolve_inheritance` ported (department overrides, Include path
+  fixing), `merge_with_default` uses the user's `inherit_mode`.
+
 ## Left
 
-- Plugin default configs via the launcher; compare inside ../code's bundle.
-- ERB in `.rubocop.yml`, `inherit_mode`, `inherit_gem`.
+- Debug oxcop on ../code is now ~225 s (rubocop: 26 s) with ~170 cops:
+  the gate's full compare is dominated by it. Next: rayon parallel
+  inspection, and find any pathologically slow cop.
+- Plugins whose `rules` aren't `config/default.yml` (`type: :object`).
+- ERB in `.rubocop.yml`, `inherit_gem`, `inherit_from` globs,
+  `handle_disabled_by_default`, `add_missing_namespaces`,
+  `add_excludes_from_files`, ConfigFinder's project-root stop.
 - Directive cops, pending-cops warning, CLI options, result cache, rayon.
 - Parallel spec files (parallel_tests), once the suite grows enough that
   per-example Ruby time dominates.

@@ -44,8 +44,18 @@ module Oxcop
         "OXCOP_RUBY_ENGINE" => RUBY_ENGINE,
         "OXCOP_RUBY_VERSION" => RUBY_VERSION,
         "OXCOP_RUBY_PATCHLEVEL" => RUBY_PATCHLEVEL.to_s,
-        "OXCOP_RUBY_PLATFORM" => RUBY_PLATFORM
+        "OXCOP_RUBY_PLATFORM" => RUBY_PLATFORM,
+        "OXCOP_GEMS" => gems
       }
+    end
+
+    # The gems RuboCop could load plugins (and `inherit_gem` configs) from,
+    # one `name<TAB>full_gem_path<TAB>default_lint_roller_plugin` per line:
+    # the bundle's under Bundler, otherwise the latest installed versions.
+    def gems
+      specs = defined?(Bundler) && !Gem.loaded_specs.empty? ? Gem.loaded_specs.values : Gem::Specification.latest_specs(true)
+      specs.map { |spec| [spec.name, spec.full_gem_path, spec.metadata["default_lint_roller_plugin"]].join("\t") }
+           .join("\n")
     end
 
     def not_found_message
