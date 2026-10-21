@@ -7,10 +7,14 @@ file is the consolidated view. oxtree has its own status file,
 
 ## oxcop: where it stands
 
-- **Cops:** 610 of RuboCop 1.91.0's 613 core cops are ported. Each passes
-  its whole vendored upstream spec through the binary: 29,039 examples,
-  0 failures, 109 pending. Most of the pending examples need the `rubydex`
-  project index, which upstream also skips without one.
+- **Cops:** all 613 of RuboCop 1.91.0's core cops are ported. Each passes
+  its whole vendored upstream spec through the binary: 29,116 examples,
+  0 failures, 5 pending.
+- **Project index:** `AllCops/UseProjectIndex` and `ProjectIndexIncludesGems`
+  work on Shopify's `rubydex` crate (pinned git dependency), and every
+  `:project_index` example passes except two that call the Ruby cop's
+  private cache directly (`docs/agents/index.md`). On ../code the index adds
+  about 0.7 s, or 3.4 s with gems.
 - **Real code:** `script/compare_with_rubocop ../code` runs every ported cop
   with `--only`, plus the app's own config with plugin defaults. oxcop and
   real RuboCop inspect the same 5,692 files and report identical offenses.
@@ -39,10 +43,7 @@ file is the consolidated view. oxtree has its own status file,
 
 ### Left, in priority order
 
-1. **The three project-index cops:** Lint/ArgumentMismatch,
-   DeprecatedReference and NameTypo. Without rubydex every check returns
-   early, so a port would be a cop that never fires. Not ported, pending the
-   user's call.
+1. ~~**The three project-index cops.**~~ Done (`docs/agents/index.md`).
 2. ~~**Invalid UTF-8 without a magic comment.**~~ Done: it fails with
    Lint/Syntax as in RuboCop (`docs/agents/utf8.md`).
 3. **Remaining CLI options:** `-o/--out`, `--auto-gen-config` (with
@@ -73,8 +74,10 @@ file is the consolidated view. oxtree has its own status file,
     `parser`;
   - squiggly-heredoc `\\` unescaping follows Prism (8 files in rubocop's own
     specs).
-- **The project index (rubydex) isn't supported.** Cops behave as RuboCop
-  does without one.
+- **The project index:** the gem crashes on a `module_function` method's
+  visibility; oxcop treats it as private. With `ProjectIndexIncludesGems`,
+  only gems' `lib/**/*.rb` is indexed, as upstream, so constants defined in a
+  gem's `app/` are reported by NameTypo.
 - **Lint/ScriptPermission** reads `executable?` as the owner's execute bit,
   since the effective uid isn't available without FFI.
 - **LineLengthHelp `valid_uri?`** treats a `mailto:` URI that upstream would

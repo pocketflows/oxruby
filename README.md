@@ -6,7 +6,7 @@ with prebuilt native binaries.
 
 | Gem | Replaces | Status |
 | --- | --- | --- |
-| [`oxcop`](gems/oxcop) | [RuboCop](https://github.com/rubocop/rubocop) 1.91.0 | 610 of 613 core cops, each passing its whole upstream spec; matches RuboCop on a 5,692-file Rails app. See [docs/ROADMAP.md](docs/ROADMAP.md) |
+| [`oxcop`](gems/oxcop) | [RuboCop](https://github.com/rubocop/rubocop) 1.91.0 | All 613 core cops, each passing its whole upstream spec; matches RuboCop on a 5,692-file Rails app. See [docs/ROADMAP.md](docs/ROADMAP.md) |
 | [`oxtree`](gems/oxtree) | [syntax_tree](https://github.com/ruby-syntax-tree/syntax_tree) 6.3.0 + ERB | Formatter, `oxtree` CLI and `stree-new` mode; byte-identical to syntax_tree on every corpus tried. See [docs/OXTREE.md](docs/OXTREE.md) |
 
 ## oxcop
@@ -31,9 +31,9 @@ their excludes and core-cop settings apply. The intended use is running oxcop
 for the core cops and RuboCop with `--only` for the rest, or plugin ports
 later.
 
-Ported cops: 610 of RuboCop 1.91.0's 613 core cops. Each passes its whole
-upstream spec, 29,039 examples in all. The three left only work with
-RuboCop's optional project index (rubydex), which oxcop doesn't support.
+Ported cops: all 613 of RuboCop 1.91.0's core cops. Each passes its whole
+upstream spec, 29,116 examples in all, including the project-index
+(`UseProjectIndex`) examples, which oxcop runs on Shopify's rubydex crate.
 `Lint/Syntax`'s spec drives RuboCop's Commissioner directly, so it never
 reaches oxcop, and its messages come from Prism. `oxcop --show-ported-cops`
 prints the list. See `docs/ROADMAP.md` for status, gaps and next steps.
