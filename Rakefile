@@ -106,6 +106,7 @@ namespace :vendor do
     upstream = oxtree_sibling("rubocop")
     tag = `git -C #{upstream} describe --tags`.strip
     FileUtils.cp(File.join(upstream, "config", "default.yml"), File.join(ROOT, "vendor/rubocop/config/default.yml"))
+    FileUtils.cp(File.join(upstream, "config", "obsoletion.yml"), File.join(ROOT, "vendor/rubocop/config/obsoletion.yml"))
     FileUtils.cp(File.join(upstream, "LICENSE.txt"), File.join(ROOT, "vendor/rubocop/LICENSE.txt"))
     %w[bundler gemspec layout lint metrics migration naming security style].each do |department|
       FileUtils.rm_rf(File.join(ROOT, "spec/rubocop/cop", department))
