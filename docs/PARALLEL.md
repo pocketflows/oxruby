@@ -35,9 +35,13 @@ onto; a three-hour branch is not.
      `ast/`, config, the shim, Cargo files), it runs every ported spec plus
      `script/compare_with_rubocop ../code`, which must report 0 mismatched
      files;
-   - moves `main` with `git update-ref refs/heads/main HEAD <old>`. If
-     someone else landed in the meantime the swap fails, and it rebases and
-     retries.
+   - takes the landing lock first (`.git/land.lock`, shared by all
+     worktrees), so landings run one at a time and a slow full gate can't be
+     starved by faster cop landings. Expect to wait a few minutes behind
+     someone else's full gate. A lock left by a killed landing is broken
+     automatically;
+   - moves `main` with `git update-ref refs/heads/main HEAD <old>`. If main
+     moved anyway the swap fails, and it rebases and retries.
 3. Never move `main` any other way: no `git push . HEAD:main`, no
    `git branch -f main`, no `--no-verify` equivalents. Never force-update
    it. Never push to GitHub.

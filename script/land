@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 # Land the current branch on main: rebase onto main, run the gates for what
 # changed, then move main with a compare-and-swap (`git update-ref NEW OLD`).
-# If another agent landed in the meantime the swap fails and we retry, so no
-# lock is needed and main only ever fast-forwards to a gated commit.
+# Landings take a lock (`land.lock` in the shared git dir) so a slow full
+# gate isn't starved by faster ones; the swap still guards main, so main only
+# ever fast-forwards to a gated commit.
 #
 #   script/land            # gate + land
 #   script/land --dry-run  # gate only
 #   FULL=1 script/land     # always run the full gates
 set -euo pipefail
 
+# The whole script is one function so bash has parsed all of it before the
+# rebase below rewrites this file on disk.
+main() {
 cd "$(git rev-parse --show-toplevel)"
 dry_run=false
 [[ "${1:-}" == "--dry-run" ]] && dry_run=true
@@ -114,6 +118,8 @@ gate() {
   fi
 }
 
+$dry_run || acquire_lock
+
 for attempt in 1 2 3 4 5 6 7 8; do
   previous=${base:-}
   base=$(git rev-parse main)
@@ -145,3 +151,30 @@ for attempt in 1 2 3 4 5 6 7 8; do
 done
 echo "land: gave up after repeated races; try again shortly" >&2
 exit 1
+}
+
+# One landing at a time across all worktrees. mkdir is atomic; the owner
+# file records the pid so a lock left by a killed landing is broken.
+acquire_lock() {
+  lock="$(cd "$(git rev-parse --git-common-dir)" && pwd)/land.lock"
+  local waited=0 owner pid
+  until mkdir "$lock" 2>/dev/null; do
+    owner=$(cat "$lock/owner" 2>/dev/null || true)
+    pid=${owner%% *}
+    if [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
+      echo "land: breaking stale lock ($owner)"
+      rm -rf "$lock"
+      continue
+    fi
+    if ((waited % 60 == 0)); then
+      echo "land: waiting for the landing lock (held by ${owner:-?})"
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+  echo "$$ $(git symbolic-ref --short HEAD) $(date '+%H:%M:%S')" >"$lock/owner"
+  trap 'rm -rf "$lock"' EXIT
+}
+
+main "$@"
+exit $?
