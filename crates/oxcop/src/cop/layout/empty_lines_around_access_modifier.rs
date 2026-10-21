@@ -101,15 +101,11 @@ impl EmptyLinesAroundAccessModifier {
                 return;
             }
             match style {
-                "around" => {
-                    if !self.next_line_empty(ps, node.last_line()) {
-                        corrector.insert_after(line, "\n");
-                    }
+                "around" if !self.next_line_empty(ps, node.last_line()) => {
+                    corrector.insert_after(line, "\n");
                 }
-                "only_before" => {
-                    if self.next_line_empty_and_exists(ps, node.last_line()) {
-                        corrector.remove(source_range(ps, node.last_line() + 1, 0, 1));
-                    }
+                "only_before" if self.next_line_empty_and_exists(ps, node.last_line()) => {
+                    corrector.remove(source_range(ps, node.last_line() + 1, 0, 1));
                 }
                 _ => {}
             }
