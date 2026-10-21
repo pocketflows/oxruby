@@ -26,6 +26,7 @@
 - Style/PerlBackrefs 14
 - Style/PredicateWithKind 64
 - Style/PreferredHashMethods 9
+- Style/RaiseArgs 35
 - Style/RandomWithOffset 29
 - Style/ReduceToHash 23
 - Style/RedundantArrayConstructor 13
@@ -53,6 +54,7 @@
 - Style/RedundantReturn 39
 - Style/RedundantSortBy 8
 - Style/RedundantStructKeywordInit 12
+- Style/RequireOrder 24
 - Style/ReturnNil 5
 - Style/ReturnNilInPredicateMethodDefinition 39
 - Style/ReverseFind 14
