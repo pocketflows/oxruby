@@ -94,7 +94,7 @@ directory with `Gemfile`, `gems.rb`, `foo.gemspec` and `.rb` files with the
 same content, Bundler cops only report on `Gemfile`/`gems.rb` and Gemspec
 cops only on `foo.gemspec`.
 
-## Blocked (on `depts-wip` / `depts-tok`)
+## Blocked (on `depts-wip`)
 
 | Cop | Passing | Blocked by |
 | --- | --- | --- |
