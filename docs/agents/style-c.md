@@ -17,6 +17,15 @@
 - Style/NonNilCheck 22
 - Style/NumberedParameters 4
 - Style/NumericLiteralPrefix 15
+- Style/NumericPredicate 37
+- Style/ObjectThen 22
+- Style/OneClassPerFile 21
+- Style/OperatorMethodCall 202
+- Style/OptionalArguments 13
+- Style/OptionalBooleanParameter 8
+- Style/PerlBackrefs 14
+- Style/PredicateWithKind 64
+- Style/PreferredHashMethods 9
 
 ## Left
 
