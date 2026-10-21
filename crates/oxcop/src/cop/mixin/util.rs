@@ -273,3 +273,53 @@ pub fn interpret_string_escapes(string: &str) -> String {
     }
     out
 }
+
+/// Ruby's `Symbol#inspect` (`:foo`, `:foo?`, `:+`, `:"foo bar"`).
+pub fn symbol_inspect(name: &str) -> String {
+    if symbol_name_is_simple(name) {
+        format!(":{name}")
+    } else {
+        format!(":{}", ruby_inspect(name))
+    }
+}
+
+/// `rb_enc_symname_p`: whether a symbol prints without quotes.
+fn symbol_name_is_simple(name: &str) -> bool {
+    const OPERATORS: &[&str] = &[
+        "[]", "[]=", "+", "-", "*", "/", "%", "**", "==", "===", "!=", "=~", "!~", "!", "<=>",
+        "<", "<=", ">", ">=", "<<", ">>", "&", "|", "^", "~", "+@", "-@", "`",
+    ];
+    if OPERATORS.contains(&name) {
+        return true;
+    }
+    let is_ident_start = |c: char| c == '_' || c.is_alphabetic() || !c.is_ascii();
+    let is_ident_char = |c: char| c == '_' || c.is_alphanumeric() || !c.is_ascii();
+    let ident = |s: &str| {
+        let mut chars = s.chars();
+        chars.next().is_some_and(is_ident_start) && chars.all(is_ident_char)
+    };
+    if let Some(rest) = name.strip_prefix('$') {
+        if rest.len() == 1 && r#"~*$?!@/\;,.=:<>"&`'+0"#.contains(rest) {
+            return true;
+        }
+        if let Some(opt) = rest.strip_prefix('-') {
+            let mut chars = opt.chars();
+            return chars.next().is_some_and(is_ident_char) && chars.next().is_none();
+        }
+        if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()) {
+            return true;
+        }
+        return ident(rest);
+    }
+    if let Some(rest) = name.strip_prefix("@@") {
+        return ident(rest);
+    }
+    if let Some(rest) = name.strip_prefix('@') {
+        return ident(rest);
+    }
+    let base = name
+        .strip_suffix(['?', '!', '='])
+        .filter(|b| !b.ends_with(['?', '!', '=']))
+        .unwrap_or(name);
+    ident(base)
+}
