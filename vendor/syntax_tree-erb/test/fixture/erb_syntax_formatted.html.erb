@@ -1,0 +1,49 @@
+<% this = "avoids line break after expression" -%>
+<%# This is an ERB-comment https://stackoverflow.com/a/25626629 this answer describes ERB and erubis syntax%>
+<%== rails_raw_output %>
+<%- "this only works in ERB not erubis" %>
+<% # This should be written on one line %>
+<%#
+This is a comment
+It can be mutiline
+Treat it as a comment
+%>
+
+<% if this -%>
+  <%= form.submit -%>
+<% elsif that -%>
+  <%= form.submit -%>
+<% else -%>
+  <%= form.submit -%>
+<% end -%>
+
+<%- if this %>
+  <%= form.submit -%>
+<%- elsif that %>
+  <%= form.submit -%>
+<%- else %>
+  <%= form.submit -%>
+<%- end %>
+
+<%= link_to(link, text) do -%>
+  <h1>Cool</h1>
+<%- end %>
+
+<%= t(
+  ".verified_at",
+  at:
+    (
+      if @repository.github_status_at
+        l(@repository.github_status_at, format: :long)
+      else
+        "?"
+      end
+    )
+) %>
+
+<%
+  assign_b ||= "b"
+  assign_c ||= "c"
+%>
+
+<div class="card mb-2 <%= condition ? "pb-3" : "pb-0" %> mt-<%= 5 * 5 %>"></div>
