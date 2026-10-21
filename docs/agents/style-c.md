@@ -51,6 +51,7 @@
 - Style/RedundantInterpolation 29
 - Style/RedundantInterpolationUnfreeze 16
 - Style/RedundantInitialize 23
+- Style/RedundantParentheses 337
 - Style/RedundantPercentQ 27
 - Style/RedundantMinMaxBy 33
 - Style/RedundantRegexpArgument 50
