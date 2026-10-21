@@ -40,6 +40,9 @@ pub enum Outcome {
     Error,
     /// The output depends on oxfmt's JavaScript side; run the executable.
     NeedsOxfmt,
+    /// Only Tailwind class sorting needs the executable; this is the output
+    /// with the classes left as written, used when oxfmt isn't installed.
+    NeedsTailwindSort(String),
 }
 
 const CONFIG_FILES: &[&str] = &[
@@ -242,8 +245,14 @@ pub fn format(config: &Config, source: &str, language: Language) -> Outcome {
             }
         }
     };
-    if saw_tailwind.load(Ordering::Relaxed) || saw_embed.load(Ordering::Relaxed) {
+    if saw_embed.load(Ordering::Relaxed) {
         return Outcome::NeedsOxfmt;
+    }
+    if saw_tailwind.load(Ordering::Relaxed) {
+        return match printed {
+            Ok(printed) => Outcome::NeedsTailwindSort(printed.into_code()),
+            Err(_) => Outcome::NeedsOxfmt,
+        };
     }
     match printed {
         Ok(printed) => Outcome::Formatted(printed.into_code()),

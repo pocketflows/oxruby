@@ -1,7 +1,38 @@
 #![forbid(unsafe_code)]
 
+//! The `oxtree` executable: syntax_tree's `stree` command line plus the
+//! `stree-new` mode (see `cli/`). The `--format-*`/`--dump-ast` commands are
+//! hidden development helpers used by `tools/reference_*.rb`.
+
+use std::io::Write;
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if let Some(status) = dev(&args) {
+        std::process::exit(status);
+    }
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let stdin = std::io::stdin();
+    let stdout = std::io::stdout();
+    let stderr = std::io::stderr();
+    let mut stdin = stdin.lock();
+    let mut out = std::io::BufWriter::new(stdout.lock());
+    let mut err = stderr.lock();
+    let status = {
+        let mut io = oxtree::cli::Io {
+            stdin: &mut stdin,
+            stdout: &mut out,
+            stderr: &mut err,
+        };
+        oxtree::cli::run(&args[1..], &cwd, &mut io)
+    };
+    let _ = out.flush();
+    drop(out);
+    std::process::exit(status);
+}
+
+/// The hidden development commands; `None` when `args` isn't one.
+fn dev(args: &[String]) -> Option<i32> {
     if args.len() == 6 && args[1] == "--format-list" {
         let (root, out, width, list) = (&args[2], &args[3], &args[4], &args[5]);
         let width: usize = width.parse().unwrap();
@@ -13,7 +44,7 @@ fn main() {
             };
             std::fs::write(format!("{out}/{}", rel.replace('/', "__")), result).unwrap();
         }
-        return;
+        return Some(0);
     }
     if args.len() == 9 && args[1] == "--format-embedded-list" {
         let (root, out, width, list) = (&args[2], &args[3], &args[4], &args[5]);
@@ -36,7 +67,7 @@ fn main() {
             };
             std::fs::write(format!("{out}/{}", rel.replace('/', "__")), result).unwrap();
         }
-        return;
+        return Some(0);
     }
     if args.len() == 6 && args[1] == "--format-erb-list" {
         let (root, out, width, list) = (&args[2], &args[3], &args[4], &args[5]);
@@ -49,38 +80,48 @@ fn main() {
             };
             std::fs::write(format!("{out}/{}", rel.replace('/', "__")), result).unwrap();
         }
-        return;
+        return Some(0);
     }
     if args.len() == 3 && args[1] == "--format-erb" {
         let source = std::fs::read_to_string(&args[2]).expect("read");
-        match oxtree::erb::format(&source, 80) {
-            Ok(out) => print!("{out}"),
+        return Some(match oxtree::erb::format(&source, 80) {
+            Ok(out) => {
+                print!("{out}");
+                0
+            }
             Err(e) => {
                 eprintln!("{e} ({}:{})", e.lineno, e.column);
-                std::process::exit(1);
+                1
             }
-        }
-        return;
+        });
     }
     if args.len() == 3 && args[1] == "--format-file" {
         let source = std::fs::read_to_string(&args[2]).expect("read");
-        match oxtree::format(&source, 80, oxtree::format::Options::default()) {
-            Ok(out) => print!("{out}"),
-            Err(e) => {
-                eprintln!("{e}");
-                std::process::exit(1);
-            }
-        }
-        return;
+        return Some(
+            match oxtree::format(&source, 80, oxtree::format::Options::default()) {
+                Ok(out) => {
+                    print!("{out}");
+                    0
+                }
+                Err(e) => {
+                    eprintln!("{e}");
+                    1
+                }
+            },
+        );
     }
     if args.len() == 3 && args[1] == "--dump-ast" {
         let source = std::fs::read_to_string(&args[2]).expect("read");
-        match oxtree::parser::parse(&source) {
-            Ok(ast) => print!("{}", ast.dump()),
+        return Some(match oxtree::parser::parse(&source) {
+            Ok(ast) => {
+                print!("{}", ast.dump());
+                0
+            }
             Err(e) => {
                 eprintln!("{e}");
-                std::process::exit(1);
+                1
             }
-        }
+        });
     }
+    None
 }

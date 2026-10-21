@@ -1785,6 +1785,9 @@ impl<'s> Builder<'s> {
                     // on_args_add_block gives up when a token it scans sits
                     // before the end of the arguments so far, which happens
                     // when a heredoc extends them: syntax_tree drops `&blk`.
+                    // This changes the program, and is kept on purpose:
+                    // oxtree keeps byte-parity with syntax_tree 6.3.0, bugs
+                    // included (user decision, see docs/OXTREE.md).
                     if let Some(l) = location
                         && !parts.is_empty()
                         && l.end_char > node_span(element).end
@@ -4615,6 +4618,10 @@ impl<'s> Builder<'s> {
             // on_hshptn grabs any `**` operator token still in the list
             // (e.g. from `a**b`, which on_binary doesn't consume) and
             // invents a bare `**` rest.
+            //
+            // This changes the program, and is kept on purpose: oxtree keeps
+            // byte-parity with syntax_tree 6.3.0, bugs included (user
+            // decision, see docs/OXTREE.md "Known gaps").
             let loc = self.token_loc(Span {
                 start: pos,
                 end: pos + 2,

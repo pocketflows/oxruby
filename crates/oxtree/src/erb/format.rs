@@ -16,6 +16,9 @@ pub struct Format {
     pp: PrettierPrint,
     /// Pre-formatted lines for `__STREE_EMBED_<n>__` placeholders.
     embeds: Option<Vec<Vec<String>>>,
+    /// Options for the Ruby inside tags: upstream builds a fresh
+    /// `Formatter::Options`, which reads the loaded plugins' constants.
+    options: crate::format::Options,
 }
 
 impl DocBuilder for Format {
@@ -30,9 +33,25 @@ pub fn format_document(
     maxwidth: usize,
     embeds: Option<Vec<Vec<String>>>,
 ) -> String {
+    format_document_with_options(
+        document,
+        maxwidth,
+        embeds,
+        crate::format::Options::default(),
+    )
+}
+
+/// `format_document`, with the plugin options the Ruby inside tags uses.
+pub fn format_document_with_options(
+    document: &Document,
+    maxwidth: usize,
+    embeds: Option<Vec<Vec<String>>>,
+    options: crate::format::Options,
+) -> String {
     let mut q = Format {
         pp: PrettierPrint::new(maxwidth, TextMode::TextNode, BufferKind::String),
         embeds,
+        options,
     };
     q.visit_document(document);
     q.pp.flush(0)
@@ -286,13 +305,8 @@ impl Format {
     }
 
     fn format_statement(&mut self, ast: &crate::node::Ast, statement: crate::node::NodeId) {
-        let formatted = crate::format::format_node(
-            ast,
-            statement,
-            MAX_WIDTH,
-            crate::format::Options::default(),
-        )
-        .replace(YIELD_PLACEHOLDER, "yield");
+        let formatted = crate::format::format_node(ast, statement, MAX_WIDTH, self.options)
+            .replace(YIELD_PLACEHOLDER, "yield");
         let rows = ruby_split_lines(&formatted);
         self.output_rows(&rows);
     }

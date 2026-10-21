@@ -41,6 +41,17 @@ pub enum Backend {
     Process,
 }
 
+thread_local! {
+    static TAILWIND_UNSORTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether a `format` call on this thread, since the last call to this
+/// function, left Tailwind classes unsorted because the oxfmt executable
+/// isn't installed. Resets the flag.
+pub fn take_tailwind_unsorted() -> bool {
+    TAILWIND_UNSORTED.with(|flag| flag.replace(false))
+}
+
 pub struct Oxfmt {
     root: PathBuf,
     binary: PathBuf,
@@ -87,6 +98,14 @@ impl Oxfmt {
                 crate::oxc::Outcome::Formatted(out) => return Ok(Some(out)),
                 crate::oxc::Outcome::Error => return Ok(None),
                 crate::oxc::Outcome::NeedsOxfmt => {}
+                // Without the executable, Tailwind classes stay unsorted and
+                // the caller is told (user decision: warn, don't fail).
+                crate::oxc::Outcome::NeedsTailwindSort(unsorted) => {
+                    if !self.binary.exists() {
+                        TAILWIND_UNSORTED.with(|flag| flag.set(true));
+                        return Ok(Some(unsorted));
+                    }
+                }
             }
         }
         self.run_process(code, language)
@@ -117,5 +136,46 @@ impl Oxfmt {
         } else {
             Ok(None)
         }
+    }
+}
+
+#[cfg(all(test, feature = "oxc"))]
+mod tests {
+    use super::*;
+
+    fn root(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("oxtree-oxfmt-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(".oxfmtrc.json"),
+            r#"{"experimentalTailwindcss": {"functions": ["cn"]}, "printWidth": 100}"#,
+        )
+        .unwrap();
+        dir
+    }
+
+    // User decision: a Tailwind input without the oxfmt executable is
+    // formatted by the library with its classes unsorted, and flagged.
+    #[test]
+    fn tailwind_without_oxfmt_is_unsorted_with_a_flag() {
+        let dir = root("tw");
+        let oxfmt = Oxfmt::new(&dir, Some(dir.join("missing-oxfmt")), Backend::Library);
+        assert_eq!(oxfmt.backend(), Backend::Library);
+        take_tailwind_unsorted();
+        let out = oxfmt
+            .format("const a = cn( \"p-4 flex\" )\n", Language::Js)
+            .unwrap();
+        assert_eq!(out.as_deref(), Some("const a = cn(\"p-4 flex\");\n"));
+        assert!(take_tailwind_unsorted());
+        assert!(!take_tailwind_unsorted());
+
+        let out = oxfmt.format("const b = 1\n", Language::Js).unwrap();
+        assert_eq!(out.as_deref(), Some("const b = 1;\n"));
+        assert!(!take_tailwind_unsorted());
+
+        // The executable backend still requires the executable.
+        let process = Oxfmt::new(&dir, Some(dir.join("missing-oxfmt")), Backend::Process);
+        assert!(process.format("const b = 1\n", Language::Js).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

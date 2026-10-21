@@ -5,6 +5,7 @@
 // The formatter mirrors syntax_tree's Ruby control flow branch for branch.
 #![allow(clippy::collapsible_match, clippy::collapsible_if)]
 
+pub mod cli;
 pub mod embedded;
 pub mod erb;
 pub mod format;

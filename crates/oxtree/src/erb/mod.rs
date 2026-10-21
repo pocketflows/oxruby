@@ -19,3 +19,16 @@ pub fn format(source: &str, maxwidth: usize) -> Result<String, ParseError> {
     let document = parse(source)?;
     Ok(format::format_document(&document, maxwidth, None))
 }
+
+/// `SyntaxTree::ERB.format` with Ruby plugins loaded (`--plugins=erb,plugin/single_quotes`):
+/// the Ruby inside tags picks up the plugins' options.
+pub fn format_with_options(
+    source: &str,
+    maxwidth: usize,
+    options: crate::format::Options,
+) -> Result<String, ParseError> {
+    let document = parse(source)?;
+    Ok(format::format_document_with_options(
+        &document, maxwidth, None, options,
+    ))
+}
