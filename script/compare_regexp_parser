@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Differential test of oxcop's regexp_parser port against the Ruby gem:
+# collects the regexp literals of the Ruby files under the given
+# directories (and in their heredocs), parses each with both, and diffs.
+#
+#   script/compare_regexp_parser DIR...
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+find "$@" -name '*.rb' -print0 | xargs -0 bundle exec ruby script/regexp_parser/corpus.rb | sort -u > "$tmp/corpus.jsonl"
+bundle exec ruby script/regexp_parser/dump.rb < "$tmp/corpus.jsonl" > "$tmp/expected.txt"
+REGEXP_CORPUS="$tmp/corpus.jsonl" REGEXP_OUT="$tmp/actual.txt" \
+  cargo test -q -p oxcop regexp_parser::tests::dump_corpus -- --include-ignored > /dev/null
+total=$(wc -l < "$tmp/corpus.jsonl" | tr -d ' ')
+if diff -q "$tmp/expected.txt" "$tmp/actual.txt" > /dev/null; then
+  echo "regexps: $total, mismatches: 0"
+else
+  paste -d '\n' "$tmp/corpus.jsonl" "$tmp/expected.txt" "$tmp/actual.txt" | awk 'NR%3==1{c=$0} NR%3==2{e=$0} NR%3==0{if (e!=$0) {n++; if (n<=5) print "IN  " c "\nEXP " e "\nACT " $0 "\n"}} END{print "mismatches: " n+0}'
+  exit 1
+fi

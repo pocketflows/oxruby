@@ -323,3 +323,9 @@ fn symbol_name_is_simple(name: &str) -> bool {
         .unwrap_or(name);
     ident(base)
 }
+
+/// `parse_regexp(text)`: `Regexp::Parser.parse(text)`, `None` for an
+/// invalid regexp.
+pub fn parse_regexp(text: &str) -> Option<crate::regexp_parser::Tree> {
+    crate::regexp_parser::parse(text, false, false).ok()
+}
