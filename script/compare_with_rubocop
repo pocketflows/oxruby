@@ -25,7 +25,9 @@ abort "oxcop binary not found at #{oxcop}; run `cargo build --release`" unless F
 
 ported, status = Open3.capture2(oxcop, "--show-ported-cops")
 abort "could not list ported cops" unless status.success?
-cops = ported.lines(chomp: true)
+# RuboCop refuses `--only Lint/RedundantCopDisableDirective`; that cop only
+# runs without `--only`, after the others.
+cops = ported.lines(chomp: true) - ["Lint/RedundantCopDisableDirective"]
 # Cops too slow to run under `--only` on a whole project with real RuboCop
 # (Layout/RedundantLineBreak reparses the enclosing scope per candidate:
 # ~540 s on ../code). Their upstream specs still gate them; COMPARE_SLOW=1

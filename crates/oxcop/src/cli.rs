@@ -202,6 +202,11 @@ fn run_options(args: impl IntoIterator<Item = OsString>, io: &mut Io) -> i32 {
         return STATUS_SUCCESS;
     }
 
+    // `OptionArgumentError`: the message alone.
+    if let Err(message) = validate_compatibility(&options) {
+        let _ = writeln!(io.stderr, "{message}");
+        return STATUS_ERROR;
+    }
     match execute_runner(&options, io) {
         Ok(status) => status,
         Err(message) => {
@@ -209,6 +214,19 @@ fn run_options(args: impl IntoIterator<Item = OsString>, io: &mut Io) -> i32 {
             STATUS_ERROR
         }
     }
+}
+
+/// The parts of `OptionsValidator#validate_compatibility` that apply.
+fn validate_compatibility(options: &Options) -> Result<(), String> {
+    // RuboCop's own specs (`--raw-config`) run the cop with `--only`.
+    if !options.raw_config
+        && options.only.iter().any(|cop| {
+            cop == "Lint/RedundantCopDisableDirective" || cop == "RedundantCopDisableDirective"
+        })
+    {
+        return Err("Lint/RedundantCopDisableDirective cannot be used with --only.".to_owned());
+    }
+    Ok(())
 }
 
 fn execute_runner(options: &Options, io: &mut Io) -> Result<i32, String> {
