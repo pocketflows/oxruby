@@ -108,6 +108,11 @@ pub struct Options {
     #[arg(long = "dump-tokens", hide = true)]
     pub dump_tokens: bool,
 
+    /// Print the rebuilt `Prism.lex` stream of the given files (see
+    /// `script/dump_prism_tokens`).
+    #[arg(long = "dump-prism-tokens", hide = true)]
+    pub dump_prism_tokens: bool,
+
     /// The Ruby version `--dump-ast` parses as.
     #[arg(long = "dump-ast-version", hide = true, default_value_t = 3.3)]
     pub dump_ast_version: f64,

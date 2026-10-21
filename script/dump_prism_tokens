@@ -1,0 +1,41 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Prints `Prism.lex` of Ruby files in the format `oxcop --dump-prism-tokens`
+# uses, so oxcop's rebuilt token stream can be diffed against the real one:
+#
+#   script/dump_prism_tokens [--version 3.3] FILE...
+#   script/compare_ast --prism-tokens DIR_OR_FILES...   # runs both and diffs
+#
+# Lines are `TYPE start..end state` in lexing order (byte offsets, `EOF`
+# left out). The state is printed only for `BRACE_LEFT`, the one token whose
+# state the translation lexer reads.
+
+require "prism"
+
+version = "3.3"
+if (i = ARGV.index("--version"))
+  version = ARGV[i + 1]
+  ARGV.slice!(i, 2)
+end
+
+ARGV.each do |path|
+  source = File.read(path, mode: "rb").force_encoding(Encoding::UTF_8).gsub("\r\n", "\n")
+  out = +"== #{path}\n"
+  begin
+    result = Prism.lex(source, version: version)
+    if result.errors.empty?
+      result.value.each do |token, state|
+        next if token.type == :EOF
+
+        shown = token.type == :BRACE_LEFT ? state.to_i : 0
+        out << "#{token.type} #{token.location.start_offset}..#{token.location.end_offset} #{shown.to_s(16)}\n"
+      end
+    else
+      out << "syntax error\n"
+    end
+  rescue StandardError => e
+    out << "error #{e.class}\n"
+  end
+  $stdout.write(out)
+end

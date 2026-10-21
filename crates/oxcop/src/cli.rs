@@ -136,7 +136,7 @@ fn run_options(args: impl IntoIterator<Item = OsString>, io: &mut Io) -> i32 {
         let _ = writeln!(io.stdout, "{VERSION}");
         return STATUS_SUCCESS;
     }
-    if options.dump_ast || options.dump_tokens {
+    if options.dump_ast || options.dump_tokens || options.dump_prism_tokens {
         return dump_ast(&options, io);
     }
     if options.show_ported_cops {
@@ -257,7 +257,20 @@ fn dump_ast(options: &Options, io: &mut Io) -> i32 {
             path,
         );
         let _ = writeln!(out, "== {}", path.display());
-        if processed.valid_syntax() && options.dump_tokens {
+        if processed.valid_syntax() && options.dump_prism_tokens {
+            let (tokens, unknown) = crate::ast::token_builder::prism_tokens_checked(&processed);
+            for token in tokens {
+                let state = if token.ty == "BRACE_LEFT" {
+                    token.state
+                } else {
+                    0
+                };
+                let _ = writeln!(out, "{} {}..{} {state:x}", token.ty, token.start, token.end);
+            }
+            for offset in unknown {
+                let _ = writeln!(out, "?unknown {offset}");
+            }
+        } else if processed.valid_syntax() && options.dump_tokens {
             for token in processed.tokens() {
                 let _ = writeln!(
                     out,
