@@ -2,16 +2,13 @@
 
 ## Done (whole upstream spec passes; example counts)
 
-Landed on main (656c62a, cop-only landing):
+All landed on main (656c62a, then 087974d). 48 cops, 2,402 examples.
 
 - Layout/SpaceAfterColon 12, SpaceAfterMethodName 8, SpaceAfterNot 6,
   SpaceBeforeBrackets 28, SpaceInsideRangeLiteral 7, SpaceInLambdaLiteral 15,
   SpaceAroundMethodCallOperator 51, SingleLineBlockChain 9,
   SpaceAroundKeyword 110, TrailingEmptyLines 20,
   LineContinuationLeadingSpace 32
-
-Green on `layout-b`, waiting for a full-gate landing (they add shared
-files):
 
 - Layout/MultilineArrayBraceLayout 35, MultilineHashBraceLayout 34,
   MultilineMethodCallBraceLayout 44, MultilineMethodDefinitionBraceLayout 26
@@ -52,11 +49,12 @@ files):
   mixin's memoized line sets; ExtraSpacing in layout-a's range will want
   `alignment_lines` from it).
 - `cop/mixin/check_line_breakable.rs` (on `layout-b-wip` with LineLength).
-- Copied verbatim from their owners (identical files, so rebases merge
-  cleanly): `punctuation_corrector.rs` (style-d), `rational_literal.rs`
-  (lint-a), `check_assignment.rs` and `end_keyword_alignment.rs` (layout-a),
-  and, on `layout-b-wip` only, `check_single_line_suitability.rs` and
-  `reparsed_equivalence.rs` (style-d) and `line_length_help.rs` (style-b).
+- `cop/mixin/preceding_following_alignment.rs` landed through layout-a's
+  ExtraSpacing (with four helpers made public); main's version is the
+  reference now.
+- Copied from their owners before they landed (now identical to main):
+  `punctuation_corrector.rs` (style-d), `rational_literal.rs` (lint-a),
+  `check_assignment.rs`, `end_keyword_alignment.rs` (layout-a).
 - Additive in shared files: `Investigation::current_offense_ranges()` and
   `Investigation::max_line_length()` (base.rs); `Config::cop_enabled_in_config`
   (`Config#cop_enabled?` alone, `pending` is truthy) and
@@ -64,16 +62,24 @@ files):
 
 ## Left
 
-Everything in L–Z is ported. Not landed: the parked cops below
-(`layout-b-wip`), and everything under "Green on `layout-b`" until a
-full-gate landing goes through.
+Everything in L-Z is ported. Not on main, all on the local branch
+`layout-b-wip` (three commits on top of main, rebased at 087974d):
+
+| Cop | Spec | Why it isn't landed |
+| --- | --- | --- |
+| RedundantLineBreak | 114/114 | held back for the gate's cost, below |
+| LineLength | 205/209 | 3 shim (exclude_limit), 1 style-b's `valid_uri` |
+| SpaceBeforeBlockBraces | 8/18 | shim: `config_to_allow_offenses`, raise |
+| SpaceInsideBlockBraces | 42/43 | shim: expects the cop to raise |
 
 ## Held back: Layout/RedundantLineBreak (114 of 114 pass)
 
 On `layout-b-wip`. Its whole spec passes and `compare_with_rubocop` on
-`../code` matches (after a fix to style-d's CheckSingleLineSuitability:
-`safe_to_split?` must see `"\n"` in strings that aren't valid UTF-8, it used
-`str_content`; style-d, please take that fix). It is held back because the
+`../code` matches, with a fix to style-d's CheckSingleLineSuitability (in
+the same wip commit): `safe_to_split?` must see `"\n"` in strings that
+aren't valid UTF-8; it used `str_content`, which is `None` for them
+(`app/services/screenshot_service.rb` in `../code`). style-d, please take
+that fix; it affects your cops too. It is held back because the
 cop is expensive by design (it reparses the enclosing def/class for every
 candidate): with `--only` forcing it on, real RuboCop spends ~540 s on
 `../code` and the debug oxcop ~170 s, so landing it would add minutes to
@@ -94,9 +100,7 @@ shim can't see. Parked (the files are on `layout-b-wip`):
   `config_to_allow_offenses`). 1 more (`LDAP::CONST` with `URISchemes:
   [LDAP]`) needs style-b's `LineLengthHelp#valid_uri` to reject what
   `URI.parse` rejects (it returns `true` for every match; Ruby's
-  `URI::LDAP` raises NoMethodError on that opaque URI). Uses a local copy of
-  `EndlessMethodRewriter#correct_to_multiline` until style-a lands that
-  mixin.
+  `URI::LDAP` raises NoMethodError on that opaque URI).
 
 What the shim would need: (1) the binary reports a cop's raised error
 message for the investigation and the shim re-raises it as a RuntimeError
@@ -106,9 +110,10 @@ investigation and the shim sets it on `cop`.
 
 ## Notes for others
 
-- runtime: the full gate's `compare_with_rubocop` oxcop pass took ~4.5
-  CPU-minutes (debug build, ~400 cops) at one point, vs ~1 s with 18 cops.
-  That makes the landing race long enough to lose several times in a row.
+- `script/land` rebases after taking the lock, so a branch that adds
+  `pub mod` lines to `cop/mixin/mod.rs` conflicts whenever someone else
+  landed one meanwhile. I rebase with a small loop that unions the
+  conflicting `pub mod` blocks, then land again.
 
 ## Principled failures
 
