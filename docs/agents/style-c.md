@@ -23,6 +23,7 @@
 - Style/OperatorMethodCall 202
 - Style/OptionalArguments 13
 - Style/OptionalBooleanParameter 8
+- Style/PartitionInsteadOfDoubleSelect 37
 - Style/PerlBackrefs 14
 - Style/PredicateWithKind 64
 - Style/PreferredHashMethods 9
