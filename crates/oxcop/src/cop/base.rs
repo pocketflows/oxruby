@@ -9,6 +9,7 @@ use crate::ast::{Node, NodeType};
 use crate::comment_config::CommentConfig;
 use crate::config::Config;
 use crate::cop::offense::{Location, Status};
+use crate::cop::variable_force::{Scope, Variable, VariableTable};
 use crate::cop::{Corrector, Offense, Severity};
 use crate::options::AutocorrectMode;
 use crate::processed_source::{ProcessedSource, Range};
@@ -68,6 +69,60 @@ pub trait Cop {
 
     /// Called instead of the AST callbacks when the file has syntax errors.
     fn on_other_file(&mut self, _cx: &mut Investigation<'_, '_>) {}
+
+    /// `self.joining_forces` returning `VariableForce`: the force's hooks
+    /// below are called before the AST walk.
+    fn joins_variable_force(&self) -> bool {
+        false
+    }
+
+    fn before_entering_scope<'a>(
+        &mut self,
+        _cx: &mut Investigation<'a, '_>,
+        _scope: &Scope<'a>,
+        _variable_table: &VariableTable<'a>,
+    ) {
+    }
+
+    fn after_entering_scope<'a>(
+        &mut self,
+        _cx: &mut Investigation<'a, '_>,
+        _scope: &Scope<'a>,
+        _variable_table: &VariableTable<'a>,
+    ) {
+    }
+
+    fn before_leaving_scope<'a>(
+        &mut self,
+        _cx: &mut Investigation<'a, '_>,
+        _scope: &Scope<'a>,
+        _variable_table: &VariableTable<'a>,
+    ) {
+    }
+
+    fn after_leaving_scope<'a>(
+        &mut self,
+        _cx: &mut Investigation<'a, '_>,
+        _scope: &Scope<'a>,
+        _variable_table: &VariableTable<'a>,
+    ) {
+    }
+
+    fn before_declaring_variable<'a>(
+        &mut self,
+        _cx: &mut Investigation<'a, '_>,
+        _variable: &Variable<'a>,
+        _variable_table: &VariableTable<'a>,
+    ) {
+    }
+
+    fn after_declaring_variable<'a>(
+        &mut self,
+        _cx: &mut Investigation<'a, '_>,
+        _variable: &Variable<'a>,
+        _variable_table: &VariableTable<'a>,
+    ) {
+    }
 }
 
 pub fn department(cop_name: &str) -> &str {

@@ -11,6 +11,7 @@ pub mod cop;
 pub mod directive_comment;
 pub mod formatter;
 pub mod magic_comment;
+pub mod name_similarity;
 pub mod options;
 pub mod path_util;
 pub mod prism;

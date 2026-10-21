@@ -98,6 +98,9 @@ pub fn investigate(
             cop.on_new_investigation(cx);
         }
         if let Some(root) = processed_source.ast() {
+            crate::cop::variable_force::investigate_cops(cops, &mut cxs, root);
+        }
+        if let Some(root) = processed_source.ast() {
             let callbacks = build_callbacks(cops);
             walk(root, cops, &mut cxs, &callbacks);
         }
