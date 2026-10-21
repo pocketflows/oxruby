@@ -1821,11 +1821,14 @@ impl<'a> Node<'a> {
                 }
                 Block => {
                     if ancestor.is_method("class_eval") {
-                        let receiver = ancestor.receiver()?;
-                        if !receiver.is(Const) {
-                            return None;
+                        // `class_eval` with no receiver applies to whatever
+                        // module or class we are currently in.
+                        if let Some(receiver) = ancestor.receiver() {
+                            if !receiver.is(Const) {
+                                return None;
+                            }
+                            parts.push(receiver.const_name()?);
                         }
-                        parts.push(receiver.const_name()?);
                     } else if !ancestor.is_new_class_or_module_block() {
                         return None;
                     }
