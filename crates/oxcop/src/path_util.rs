@@ -68,6 +68,73 @@ pub fn glob(pattern: &str) -> bool {
     pattern.contains(['*', '?', '[', '{'])
 }
 
+/// Ruby's `Dir.glob(pattern)` (no flags): braces expanded, `*`, `?` and
+/// `[...]` within a path segment, `**/` for any number of directories;
+/// wildcards don't match a leading `.`. Relative patterns are relative to
+/// the working directory and so are the results. Each directory is read in
+/// sorted order, as `Dir.glob`'s `sort: true` does.
+pub fn dir_glob(pattern: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for expanded in brace_expand(pattern, 0) {
+        let (base, prefix) = if expanded.starts_with('/') {
+            (PathBuf::from("/"), "/".to_owned())
+        } else {
+            (pwd(), String::new())
+        };
+        let segments: Vec<&str> = expanded.split('/').filter(|s| !s.is_empty()).collect();
+        glob_segments(&base, &prefix, &segments, &mut found);
+    }
+    found
+}
+
+fn glob_segments(dir: &Path, prefix: &str, segments: &[&str], found: &mut Vec<String>) {
+    let Some((segment, rest)) = segments.split_first() else {
+        return;
+    };
+    let mut descend = |name: &str, segments: &[&str]| {
+        let path = dir.join(name);
+        if segments.is_empty() {
+            if path.exists() {
+                found.push(format!("{prefix}{name}"));
+            }
+        } else if path.is_dir() {
+            glob_segments(&path, &format!("{prefix}{name}/"), segments, found);
+        }
+    };
+    if !glob(segment) {
+        descend(segment, rest);
+        return;
+    }
+    let mut entries: Vec<String> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| !name.starts_with('.'))
+        .collect();
+    entries.sort();
+    if *segment == "**" && !rest.is_empty() {
+        // `**/`: no directory, then each directory below.
+        glob_segments(dir, prefix, rest, found);
+        for name in &entries {
+            if dir.join(name).is_dir() {
+                glob_segments(
+                    &dir.join(name),
+                    &format!("{prefix}{name}/"),
+                    segments,
+                    found,
+                );
+            }
+        }
+        return;
+    }
+    for name in &entries {
+        if fnmatch(segment, name, FNM_PATHNAME) {
+            descend(name, rest);
+        }
+    }
+}
+
 pub fn match_path(pattern: &str, path: &str) -> bool {
     let matches =
         pattern == path || (glob(pattern) && fnmatch(pattern, path, FNM_PATHNAME | FNM_EXTGLOB));
@@ -117,7 +184,7 @@ pub fn fnmatch(pattern: &str, path: &str, flags: u32) -> bool {
 }
 
 /// Port of `ruby_brace_expand`: `a{b,c{d,e}}` => `ab`, `acd`, `ace`.
-fn brace_expand(pattern: &str, flags: u32) -> Vec<String> {
+pub fn brace_expand(pattern: &str, flags: u32) -> Vec<String> {
     let escape = flags & FNM_NOESCAPE == 0;
     let chars: Vec<char> = pattern.chars().collect();
     let mut nest = 0;

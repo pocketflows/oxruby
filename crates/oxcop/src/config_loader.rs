@@ -7,7 +7,7 @@
 //!
 //! ERB in config files is rendered by Ruby (see `render_erb`).
 //!
-//! Not yet ported: remote `inherit_from` URLs, `inherit_from` globs.
+//! Not yet ported: remote `inherit_from` URLs.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -523,9 +523,18 @@ impl ConfigLoader {
 
     /// Port of `ConfigLoaderResolver#resolve_inheritance`.
     fn resolve_inheritance(&mut self, path: &Path, hash: &mut Mapping) -> Result<(), ConfigError> {
+        // `base_configs`: glob entries are expanded with `Dir.glob`, which is
+        // relative to the working directory.
         let inherited_files: Vec<String> = array(hash.get("inherit_from"))
             .iter()
             .filter_map(|v| v.as_str().map(str::to_owned))
+            .flat_map(|f| {
+                if path_util::glob(&f) {
+                    path_util::dir_glob(&f)
+                } else {
+                    vec![f]
+                }
+            })
             .collect();
         let base_dir = path.parent().unwrap_or(Path::new("."));
         let mut base_configs = Vec::new();
@@ -1764,6 +1773,45 @@ mod tests {
             "Ambiguous cop name `LineLength` used in .rubocop.yml needs department qualifier. \
              Did you mean Foo/LineLength or Layout/LineLength?"
         );
+    }
+
+    // `base_configs`: `inherit_from` globs go through `Dir.glob`.
+    #[test]
+    fn inherit_from_globs_are_expanded() {
+        let dir = project(
+            "inherit-glob",
+            &[
+                ("configs/a.yml", "Style/Foo:\n  Max: 1\n"),
+                (
+                    "configs/deep/b.yml",
+                    "Style/Foo:\n  Max: 2\nStyle/Bar:\n  Max: 3\n",
+                ),
+                ("configs/.hidden.yml", "Style/Baz:\n  Max: 4\n"),
+                ("x.yml", "Style/Qux:\n  Max: 5\n"),
+            ],
+        );
+        let config = format!(
+            "inherit_from:\n  - '{}/configs/**/*.yml'\n  - '{}/{{x,y}}.yml'\n",
+            dir.display(),
+            dir.display()
+        );
+        std::fs::write(dir.join(".rubocop.yml"), config).unwrap();
+        assert_eq!(
+            path_util::dir_glob(&format!("{}/configs/**/*.yml", dir.display())),
+            [
+                format!("{}/configs/a.yml", dir.display()),
+                format!("{}/configs/deep/b.yml", dir.display())
+            ]
+        );
+        let hash = ConfigLoader::default()
+            .load_file(&dir.join(".rubocop.yml"))
+            .unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        // Later files win: deep/b.yml after a.yml.
+        assert_eq!(hash["Style/Foo"]["Max"], Value::from(2));
+        assert_eq!(hash["Style/Bar"]["Max"], Value::from(3));
+        assert_eq!(hash["Style/Qux"]["Max"], Value::from(5));
+        assert!(!hash.contains_key("Style/Baz"));
     }
 
     #[test]
