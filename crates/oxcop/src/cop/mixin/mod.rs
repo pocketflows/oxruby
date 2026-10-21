@@ -18,6 +18,7 @@ pub mod integer_node;
 pub mod interpolation;
 pub mod method_preference;
 pub mod negative_conditional;
+pub mod nil_methods;
 pub mod parentheses;
 pub mod percent_literal;
 pub mod range_help;
