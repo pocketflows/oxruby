@@ -145,7 +145,7 @@ pub fn space_offenses<'a, C: SurroundingSpace>(
     }
 }
 
-fn space_offense<'a, C: SurroundingSpace>(
+pub fn space_offense<'a, C: SurroundingSpace>(
     cop: &mut C,
     cx: &mut Investigation<'a, '_>,
     node: Node<'a>,
