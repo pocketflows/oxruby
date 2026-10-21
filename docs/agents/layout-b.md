@@ -20,7 +20,8 @@ files):
 - Layout/ParameterAlignment 19, SpaceAroundBlockParameters 49,
   MultilineBlockLayout 30, MultilineMethodCallIndentation 287,
   LineEndStringConcatenationIndentation 59, MultilineAssignmentLayout 34,
-  MultilineOperationIndentation 99
+  MultilineOperationIndentation 99, RedundantLineBreak 114,
+  SpaceInsidePercentLiteralDelimiters 262, SpaceInsideArrayPercentLiteral 129
 - Token-based (need the `tokens` agent's token builder, cherry-picked onto
   `layout-b` as `Build processed_source.tokens ...`; it drops out of the
   branch when `tokens` lands it): SpaceAfterComma 9, SpaceAfterSemicolon 9,
@@ -43,8 +44,7 @@ files):
   `cop/mixin/multiline_element_line_breaks.rs`,
   `cop/correctors/empty_line_corrector.rs`.
 - `cop/mixin/multiline_expression_indentation.rs` (a trait for the cop's
-  hooks, plus free helpers), `cop/mixin/match_range.rs` (no user yet; for
-  the percent-literal cops).
+  hooks, plus free helpers), `cop/mixin/match_range.rs`.
 - `ast/token.rs`: rubocop-ast's `Token` predicates (`is_comma`,
   `is_left_parens`, `is_space_after`, ...) as an `impl Token`.
 - `cop/mixin/space_after_punctuation.rs`, `space_before_punctuation.rs`,
@@ -56,7 +56,9 @@ files):
 - `cop/mixin/check_line_breakable.rs` (on `layout-b-wip` with LineLength).
 - Copied verbatim from their owners (identical files, so rebases merge
   cleanly): `punctuation_corrector.rs` (style-d), `rational_literal.rs`
-  (lint-a), `check_assignment.rs` and `end_keyword_alignment.rs` (layout-a).
+  (lint-a), `check_assignment.rs` and `end_keyword_alignment.rs` (layout-a),
+  `check_single_line_suitability.rs` and `reparsed_equivalence.rs` (style-d),
+  `line_length_help.rs` (style-b, on `layout-b-wip`).
 - Additive in shared files: `Investigation::current_offense_ranges()` and
   `Investigation::max_line_length()` (base.rs); `Config::cop_enabled_in_config`
   (`Config#cop_enabled?` alone, `pending` is truthy) and
@@ -64,10 +66,9 @@ files):
 
 ## Left
 
-- SpaceInsideArrayPercentLiteral, SpaceInsidePercentLiteralDelimiters: need
-  PercentLiteral (claimed by lint-a, not written yet) and my MatchRange.
-- RedundantLineBreak: needs CheckSingleLineSuitability and
-  ReparsedEquivalence (style-d, on their branch only) and CheckAssignment.
+Everything in L–Z is ported. Not landed: the parked cops below
+(`layout-b-wip`), and everything under "Green on `layout-b`" until a
+full-gate landing goes through.
 
 ## Blocked on the spec shim (runtime)
 
