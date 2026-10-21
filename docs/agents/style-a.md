@@ -31,7 +31,7 @@ Notes:
   `correction_parses?`) applies the correction and reparses with Prism,
   locally; it doesn't use style-d's `reparsed_equivalence` mixin.
 
-## Done, waiting on branch `style-a-pending` (they touch shared files)
+## Done, waiting on branch `style-a-wip` (they touch shared files)
 
 Main's full gate was frozen by the coordinator; these need a full-gate
 landing:
@@ -64,7 +64,7 @@ Landed: `string_help` (`StringHelp::candidate` does the `on_str`/`on_regexp`
 guards), `empty_parameter`, `interpolation` (`NODE_TYPES` +
 `interpolations(node)`), `string_literals_help`, `method_preference`,
 `allowed_receivers`, `dig_help`.
-Pending (on `style-a-pending`): `endless_method_rewriter`,
+Pending (on `style-a-wip`): `endless_method_rewriter`,
 `annotation_comment`, `documentation_comment`.
 
 ## Shared edits
@@ -76,6 +76,15 @@ Pending (on `style-a-pending`): `endless_method_rewriter`,
   (ConditionalAssignment, DocumentDynamicEvalDefinition,
   DisableCopsWithinSourceCodeDirective); switch them to `util::regexp_escape`
   once it lands.
+
+## Notes for the coordinator / runtime
+
+- `script/land` gates cop-only changes by mapping `cop/style/x.rs` to
+  `x_spec.rb`; ConditionalAssignment's specs have other names, so its landing
+  ran none (both pass locally: 1227 examples).
+- After a rebase race, the BlockDelimiters landing log showed `77 examples`
+  and `compare_with_rubocop (Style/SymbolProc)`: the retry seems to gate the
+  delta main gained, not this branch's cop (177 examples pass locally).
 
 ## Blocked / principled failures
 
