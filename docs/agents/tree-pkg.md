@@ -93,7 +93,14 @@ and tests without running `oxtree:check` a second time.
 
 ### CI (`.github/workflows/`)
 
-Additive lines only, landed separately:
+**Not landed yet:** this is commit 0d31dcd on the local branch `tree-pkg-wip`.
+It touches `.github/`, so `script/land` runs the full gate. On 2026-10-21
+rspec passed (2004 examples, 0 failures), but `compare_with_rubocop ../code`
+reported 24 mismatched files on main 72921c9. That came from the Style cops
+landed just before it, not from this YAML-only diff. Cherry-pick it onto
+`tree-pkg` and land once main's compare is back to 0.
+
+Additive lines only:
 
 - `ci.yml`: `cargo build -p oxtree --no-default-features`, the
   oxfmt-executable-only build that nothing else compiles. oxtree's tests
@@ -104,12 +111,25 @@ Additive lines only, landed separately:
   `rake oxtree:gem:ruby`, and its `pkg/*.gem` push loop picks up the oxtree
   gems. Not exercised: the release workflow has never run.
 
+## Decisions for the user
+
+- **`stree` executable:** see "Gem" above. It's off unless the gem is built
+  with `OXTREE_STREE=1`.
+- **Publishing oxtree on the next tag:** with the release.yml change, a `v*`
+  tag would `gem push` oxtree 0.1.0, whose binary has only dev commands until
+  tree-cli's CLI lands. Decide whether to gate the `oxtree:gem:*` release
+  steps until then.
+- **Untested release matrix:** oxtree (oxc git dependencies, fat LTO) has
+  only been built for aarch64-apple-darwin. It has never been compiled for
+  x86_64-darwin, linux-gnu or musl. Run the workflow on a test tag first.
+
 ## Left
 
 - Adapt `gems/oxtree` once tree-cli's `cli.rs` lands, if the executable
   name or flags need it. Today it's pure pass-through, and the binary only has
   the dev commands (`--format-file` and so on).
-- The `stree` executable decision above.
+- Land the CI commit (`tree-pkg-wip`, 0d31dcd) once main's compare gate is
+  green.
 - `rake vendor:rubocop` (runtime's) uses `../rubocop` relative to the
   checkout, so it fails from a worktree. `oxtree:vendor`'s `oxtree_sibling`
   shows the fix if runtime wants it.
