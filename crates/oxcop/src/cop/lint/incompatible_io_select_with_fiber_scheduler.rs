@@ -42,7 +42,11 @@ impl Cop for IncompatibleIoSelectWithFiberScheduler {
         let preferred = preferred_method(read.unwrap(), write, timeout);
         let message = format!("Use `{preferred}` instead of `{}`.", node.source());
         cx.add_offense_with_correction(node.source_range(), &message, |corrector| {
-            if node.parent().is_some_and(|p| p.is_assignment()) {
+            // `assignment?` on a send is `setter_method?`.
+            if node
+                .parent()
+                .is_some_and(|p| p.is_assignment() || p.is_setter_method())
+            {
                 return;
             }
             corrector.replace(node.source_range(), &preferred);
