@@ -20,8 +20,8 @@ errors, warnings to `$stderr`); see `runtime.md`.
   `String#inspect` does (`with_default_external_encoding`).
 - **Offense run with autocorrect**: `expect_offense` sets the cop's
   `@options[:autocorrect]`, so when it is set the offense run passes
-  `-A --autocorrect-once` (not for real files): `autocorrect?` is true
-  while investigating, as upstream.
+  `-A --autocorrect-once`: `autocorrect?` is true while investigating, as
+  upstream. For a real file, a correction written back is undone.
 - **Invalid strings in the cop config** are dumped as binary (`!binary`).
 - `Investigation::add_offense_yield` / `offense_yields`: an `add_offense`
   block that updates the cop (`self.max =`, style detection) runs when
@@ -52,12 +52,19 @@ SpaceBeforeBlockBraces 18, SpaceInsideBlockBraces 43.
 From `style-a-wip`: Style/Copyright 25. From `style-c-wip`:
 Style/RedundantArgument 15.
 
+Ported here: Lint/ScriptPermission 8, Migration/DepartmentName 8
+(vendors `config/obsoletion.yml` for `ConfigObsoletion.legacy_cop_names`),
+Style/DocumentationMethod 83 (with the `def_node` mixin, claimed by shim).
+
 ## Left
 
-- Lint/ScriptPermission (not ported; the shim inspects real files now).
-- Migration/DepartmentName (not ported; runtime's d98b527 forwards the
-  "no department given" warning).
-- Style/DocumentationMethod (not ported; needs the `def_node` mixin).
+Nothing in the queue. Approximations to know about:
+- Lint/ScriptPermission reads `File.stat#executable?` as the owner's
+  execute bit (no effective uid without FFI).
+- LineLengthHelp `valid_uri?` treats a `mailto:` URI that `URI.parse`
+  rejects with `InvalidComponentError` (not rescued upstream, so the cop
+  would error) as not a URI.
+- The stubbed-`Dir.pwd` support needs the server (not `OXCOP_NO_SERVER`).
 
 ## Principled failures
 
