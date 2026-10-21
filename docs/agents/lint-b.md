@@ -43,21 +43,47 @@ fn after_leaving_scope<'a>(
   port of `lib/rubocop/name_similarity.rb` with Ruby 3.3's
   `DidYouMean::SpellChecker`, `JaroWinkler` and `Levenshtein`. Ruby's
   `sort_by!` is unstable; ties sort stably here.
-- `cop/mixin/unused_argument.rs` (claim `unused_argument`) and
-  `cop/correctors/unused_arg_corrector.rs` (claim `unused_arg_corrector`):
-  committed on `lint-b`, **not landed yet** (shared files need the full gate,
-  which is on hold while main's compare is red). The cop calls
-  `unused_argument::check_argument(cx, variable, message_fn)` after its own
-  checks.
-- `cop/mixin/symbol_help.rs` (claim `symbol_help`): written, waiting with
-  Lint/SymbolConversion.
+- `crates/oxcop/src/regexp_parser/` (claim `regexp_parser`): a port of the
+  regexp_parser gem 2.13.1 (scanner, lexer, parser, expression tree), and
+  `crates/oxcop/src/ext/` (`regexp_node.rs`, `regexp_parser.rs`), RuboCop's
+  `ext/regexp_node.rb` and `ext/regexp_parser.rb`. Use it like this:
+
+  ```rust
+  use crate::ext::regexp_node::{parsed_tree, each_capture};
+  let Some(tree) = parsed_tree(node) else { return };  // node.parsed_tree
+  for expr in tree.tree.each_expression(Tree::ROOT, false) {
+      let exp = tree.get(expr);          // .ty, .token, .text, .quantifier, .expressions
+      let ts = tree.tree.ts(expr);       // char offset in the regexp body
+      let range = tree.expression(expr); // expr.expression (a byte Range)
+      // tree.body(expr), tree.quantifier(expr), tree.set_begin/set_end(expr)
+  }
+  ```
+
+  `Tree::traverse` gives `(Event, ExprId)` pairs; `cop::mixin::util::
+  parse_regexp(text)` is `Util#parse_regexp`. `script/compare_regexp_parser
+  DIR...` diffs it against the gem (0 mismatches over 12,867 regexps from
+  rubocop, ../code and the installed gems, plus 40,000 fuzzed ones). Note:
+  RuboCop always passes `options:`, and `options & NOENCODING` is 0, which
+  Ruby treats as true, so `parsed_tree` scans in binary mode (`\xff` is a
+  `hex` escape, never `utf8_hex`). lint-a (DuplicateRegexpCharacterClass-
+  Element, MixedCaseRange, MixedRegexpCaptureTypes) and the style agents
+  (RedundantRegexpEscape, RedundantRegexpCharacterClass) can use it once it
+  lands.
+- `cop/mixin/unused_argument.rs` (claim `unused_argument`),
+  `cop/correctors/unused_arg_corrector.rs` (claim `unused_arg_corrector`),
+  `cop/mixin/symbol_help.rs` (claim `symbol_help`).
+- `cop/lint/utils/nil_receiver_checker.rs` (`Lint::Utils::NilReceiverChecker`),
+  included with `#[path]` by `redundant_safe_navigation.rs`, its only user.
+
+**Not landed yet** (everything on `lint-b` past main touches shared files and
+needs the full gate, which the coordinator put on hold while main's compare
+is red): the regexp_parser port, the mixins above, the `processed_source.rs`
+change below, and the cops that need them.
 
 ## Cops done (upstream spec examples, all passing)
 
-Landed:
+Landed on main:
 - Lint/UselessAssignment 157 (1 pending upstream)
-
-Landing in the cop-only batch (lint-b-land):
 - Lint/RaiseException 17, RandOne 16, RedundantDirGlobSort 17,
   RedundantRequireStatement 12, RedundantSplatExpansion 64,
   RedundantStringCoercion 18, RedundantTypeConversion 613,
@@ -78,39 +104,36 @@ Landing in the cop-only batch (lint-b-land):
   UselessMethodDefinition 17, UselessNumericOperation 20, UselessOr 127,
   UselessRescue 10, UselessRuby2Keywords 25, UselessSetterCall 21,
   UselessTimes 32, Void 273
+- Lint/ShadowedException 39 (Ruby's exception classes come from a table
+  dumped from a Ruby 3.3 process running RuboCop: core, `Errno`, the stdlib
+  RuboCop loads), UselessElseWithoutRescue 1
 
-Committed on `lint-b`, waiting for the full gate (they need the
-UnusedArgument mixin/corrector):
+Committed on `lint-b`, waiting for the full gate:
 - Lint/UnusedBlockArgument 30, UnusedMethodArgument 46, ShadowedArgument 57,
   ShadowingOuterLocalVariable 33, UnderscorePrefixedVariableName 19
+- Lint/RedundantSafeNavigation 118, SymbolConversion 46,
+  RedundantRegexpQuantifiers 22, UnescapedBracketInRegexp 51,
+  UnreachableCode 267
 
 SuperArgumentMismatch and UnusedPrivateMethod need the `rubydex` project
 index, which oxcop doesn't have; like RuboCop without one they never fire.
+UselessElseWithoutRescue only applies to Ruby <= 2.5 (`parser`'s
+`:useless_else`); under Prism it never fires.
 
 ## Cops left
 
-- Lint/SymbolConversion (written, needs the SymbolHelp mixin landing).
-- Lint/ShadowedException (needs a table of Ruby exception classes; dump in
-  progress).
-- Lint/SafeNavigationChain, SafeNavigationConsistency (need style-d's
-  NilMethods mixin to land), RedundantSafeNavigation (also needs
-  `Lint::Utils::NilReceiverChecker`).
-- Lint/RedundantRegexpQuantifiers, UnescapedBracketInRegexp: need a port of
-  the `regexp_parser` gem (`node.parsed_tree`). Nobody has claimed one.
-- Lint/UselessElseWithoutRescue (maximum target 2.5; every example is
-  `unsupported_on: :prism`).
-- Lint/ScriptPermission, Lint/UnreachableCode: see below.
+- Lint/SafeNavigationChain, SafeNavigationConsistency: need style-d's
+  NilMethods mixin (`cop/mixin/nil_methods.rs`, on `style-d`, not on main).
+- Lint/ScriptPermission: see below.
 
-## Principled failures
+## Principled failures and decisions
 
-- **Lint/UnreachableCode** (7 of 267 fail): the `retry` examples put `retry`
-  outside a `rescue`. Prism rejects that ("Invalid retry without rescue"), so
-  the file has a syntax error and no cop runs. The specs run with the default
-  TargetRubyVersion (2.7), where RuboCop parses with the `parser` gem, which
-  accepts it. Proposed fix (shared, `processed_source.rs`): below target 3.3,
-  drop Prism's "Invalid retry without rescue" error, as the `parser` gem
-  would. Not landed; the cop is held back on `lint-b-wip`.
+- **Lint/UnreachableCode**: its `retry` examples put `retry` outside a
+  `rescue`. Prism rejects that ("Invalid retry without rescue"); the specs
+  run at the default TargetRubyVersion (2.7), where RuboCop parses with the
+  `parser` gem, which accepts it. `ProcessedSource::new` now drops that one
+  Prism error below Ruby 3.3 (shared file; lands with the full gate).
 - **Lint/ScriptPermission**: the cop skips `--stdin` input, and the spec shim
   always sends `--stdin`; the spec also flips `@options[:autocorrect]` on the
   Ruby cop object. It needs shim support for inspecting the real file path
-  (runtime's `spec/oxcop/`).
+  (runtime's `spec/oxcop/`). Not ported.
