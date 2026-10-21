@@ -580,7 +580,8 @@ impl Parser<'_> {
                 let args = self.args();
                 Pat::Predicate(name, args)
             }
-            Tok::NodeType(name) => Pat::NodeType(name),
+            // `op-asgn` is `op_asgn`.
+            Tok::NodeType(name) => Pat::NodeType(name.replace('-', "_")),
             Tok::Symbol(s) => Pat::Sym(s),
             Tok::Int(i) => Pat::Int(i),
             Tok::Float(f) => Pat::Float(f),
@@ -714,7 +715,12 @@ impl<'a> Matcher<'_, 'a, '_, '_> {
             Pat::Rest => true,
             Pat::NodeType(name) => match head {
                 Some(node) => node.matches_type_name(name),
-                None => val.node().is_some_and(|n| n.matches_type_name(name)),
+                None => match val {
+                    // A node's type inside a variadic sequence head, e.g.
+                    // `({def | defs _} ...)`.
+                    Val::Type(ty) => type_matches_name(ty, name),
+                    _ => val.node().is_some_and(|n| n.matches_type_name(name)),
+                },
             },
             Pat::Sym(s) => val.sym() == Some(s),
             Pat::Int(i) => val.int() == Some(*i),
@@ -756,7 +762,8 @@ impl<'a> Matcher<'_, 'a, '_, '_> {
                 self.unified = unified;
                 result
             }
-            Pat::Ascend(child) => match val.node().and_then(|n| n.parent()) {
+            // At a sequence head the element is the node itself.
+            Pat::Ascend(child) => match head.or(val.node()).and_then(|n| n.parent()) {
                 Some(parent) => self.match_one(child, Val::Node(parent), None),
                 None => false,
             },
@@ -1025,6 +1032,23 @@ impl<'a> Matcher<'_, 'a, '_, '_> {
     }
 }
 
+/// `Node#matches_type_name` for a bare type (the group names included).
+fn type_matches_name(ty: NodeType, name: &str) -> bool {
+    use NodeType::*;
+    match name {
+        "call" => matches!(ty, Send | Csend),
+        "any_block" => matches!(ty, Block | Numblock | Itblock),
+        "any_def" => matches!(ty, Def | Defs),
+        "any_str" => matches!(ty, Str | Dstr | Xstr),
+        "any_sym" => matches!(ty, Sym | Dsym),
+        "range" => matches!(ty, Irange | Erange),
+        "boolean" => matches!(ty, True | False),
+        "numeric" => matches!(ty, Int | Float | Rational | Complex),
+        "any_match_pattern" => matches!(ty, MatchPattern | MatchPatternP),
+        name => ty.name() == name,
+    }
+}
+
 fn capture_count(pat: &Pat) -> usize {
     match pat {
         Pat::Capture(child) => 1 + capture_count(child),
@@ -1221,8 +1245,12 @@ fn collect_regexes(pat: &Pat, out: &mut HashMap<(String, String), onig::Regex>) 
             if opts.contains('m') {
                 options |= onig::RegexOptions::REGEX_OPTION_MULTILINE;
             }
-            let re = onig::Regex::with_options(body, options, onig::Syntax::ruby())
-                .unwrap_or_else(|e| panic!("node pattern regexp /{body}/: {e}"));
+            let re = onig::Regex::with_options(
+                &crate::cop::mixin::ruby_pattern(body),
+                options,
+                onig::Syntax::ruby(),
+            )
+            .unwrap_or_else(|e| panic!("node pattern regexp /{body}/: {e}"));
             out.insert((body.clone(), opts.clone()), re);
         }
         Pat::Capture(c)
@@ -1416,5 +1444,33 @@ mod tests {
         });
         static S: NodePattern = NodePattern::new("`(sym :x)");
         with_ast("foo(bar(:x))", |node| assert!(S.is_match(node)));
+    }
+}
+
+#[cfg(test)]
+mod depts_tests {
+    use super::*;
+    use crate::processed_source::ProcessedSource;
+    use std::path::Path;
+
+    fn with_ast(source: &str, f: impl FnOnce(Node<'_>)) {
+        let ps = ProcessedSource::new(source, source, 3.3, Path::new("(string)"));
+        f(ps.ast().unwrap());
+    }
+
+    #[test]
+    fn union_subsequence_at_head() {
+        static P: NodePattern = NodePattern::new("({def | defs _} :hash (args) _)");
+        with_ast("def hash\n  1\nend", |node| assert!(P.is_match(node)));
+        with_ast("def self.hash\n  1\nend", |node| assert!(P.is_match(node)));
+        static C: NodePattern = NodePattern::new("({send | op-asgn} _ {:^ | :+ | :* | :|} _)");
+        with_ast("a ^ b", |node| assert!(C.is_match(node)));
+        static U: NodePattern = NodePattern::new("{#a? | #b?}");
+        let call = |name: &str, _: &Val<'_>, _: &[Val<'_>]| name == "b?";
+        let ctx = MatchContext {
+            call: Some(&call),
+            ..Default::default()
+        };
+        with_ast("a ^ b", |node| assert!(U.match_with(node, &ctx).is_some()));
     }
 }
