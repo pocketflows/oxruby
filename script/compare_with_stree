@@ -1,0 +1,192 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Differential test for oxtree's stree-new mode: runs the project's real
+# stree_new formatter (syntax_tree, syntax_tree-erb and the app's
+# ErbEmbeddedFormatter, from the project's bundle) and oxtree over the same
+# files, and compares, in memory:
+#
+#   1. the selected file lists (`StreeNew.all_files` vs `oxtree stree-new --list`);
+#   2. every file's formatted output, or error (`--emit-json`);
+#   3. the report of `oxtree stree-new check` against the lines stree_new's
+#      check would print.
+#
+# Nothing is written to the project. ErbEmbeddedFormatter's oxfmt is
+# OXFMT_BIN (oxfmt 0.72.0, installed anywhere), so the project needs no
+# node_modules; oxtree gets the same path.
+#
+#   OXFMT_BIN=/path/to/oxfmt script/compare_with_stree [PROJECT_DIR] [--print-width N] [--time [RUNS]]
+#
+# PROJECT_DIR defaults to ../code. OXTREE_BINARY defaults to
+# target/release/oxtree. `--time` also times `oxtree stree-new check`, the
+# same stree_new run in the bundle, and `bin/rails stree_new:check` as is
+# (with bootsnap's cache in a temp dir), taking the fastest of RUNS (3).
+# `--print-width N` formats at N instead of the project's width on both
+# sides, which turns a formatted project into a corpus of unformatted input.
+
+require "json"
+require "open3"
+require "bundler"
+require "tmpdir"
+
+root = File.expand_path("..", __dir__)
+args = ARGV.dup
+time_runs = nil
+if (i = args.index("--time"))
+  args.delete_at(i)
+  time_runs = args[i]&.match?(/\A\d+\z/) ? args.delete_at(i).to_i : 3
+end
+width_flags = []
+if (i = args.index("--print-width"))
+  args.delete_at(i)
+  width_flags = ["--print-width=#{Integer(args.delete_at(i))}"]
+end
+project = File.expand_path(args.first || File.join(root, "..", "code"))
+oxtree = ENV.fetch("OXTREE_BINARY") { File.join(root, "target", "release", "oxtree") }
+abort "oxtree binary not found at #{oxtree}; run `cargo build --release -p oxtree`" unless File.executable?(oxtree)
+oxfmt = ENV["OXFMT_BIN"].to_s
+oxfmt = File.join(project, "node_modules/.bin/oxfmt") if oxfmt.empty?
+abort "oxfmt not found at #{oxfmt}; set OXFMT_BIN to an oxfmt 0.72.0 executable" unless File.executable?(oxfmt)
+%w[lib/tasks/stree_new.rake lib/tasks/syntax_tree.rake lib/tasks/support/erb_embedded_formatter.rb].each do |f|
+  abort "#{project} has no #{f}" unless File.exist?(File.join(project, f))
+end
+
+# Undo the version manager's per-process pins (rbenv puts the running Ruby's
+# bin directory first on PATH) so the project's .ruby-version applies.
+def project_env(extra = {})
+  path = ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).grep_v(%r{/\.rbenv/versions/[^/]+/bin\z})
+  { "PATH" => path.join(File::PATH_SEPARATOR), "RBENV_VERSION" => nil, "RBENV_DIR" => nil,
+    "GEM_HOME" => nil, "GEM_PATH" => nil, "FILES" => nil }.merge(extra)
+end
+
+def capture(label, env, command, dir, stdin: nil)
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  stdout, stderr, status = Bundler.with_unbundled_env do
+    Open3.capture3(env, *command, chdir: dir, stdin_data: stdin.to_s)
+  end
+  elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+  [stdout, stderr, status, elapsed]
+end
+
+# Loads the project's stree_new task without booting Rails, points
+# ErbEmbeddedFormatter at OXFMT_BIN, and either prints every selected file's
+# result as JSON or runs the real `StreeNew.run`.
+DRIVER = <<~'RUBY'
+  require "rake"
+  require "json"
+  load "lib/tasks/syntax_tree.rake"
+  load "lib/tasks/stree_new.rake"
+  ErbEmbeddedFormatter.send(:remove_const, :OXFMT_BIN)
+  ErbEmbeddedFormatter.const_set(:OXFMT_BIN, ENV.fetch("OXFMT_BIN"))
+  files = StreeNew.all_files
+  if ARGV.first == "run"
+    StreeNew.run("check", files)
+    exit 0
+  end
+  SyntaxTree.register_handler(".erb", ErbEmbeddedFormatter)
+  results =
+    Parallel.map(files, in_processes: Etc.nprocessors) do |file|
+      handler = SyntaxTree::HANDLERS[File.extname(file)]
+      source = handler.read(file)
+      begin
+        width = ENV["STREE_PRINT_WIDTH"]&.to_i || SYNTAX_TREE_CONFIG[:print_width]
+        formatted = handler.format(source, width, options: SyntaxTree::Formatter::Options.new)
+        [formatted.dup.force_encoding("UTF-8"), source == formatted, File.size(file)]
+      rescue StandardError => e
+        ["ERROR #{e.class}: #{e.message.lines.first&.strip}", false, File.size(file)]
+      end
+    end
+  puts JSON.generate(files.zip(results).to_h)
+RUBY
+
+env = project_env("OXFMT_BIN" => oxfmt, "STREE_PRINT_WIDTH" => width_flags.first&.split("=")&.last)
+ruby = ["bundle", "exec", "ruby", "-e", DRIVER]
+
+stdout, stderr, status, ref_time = capture("stree", env, ruby, project)
+abort "stree_new driver failed (exit #{status.exitstatus}):\n#{stderr}" unless status.success?
+expected = JSON.parse(stdout)
+warn format("%-22s %6.2fs (%d files)", "stree_new (format all)", ref_time, expected.size)
+
+stdout, stderr, status = capture("oxtree", env, [oxtree, "stree-new", "--list"], project)
+abort "oxtree --list failed:\n#{stderr}" unless status.success?
+listed = stdout.lines(chomp: true)
+
+stdout, stderr, status, ox_time = capture("oxtree", env, [oxtree, "stree-new", "--emit-json", *width_flags], project)
+abort "oxtree --emit-json failed:\n#{stderr}" unless status.success?
+actual = JSON.parse(stdout)
+warn format("%-22s %6.2fs (%d files)", "oxtree (format all)", ox_time, actual.size)
+
+only_stree = expected.keys - listed
+only_oxtree = listed - expected.keys
+puts "files: stree_new=#{expected.size} oxtree=#{listed.size}"
+puts "selected only by stree_new (#{only_stree.size}):", only_stree.first(20).map { "  #{_1}" } if only_stree.any?
+puts "selected only by oxtree (#{only_oxtree.size}):", only_oxtree.first(20).map { "  #{_1}" } if only_oxtree.any?
+
+parse_error = "ERROR SyntaxTree::Parser::ParseError: "
+mismatched = []
+message_only = []
+(expected.keys & actual.keys).each do |path|
+  want = expected[path][0]
+  got = actual[path]
+  next if want == got
+  if want.start_with?(parse_error) && got.start_with?(parse_error)
+    message_only << [path, want, got]
+  else
+    mismatched << [path, want, got]
+  end
+end
+mismatched.first(10).each do |path, want, got|
+  puts "output differs in #{path}:"
+  Dir.mktmpdir do |dir|
+    File.write(File.join(dir, "stree_new"), want)
+    File.write(File.join(dir, "oxtree"), got)
+    diff, = Open3.capture2("diff", "-u", "stree_new", "oxtree", chdir: dir)
+    puts diff.lines.first(30).map { "  #{_1}" }
+  end
+end
+message_only.each do |path, want, got|
+  puts "parse error message differs (Prism vs Ripper, accepted) in #{path}:"
+  puts "  stree_new: #{want}", "  oxtree:    #{got}"
+end
+
+# The report stree_new's check prints: one line per failing file, largest
+# first (equal sizes in either order).
+expected_report =
+  expected
+    .reject { |_, (_, same)| same }
+    .sort_by { |path, (_, _, size)| [-size, path] }
+    .map { |path, (out, _)| out.start_with?("ERROR ") ? "[error] #{path}: #{out.delete_prefix("ERROR ")}" : "[warn] #{path}" }
+stdout, stderr, status = capture("oxtree", env, [oxtree, "stree-new", "check", *width_flags], project)
+report = stdout.lines(chomp: true)
+summary = report.pop
+report.pop if report.last == ""
+message_paths = message_only.map(&:first)
+normalize = ->(line) { message_paths.any? { line.start_with?("[error] #{_1}: ") } ? line[/\A\[error\] [^:]+/] : line }
+report_ok = report.map(&normalize).sort == expected_report.map(&normalize).sort
+puts "oxtree stree-new check: exit #{status.exitstatus}, #{report.size} reported, #{summary}"
+puts "check report #{report_ok ? "matches" : "differs from"} stree_new's (#{expected_report.size} lines)"
+unless report_ok
+  puts "  only in stree_new: #{(expected_report.map(&normalize) - report.map(&normalize)).first(10)}"
+  puts "  only in oxtree:    #{(report.map(&normalize) - expected_report.map(&normalize)).first(10)}"
+end
+puts "stderr: #{stderr.lines.first(5).join.strip}" unless stderr.empty?
+puts "mismatched files: #{mismatched.size} (plus #{message_only.size} parse-error messages)"
+
+if time_runs
+  best = lambda do |label, command, extra_env = {}|
+    times = Array.new(time_runs) do
+      _, err, st, t = capture(label, env.merge(extra_env), command, project)
+      warn "  #{label}: exit #{st.exitstatus} #{err.lines.last(2).join.strip}" if st.exitstatus > 1
+      t
+    end
+    puts format("time %-34s min %6.2fs  (runs: %s)", label, times.min, times.map { format("%.2f", _1) }.join(" "))
+  end
+  best.call("oxtree stree-new check", [oxtree, "stree-new", "check"])
+  best.call("stree_new check, bundle, with oxfmt", [*ruby, "run"])
+  Dir.mktmpdir do |cache|
+    best.call("bin/rails stree_new:check (no oxfmt)", ["bin/rails", "stree_new:check"], { "BOOTSNAP_CACHE_DIR" => cache })
+  end
+end
+
+ok = only_stree.empty? && only_oxtree.empty? && mismatched.empty? && report_ok
+exit(ok ? 0 : 1)
