@@ -122,9 +122,10 @@ fn comparison(allow: bool, node: Node<'_>) -> bool {
 fn simple_comparison<'a>(allow: bool, node: Node<'a>) -> Option<(Node<'a>, Node<'a>)> {
     let (var, obj) = if let Some(c) = SIMPLE_COMPARISON_LHS.match_node(node) {
         (c[0].node()?, c[1].node()?)
-    } else {
-        let c = SIMPLE_COMPARISON_RHS.match_node(node)?;
+    } else if let Some(c) = SIMPLE_COMPARISON_RHS.match_node(node) {
         (c[1].node()?, c[0].node()?)
+    } else {
+        return None;
     };
     if var.is_call() && !allow {
         return None;
