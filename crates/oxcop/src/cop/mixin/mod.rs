@@ -4,19 +4,24 @@
 
 pub mod allowed_methods;
 pub mod allowed_pattern;
+pub mod allowed_receivers;
 pub mod comments_help;
 pub mod configurable_enforced_style;
 pub mod configurable_naming;
+pub mod dig_help;
 pub mod empty_parameter;
 pub mod frozen_string_literal;
 pub mod heredoc;
 pub mod ignored_node;
 pub mod integer_node;
+pub mod interpolation;
+pub mod method_preference;
 pub mod negative_conditional;
 pub mod parentheses;
 pub mod range_help;
 pub mod safe_assignment;
 pub mod string_help;
+pub mod string_literals_help;
 pub mod uncommunicative_name;
 pub mod util;
 pub mod visibility_help;
