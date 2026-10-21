@@ -338,7 +338,7 @@ fn parse_badge(name: &str) -> (Option<String>, String) {
 fn registered(registry: &dyn CopRegistry, department: Option<&str>, cop_name: &str) -> bool {
     department.is_some_and(|department| {
         let name = format!("{department}/{cop_name}");
-        registry.names().iter().any(|n| *n == name)
+        registry.names().contains(&name)
     })
 }
 
