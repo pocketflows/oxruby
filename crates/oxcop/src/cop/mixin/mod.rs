@@ -30,6 +30,7 @@ pub mod negative_conditional;
 pub mod nil_methods;
 pub mod parentheses;
 pub mod percent_literal;
+pub mod preceding_following_alignment;
 pub mod range_help;
 pub mod rational_literal;
 pub mod rescue_node;
