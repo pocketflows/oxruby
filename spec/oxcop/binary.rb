@@ -117,7 +117,8 @@ module Oxcop
               with_temp_files([JSON.generate(auto_gen_state(cop_name))]) do |(state_path)|
                 with_report do |report_path|
                   run(*input, "-c", config_path, "--raw-config", "--only", cop_name, *prior_args,
-                      "--auto-gen-state", state_path, *("--lsp" if lsp?), "--spec-report", report_path,
+                      "--auto-gen-state", state_path, *("--lsp" if lsp?), *default_external_args,
+                      "--spec-report", report_path,
                       *args, stdin: real_file ? "" : source)
                 end
               end
@@ -173,6 +174,13 @@ module Oxcop
               cop_dir.join(parameter).write("#{value}\n", mode: "a")
             end
           end
+        end
+
+        # `String#inspect` (which some corrections use) escapes for this
+        # encoding, which a spec may change (`with_default_external_encoding`).
+        def default_external_args
+          encoding = Encoding.default_internal || Encoding.default_external
+          encoding == Encoding::UTF_8 ? [] : ["--default-external", encoding.name]
         end
 
         def lsp?

@@ -3,8 +3,7 @@
 //!
 //! Cops handle `def`, `defs` and the block types and call
 //! [`check_method_complexity`] with their complexity function.
-//! `exclude_limit 'Max'` only feeds `--auto-gen-config` and is not ported;
-//! `LSP.enabled?` is false.
+//! `exclude_limit 'Max'` (`self.max = n`) is `set_exclude_limit`.
 
 use crate::ast::{Child, Node, NodeType};
 use crate::cop::Investigation;
@@ -108,7 +107,9 @@ pub fn check_method_complexity<'a>(
         return;
     }
     let msg = message(method_name, &result, max);
-    cx.add_offense(node.source_range(), &msg);
+    let location = crate::cop::mixin::code_length::lsp_location(cx, node);
+    let ceil = result.score.ceil() as i64;
+    cx.add_offense_yield(location, &msg, |cx| cx.set_exclude_limit("Max", ceil));
 }
 
 /// `MethodComplexity#complexity(body)` for a cop's counted node types and

@@ -138,8 +138,19 @@ pub fn to_string_literal(string: &str) -> String {
     }
 }
 
+/// Whether `String#inspect` escapes every non-ASCII character: Ruby does
+/// when `Encoding.default_internal || Encoding.default_external` isn't the
+/// string's (UTF-8) encoding. Set per run from `--default-external`.
+static INSPECT_ASCII_ONLY: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_inspect_ascii_only(ascii_only: bool) {
+    INSPECT_ASCII_ONLY.store(ascii_only, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Ruby's `String#inspect` for a UTF-8 string.
 pub fn ruby_inspect(string: &str) -> String {
+    let ascii_only = INSPECT_ASCII_ONLY.load(std::sync::atomic::Ordering::Relaxed);
     let mut out = String::with_capacity(string.len() + 2);
     out.push('"');
     let chars: Vec<char> = string.chars().collect();
@@ -160,7 +171,7 @@ pub fn ruby_inspect(string: &str) -> String {
                 // UTF-8 strings escape code points as `\uXXXX`.
                 out.push_str(&format!("\\u{:04X}", c as u32));
             }
-            c if is_printable(c) => out.push(c),
+            c if is_printable(c) && (c.is_ascii() || !ascii_only) => out.push(c),
             c if (c as u32) <= 0xffff => out.push_str(&format!("\\u{:04X}", c as u32)),
             c => out.push_str(&format!("\\u{{{:X}}}", c as u32)),
         }

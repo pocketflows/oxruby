@@ -4,7 +4,9 @@
 //! and its `autocorrect(corrector, node)` are passed in.
 
 use crate::ast::Node;
-use crate::cop::mixin::configurable_enforced_style::style_for;
+use crate::cop::mixin::configurable_enforced_style::{
+    correct_style_detected, style_detected, style_for,
+};
 use crate::cop::mixin::ignored_node::IgnoredNodes;
 use crate::cop::mixin::range_help::{column_offset_between, range_between};
 use crate::cop::{Corrector, Investigation};
@@ -51,12 +53,14 @@ pub fn check_end_kw_alignment<'a>(
     let ps = cx.processed_source;
     let matching = matching_ranges(ps, end_loc, align_ranges);
     if matching.contains(&style) {
+        correct_style_detected(cx, STYLE_PARAMETER_NAME);
         return;
     }
     let Some(&(_, align_with)) = align_ranges.iter().find(|(s, _)| *s == style) else {
         return;
     };
     add_offense_for_misalignment(cx, node, align_with, autocorrect);
+    style_detected(cx, STYLE_PARAMETER_NAME, &matching);
 }
 
 fn matching_ranges<'r>(

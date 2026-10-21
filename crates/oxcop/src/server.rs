@@ -57,12 +57,19 @@ struct Request {
 fn handle(request: Request) -> (i32, Vec<u8>, Vec<u8>) {
     let stdout = Sink::buffer();
     let stderr = Sink::buffer();
-    if let Err(e) = std::env::set_current_dir(&request.cwd) {
-        let message = format!(
-            "oxcop --server: cd {}: {e}\n",
-            request.cwd.to_string_lossy()
-        );
-        return (crate::cli::STATUS_ERROR, Vec::new(), message.into_bytes());
+    let cwd = std::path::PathBuf::from(&request.cwd);
+    match std::env::set_current_dir(&cwd) {
+        Ok(()) => crate::path_util::set_pwd_override(None),
+        // A spec stubbed `Dir.pwd` with a directory that doesn't exist (e.g.
+        // `/path/to/project/root`): the run stays where it is, and
+        // `PathUtil` takes that path as `Dir.pwd`.
+        Err(_) if cwd.is_absolute() && !cwd.exists() => {
+            crate::path_util::set_pwd_override(Some(cwd));
+        }
+        Err(e) => {
+            let message = format!("oxcop --server: cd {}: {e}\n", cwd.display());
+            return (crate::cli::STATUS_ERROR, Vec::new(), message.into_bytes());
+        }
     }
     let mut io = Io {
         stdin: Box::new(Cursor::new(request.stdin)),

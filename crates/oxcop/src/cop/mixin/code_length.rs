@@ -1,7 +1,6 @@
 //! Port of `lib/rubocop/cop/mixin/code_length.rb`.
 //!
-//! `exclude_limit 'Max'` (`self.max = length`) only feeds
-//! `--auto-gen-config` and is not ported; `LSP.enabled?` is false.
+//! `exclude_limit 'Max'` (`self.max = length`) is `set_exclude_limit`.
 
 use crate::ast::{Node, NodeType};
 use crate::cop::Investigation;
@@ -21,8 +20,9 @@ pub fn count_comments(cx: &Investigation<'_, '_>) -> bool {
 }
 
 /// `count_as_one`, as foldable types. Unknown types are an error upstream
-/// (`raise Warning, "Unknown foldable type: ..."`); they are returned as
-/// `Err` with that message.
+/// (`raise Warning, "Unknown foldable type: ..."`, from
+/// `CodeLengthCalculator#build_foldable_checks`); they are returned as `Err`
+/// with that message.
 pub fn count_as_one(cx: &Investigation<'_, '_>) -> Result<Vec<Foldable>, String> {
     cx.cop_config_list("CountAsOne")
         .into_iter()
@@ -46,10 +46,7 @@ pub fn check_code_length<'a>(cx: &mut Investigation<'a, '_>, node: Node<'a>, lab
     }
     let foldable_types = match count_as_one(cx) {
         Ok(types) => types,
-        Err(message) => {
-            cx.errors.push(message);
-            return;
-        }
+        Err(message) => crate::cop::base::raise("RuboCop::Warning", message),
     };
     let calculator = CodeLengthCalculator::new(
         node,
@@ -61,13 +58,32 @@ pub fn check_code_length<'a>(cx: &mut Investigation<'a, '_>, node: Node<'a>, lab
     if length as i64 <= max_length {
         return;
     }
-    let location = location(node);
-    cx.add_offense(location, &message(label, length, max_length));
+    let location = location(cx, node);
+    cx.add_offense_yield(location, &message(label, length, max_length), |cx| {
+        cx.set_exclude_limit("Max", length);
+    });
 }
 
-fn location(node: Node<'_>) -> crate::processed_source::Range {
+fn location(cx: &Investigation<'_, '_>, node: Node<'_>) -> crate::processed_source::Range {
     if node.is(NodeType::Casgn) {
         return node.loc().name.unwrap();
     }
-    node.source_range()
+    lsp_location(cx, node)
+}
+
+/// `location(node)` under `LSP.enabled?`: from the node's start to its name
+/// (or `begin`), so editors highlight only the first line.
+pub fn lsp_location(cx: &Investigation<'_, '_>, node: Node<'_>) -> crate::processed_source::Range {
+    let range = node.source_range();
+    if !cx.lsp() {
+        return range;
+    }
+    let loc = node.loc();
+    match loc.name.or(loc.begin) {
+        Some(end_range) => crate::processed_source::Range {
+            begin_pos: range.begin_pos,
+            end_pos: end_range.end_pos,
+        },
+        None => range,
+    }
 }

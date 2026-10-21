@@ -152,6 +152,12 @@ pub struct Options {
     #[arg(long = "auto-gen-state", hide = true, value_name = "FILE")]
     pub auto_gen_state: Option<PathBuf>,
 
+    /// Ruby's `Encoding.default_internal || Encoding.default_external` in the
+    /// spec process, which `String#inspect` escapes for (`US-ASCII`: every
+    /// non-ASCII character becomes `\uXXXX`). UTF-8 when not given.
+    #[arg(long = "default-external", hide = true, value_name = "ENCODING")]
+    pub default_external: Option<String>,
+
     /// `RuboCop::LSP.enabled?` for cops that report differently under LSP.
     #[arg(long = "lsp", hide = true)]
     pub lsp: bool,

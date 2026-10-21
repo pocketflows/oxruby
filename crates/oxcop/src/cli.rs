@@ -151,6 +151,12 @@ fn run_options(args: impl IntoIterator<Item = OsString>, io: &mut Io) -> i32 {
             return status;
         }
     };
+    crate::cop::mixin::util::set_inspect_ascii_only(
+        options
+            .default_external
+            .as_deref()
+            .is_some_and(|encoding| !encoding.eq_ignore_ascii_case("UTF-8")),
+    );
 
     if options.version {
         let _ = writeln!(io.stdout, "{VERSION}");

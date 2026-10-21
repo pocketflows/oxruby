@@ -4,7 +4,23 @@
 
 use std::path::{Component, Path, PathBuf};
 
+/// `Dir.pwd` when it isn't the process's working directory: `oxcop
+/// --server` answers for a spec that stubs `Dir.pwd` with a directory that
+/// doesn't exist (see `server.rs`).
+static PWD_OVERRIDE: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+
+pub fn set_pwd_override(dir: Option<PathBuf>) {
+    *PWD_OVERRIDE.write().unwrap_or_else(|e| e.into_inner()) = dir;
+}
+
 pub fn pwd() -> PathBuf {
+    if let Some(dir) = PWD_OVERRIDE
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+    {
+        return dir.clone();
+    }
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
