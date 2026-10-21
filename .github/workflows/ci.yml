@@ -23,3 +23,5 @@ jobs:
           ruby-version: "3.4"
           bundler-cache: true
       - run: bundle exec rake
+      # oxtree without the linked-in oxc formatter (always runs oxfmt).
+      - run: cargo build -p oxtree --no-default-features
