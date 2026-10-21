@@ -100,6 +100,7 @@ in `docs/agents/` and their roster is in git history.
 | --- | --- | --- |
 | `utf8` | Source loading and encoding: `processed_source.rs`, the encoding parts of `magic_comment.rs` and `runner.rs` | A file with invalid UTF-8 and no encoding comment fails exactly as it does in RuboCop (measured, not guessed), instead of having its bytes replaced. |
 | `index` | `project_index*.rs`, `cop/mixin/project_index_help.rs`, `cop/mixin/indexed_method_arity.rs`, the project-index parts of `config.rs`, `runner.rs`, `server.rs` and `spec/oxcop/`; the cops Lint/ArgumentMismatch, Lint/DeprecatedReference, Lint/NameTypo, and the index-aware code paths in the existing cops whose specs have `:project_index` examples | `AllCops/UseProjectIndex` on top of the `rubydex` crate: build the graph, a shim hook so specs' `build_index` reaches the binary, the three cops, then every `:project_index` example passing. |
+| `config` | `config_loader.rs`, `config_loader_resolver`-equivalents, `target_ruby.rs`, `script/compare_with_rubocop` and its use in `script/land` | 1. A real-config compare (no `--only`) in the gate. 2. `handle_disabled_by_default`: `code/` configures cops without `Enabled: true` under `DisabledByDefault`, and oxcop skips them. 3. The other config gaps, the TargetRuby sources and `gem_versions_in_target`. |
 
 The `cop/mixin/` files that already exist are listed in `ROADMAP.md`. The
 mixins most needed but not yet ported are Alignment, SurroundingSpace,
