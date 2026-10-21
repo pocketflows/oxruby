@@ -54,7 +54,9 @@
 - Style/RedundantPercentQ 27
 - Style/RedundantMinMaxBy 33
 - Style/RedundantRegexpArgument 50
+- Style/RedundantRegexpCharacterClass 49
 - Style/RedundantRegexpConstructor 11
+- Style/RedundantRegexpEscape 218
 - Style/RedundantSelfAssignmentBranch 22
 - Style/RedundantSelfAssignment 14
 - Style/RedundantSelf 65
@@ -78,9 +80,7 @@ lands it, drop that commit (`git rebase --onto main <TEMP-sha>
 style-c-pending`; `-i` isn't available). Commits, oldest first:
 
 1. `TEMP` style-d's ReparsedEquivalence; Style/RedundantParentheses (337).
-2. Style/RescueStandardError (37) + the RescueNode mixin (style-c's own;
-   full gate). It doesn't depend on any TEMP commit: cherry-pick it onto
-   `style-c` and land it alone first.
+2. (landed: Style/RescueStandardError + RescueNode.)
 3. `TEMP` layout-b's Alignment indentation helpers and MatchRange;
    Style/RedundantConditional (11), Style/ParallelAssignment (91),
    Style/RedundantStringEscape (328).
@@ -88,8 +88,9 @@ style-c-pending`; `-i` isn't available). Commits, oldest first:
    drop those two files from the TEMP commit when rebasing), style-b's
    MinBodyLength, OnNormalIfUnless, IfThenCorrector; `TEMP` style-d's
    PreferredDelimiters; Style/RedundantCapitalW (13), Style/PercentQLiterals
-   (21), Style/RedundantInterpolation (29), Style/OneLineConditional (104),
-   Style/RedundantFormat (306).
+   (21), Style/RedundantInterpolation (29) and Style/RedundantFormat (306)
+   are landed (their mixins reached main); Style/OneLineConditional (104)
+   is left.
 5. `TEMP` lint-b's SymbolHelp; Style/QuotedSymbols (97).
 
 All of these pass their whole spec on `style-c-pending` and clippy is clean.
@@ -103,8 +104,6 @@ Style/RescueModifier, Style/Next, Style/PercentLiteralDelimiters.
 
 - RedundantLineContinuation: needs `processed_source.tokens` (`tokens`),
   plus MatchRange and ReparsedEquivalence.
-- RedundantRegexpEscape, RedundantRegexpCharacterClass: need a port of the
-  `regexp_parser` gem (`RegexpNode#parsed_tree`), claimed by lint-b.
 
 ## Blocked / principled failures
 
