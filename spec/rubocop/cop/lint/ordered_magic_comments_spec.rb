@@ -1,0 +1,144 @@
+# frozen_string_literal: true
+
+RSpec.describe RuboCop::Cop::Lint::OrderedMagicComments, :config do
+  it 'registers an offense and corrects when an `encoding` magic comment ' \
+     'does not precede all other magic comments' do
+    expect_offense(<<~RUBY)
+      # frozen_string_literal: true
+      # encoding: ascii
+      ^^^^^^^^^^^^^^^^^ The encoding magic comment should precede all other magic comments.
+    RUBY
+
+    expect_correction(<<~RUBY)
+      # encoding: ascii
+      # frozen_string_literal: true
+    RUBY
+  end
+
+  it 'registers an offense and corrects when `coding` magic comment ' \
+     'does not precede all other magic comments' do
+    expect_offense(<<~RUBY)
+      # frozen_string_literal: true
+      # coding: ascii
+      ^^^^^^^^^^^^^^^ The encoding magic comment should precede all other magic comments.
+    RUBY
+
+    expect_correction(<<~RUBY)
+      # coding: ascii
+      # frozen_string_literal: true
+    RUBY
+  end
+
+  it 'registers an offense and corrects when `-*- encoding : ascii-8bit -*-` ' \
+     'magic comment does not precede all other magic comments' do
+    expect_offense(<<~RUBY)
+      # frozen_string_literal: true
+      # -*- encoding : ascii-8bit -*-
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ The encoding magic comment should precede all other magic comments.
+    RUBY
+
+    expect_correction(<<~RUBY)
+      # -*- encoding : ascii-8bit -*-
+      # frozen_string_literal: true
+    RUBY
+  end
+
+  it 'registers an offense and corrects when using `frozen_string_literal` ' \
+     'magic comment is next of shebang' do
+    expect_offense(<<~RUBY)
+      #!/usr/bin/env ruby
+      # frozen_string_literal: true
+      # encoding: ascii
+      ^^^^^^^^^^^^^^^^^ The encoding magic comment should precede all other magic comments.
+    RUBY
+
+    expect_correction(<<~RUBY)
+      #!/usr/bin/env ruby
+      # encoding: ascii
+      # frozen_string_literal: true
+    RUBY
+  end
+
+  it 'registers an offense and corrects when an `encoding` magic comment does not precede ' \
+     'a `warn_indent` magic comment' do
+    expect_offense(<<~RUBY)
+      # warn_indent: true
+      # encoding: ascii
+      ^^^^^^^^^^^^^^^^^ The encoding magic comment should precede all other magic comments.
+    RUBY
+
+    expect_correction(<<~RUBY)
+      # encoding: ascii
+      # warn_indent: true
+    RUBY
+  end
+
+  it 'registers an offense and corrects when an `encoding` magic comment does not precede ' \
+     'a `shareable_constant_value` magic comment' do
+    expect_offense(<<~RUBY)
+      # shareable_constant_value: literal
+      # encoding: ascii
+      ^^^^^^^^^^^^^^^^^ The encoding magic comment should precede all other magic comments.
+    RUBY
+
+    expect_correction(<<~RUBY)
+      # encoding: ascii
+      # shareable_constant_value: literal
+    RUBY
+  end
+
+  it 'does not register an offense when an `encoding` magic comment precedes ' \
+     'a `shareable_constant_value` magic comment' do
+    expect_no_offenses(<<~RUBY)
+      # encoding: ascii
+      # shareable_constant_value: literal
+    RUBY
+  end
+
+  it 'does not register an offense when using `encoding` magic comment is first line' do
+    expect_no_offenses(<<~RUBY)
+      # encoding: ascii
+      # frozen_string_literal: true
+    RUBY
+  end
+
+  it 'does not register an offense when using `encoding` magic comment is next of shebang' do
+    expect_no_offenses(<<~RUBY)
+      #!/usr/bin/env ruby
+      # encoding: ascii
+      # frozen_string_literal: true
+    RUBY
+  end
+
+  it 'does not register an offense when using `encoding` magic comment only' do
+    expect_no_offenses(<<~RUBY)
+      # encoding: ascii
+    RUBY
+  end
+
+  it 'does not register an offense when using `frozen_string_literal` magic comment only' do
+    expect_no_offenses(<<~RUBY)
+      # frozen_string_literal: true
+    RUBY
+  end
+
+  it 'does not register an offense when using ' \
+     '`encoding: Encoding::SJIS` Hash notation after' \
+     '`frozen_string_literal` magic comment' do
+    expect_no_offenses(<<~RUBY)
+      # frozen_string_literal: true
+
+      x = { encoding: Encoding::SJIS }
+      puts x
+    RUBY
+  end
+
+  it 'does not register an offense when comment text `# encoding: ISO-8859-1` is embedded within ' \
+     'example code as source code comment' do
+    expect_no_offenses(<<~RUBY)
+      # frozen_string_literal: true
+
+      # eval('# encoding: ISO-8859-1')
+    RUBY
+  end
+end

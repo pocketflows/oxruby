@@ -1,0 +1,2 @@
+Vendored from https://github.com/rubocop/rubocop at tag v1.91.0.
+Do not edit by hand; re-sync with `rake vendor:rubocop`.

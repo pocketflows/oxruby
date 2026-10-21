@@ -1,0 +1,128 @@
+# frozen_string_literal: true
+
+RSpec.describe RuboCop::Cop::Lint::Syntax, :config do
+  describe '.offenses_from_processed_source' do
+    let(:commissioner) { RuboCop::Cop::Commissioner.new([cop]) }
+    let(:offenses) { commissioner.investigate(processed_source).offenses }
+    let(:ruby_version) { 3.3 } # The minimum version Prism can parse is 3.3.
+    let(:syntax_error_message) do
+      parser_engine == :parser_whitequark ? 'unexpected token $end' : 'expected a matching `)`'
+    end
+
+    context 'with a diagnostic error' do
+      let(:source) { '(' }
+
+      it 'returns an offense' do
+        expect(offenses.size).to eq(1)
+        message = <<~MESSAGE.chomp
+          #{syntax_error_message}
+          (Using Ruby 3.3 parser; configure using `TargetRubyVersion` parameter, under `AllCops`)
+        MESSAGE
+        offense = offenses.first
+        expect(offense.message).to eq(message)
+        expect(offense.severity).to eq(:fatal)
+      end
+
+      context 'with --display-cop-names option' do
+        let(:cop_options) { { display_cop_names: true } }
+
+        it 'returns an offense with cop name' do
+          expect(offenses.size).to eq(1)
+          message = <<~MESSAGE.chomp
+            Lint/Syntax: #{syntax_error_message}
+            (Using Ruby 3.3 parser; configure using `TargetRubyVersion` parameter, under `AllCops`)
+          MESSAGE
+          offense = offenses.first
+          expect(offense.message).to eq(message)
+          expect(offense.severity).to eq(:fatal)
+        end
+      end
+
+      context 'with --autocorrect --disable-uncorrectable options' do
+        let(:cop_options) do
+          { autocorrect: true, safe_autocorrect: true, disable_uncorrectable: true }
+        end
+
+        it 'returns an offense' do
+          expect(offenses.size).to eq(1)
+          message = <<~MESSAGE.chomp
+            #{syntax_error_message}
+            (Using Ruby 3.3 parser; configure using `TargetRubyVersion` parameter, under `AllCops`)
+          MESSAGE
+          offense = offenses.first
+          expect(offense.message).to eq(message)
+          expect(offense.severity).to eq(:fatal)
+          expect(offense.status).to eq(:corrected_with_todo)
+        end
+      end
+
+      context 'with `--lsp` option', :lsp do
+        it 'does not include a configuration information in the offense message' do
+          expect(offenses.first.message).to eq(syntax_error_message)
+        end
+      end
+    end
+
+    context 'with a diagnostic warning and error' do
+      let(:source) { <<~RUBY }
+        # warning: ambiguous `*` has been interpreted as an argument prefix
+        foo *some_array
+        (
+      RUBY
+
+      it 'shows only syntax errors' do
+        expect(processed_source.diagnostics.map(&:level)).to contain_exactly(:warning, :error)
+
+        expect(offenses.size).to eq(1)
+        message = <<~MESSAGE.chomp
+          #{syntax_error_message}
+          (Using Ruby 3.3 parser; configure using `TargetRubyVersion` parameter, under `AllCops`)
+        MESSAGE
+        offense = offenses.first
+        expect(offense.message).to eq(message)
+        expect(offense.severity).to eq(:fatal)
+      end
+    end
+
+    context 'with a syntax error at EOF that would produce a zero-length range' do
+      let(:source) { "if true\n  puts 'x'\n" }
+
+      it 'expands the zero-length range to cover the preceding character' do
+        expect(offenses).not_to be_empty
+        offense = offenses.first
+        expect(offense.location.size).to eq(1)
+        # EOF at end of source, so the range expands backward by 1 character.
+        expect(offense.location.end_pos).to eq(source.size)
+        expect(offense.location.begin_pos).to eq(source.size - 1)
+      end
+    end
+
+    context 'with a parser error' do
+      let(:source) { <<~RUBY }
+        # \xf9
+      RUBY
+
+      it 'returns an offense' do
+        expect(offenses.size).to eq(1)
+        offense = offenses.first
+        expect(offense.message).to eq('Invalid byte sequence in utf-8.')
+        expect(offense.severity).to eq(:fatal)
+        expect(offense.location).to eq(RuboCop::Cop::Offense::NO_LOCATION)
+      end
+
+      context 'with --display-cop-names option' do
+        let(:cop_options) { { display_cop_names: true } }
+
+        it 'returns an offense with cop name' do
+          expect(offenses.size).to eq(1)
+          message = <<~MESSAGE.chomp
+            Lint/Syntax: Invalid byte sequence in utf-8.
+          MESSAGE
+          offense = offenses.first
+          expect(offense.message).to eq(message)
+          expect(offense.severity).to eq(:fatal)
+        end
+      end
+    end
+  end
+end

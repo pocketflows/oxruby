@@ -1,0 +1,978 @@
+# frozen_string_literal: true
+
+RSpec.describe RuboCop::Cop::Layout::EndAlignment, :config do
+  let(:cop_config) { { 'EnforcedStyleAlignWith' => 'keyword', 'AutoCorrect' => true } }
+
+  it_behaves_like 'aligned', "\xef\xbb\xbfclass", 'Test', 'end'
+
+  it_behaves_like 'aligned', 'class',          'Test',      'end'
+  it_behaves_like 'aligned', 'class << self;', 'Test',      'end'
+  it_behaves_like 'aligned', 'module',         'Test',      'end'
+  it_behaves_like 'aligned', 'if',             'test',      'end'
+  it_behaves_like 'aligned', 'unless',         'test',      'end'
+  it_behaves_like 'aligned', 'while',          'test',      'end'
+  it_behaves_like 'aligned', 'until',          'test',      'end'
+  it_behaves_like 'aligned', 'case',           'a when b',  'end'
+
+  context 'Ruby >= 2.7', :ruby27 do # rubocop:disable RSpec/RepeatedExampleGroupDescription
+    it_behaves_like 'aligned', 'case', 'a; in b', 'end'
+  end
+
+  it_behaves_like 'misaligned', <<~RUBY, false
+    puts 1; class Test
+      end
+      ^^^ `end` at 2, 2 is not aligned with `class` at 1, 8.
+
+    class Test
+      end
+      ^^^ `end` at 2, 2 is not aligned with `class` at 1, 0.
+
+    puts 1; class << self
+      end
+      ^^^ `end` at 2, 2 is not aligned with `class` at 1, 8.
+
+    class << self
+      end
+      ^^^ `end` at 2, 2 is not aligned with `class` at 1, 0.
+
+    puts 1; module Test
+      end
+      ^^^ `end` at 2, 2 is not aligned with `module` at 1, 8.
+
+    module Test
+      end
+      ^^^ `end` at 2, 2 is not aligned with `module` at 1, 0.
+
+    puts 1; if test
+      end
+      ^^^ `end` at 2, 2 is not aligned with `if` at 1, 8.
+
+    if test
+      end
+      ^^^ `end` at 2, 2 is not aligned with `if` at 1, 0.
+
+    puts 1; unless test
+      end
+      ^^^ `end` at 2, 2 is not aligned with `unless` at 1, 8.
+
+    unless test
+      end
+      ^^^ `end` at 2, 2 is not aligned with `unless` at 1, 0.
+
+    puts 1; while test
+      end
+      ^^^ `end` at 2, 2 is not aligned with `while` at 1, 8.
+
+    while test
+      end
+      ^^^ `end` at 2, 2 is not aligned with `while` at 1, 0.
+
+    puts 1; until test
+      end
+      ^^^ `end` at 2, 2 is not aligned with `until` at 1, 8.
+
+    until test
+      end
+      ^^^ `end` at 2, 2 is not aligned with `until` at 1, 0.
+
+    puts 1; case a when b
+      end
+      ^^^ `end` at 2, 2 is not aligned with `case` at 1, 8.
+
+    case a when b
+      end
+      ^^^ `end` at 2, 2 is not aligned with `case` at 1, 0.
+  RUBY
+
+  context 'Ruby >= 2.7', :ruby27 do # rubocop:disable RSpec/RepeatedExampleGroupDescription
+    it_behaves_like 'misaligned', <<~RUBY, false
+      puts 1; case a; in b
+        end
+        ^^^ `end` at 2, 2 is not aligned with `case` at 1, 8.
+
+      case a; in b
+        end
+        ^^^ `end` at 2, 2 is not aligned with `case` at 1, 0.
+    RUBY
+  end
+
+  it_behaves_like 'aligned', 'puts 1; class',          'Test',     '        end'
+  it_behaves_like 'aligned', 'puts 1; class << self;', 'Test',     '        end'
+  it_behaves_like 'aligned', 'puts 1; module',         'Test',     '        end'
+  it_behaves_like 'aligned', 'puts 1; if',             'Test',     '        end'
+  it_behaves_like 'aligned', 'puts 1; unless',         'Test',     '        end'
+  it_behaves_like 'aligned', 'puts 1; while',          'Test',     '        end'
+  it_behaves_like 'aligned', 'puts 1; until',          'Test',     '        end'
+  it_behaves_like 'aligned', 'puts 1; case',           'a when b', '        end'
+  context 'Ruby >= 2.7', :ruby27 do # rubocop:disable RSpec/RepeatedExampleGroupDescription
+    it_behaves_like 'aligned', 'puts 1; case', 'a; in b', '        end'
+  end
+
+  it 'can handle ternary if' do
+    expect_no_offenses('a = cond ? x : y')
+  end
+
+  it 'can handle modifier if' do
+    expect_no_offenses('a = x if cond')
+  end
+
+  context 'when EnforcedStyleAlignWith is start_of_line' do
+    let(:cop_config) { { 'EnforcedStyleAlignWith' => 'start_of_line', 'AutoCorrect' => true } }
+
+    it_behaves_like 'aligned', 'puts 1; class',          'Test',     'end'
+    it_behaves_like 'aligned', 'puts 1; class << self;', 'Test',     'end'
+    it_behaves_like 'aligned', 'puts 1; module',         'Test',     'end'
+    it_behaves_like 'aligned', 'puts 1; if',             'test',     'end'
+    it_behaves_like 'aligned', 'puts 1; unless',         'test',     'end'
+    it_behaves_like 'aligned', 'puts 1; while',          'test',     'end'
+    it_behaves_like 'aligned', 'puts 1; until',          'test',     'end'
+    it_behaves_like 'aligned', 'puts 1; case',           'a when b', 'end'
+    context 'Ruby >= 2.7', :ruby27 do # rubocop:disable RSpec/RepeatedExampleGroupDescription
+      it_behaves_like 'aligned', 'puts 1; case', 'a; in b', 'end'
+    end
+
+    it_behaves_like 'misaligned', <<~RUBY, false
+      puts 1; class Test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `puts 1; class Test` at 1, 0.
+
+      class Test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `class Test` at 1, 0.
+
+      puts 1; module Test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `puts 1; module Test` at 1, 0.
+
+      module Test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `module Test` at 1, 0.
+
+      puts 1; if test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `puts 1; if test` at 1, 0.
+
+      if test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `if test` at 1, 0.
+
+      puts 1; unless test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `puts 1; unless test` at 1, 0.
+
+      unless test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `unless test` at 1, 0.
+
+      puts 1; while test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `puts 1; while test` at 1, 0.
+
+      while test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `while test` at 1, 0.
+
+      puts 1; until test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `puts 1; until test` at 1, 0.
+
+      until test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `until test` at 1, 0.
+
+      puts 1; case a when b
+        end
+        ^^^ `end` at 2, 2 is not aligned with `puts 1; case a when b` at 1, 0.
+
+      case a when b
+        end
+        ^^^ `end` at 2, 2 is not aligned with `case a when b` at 1, 0.
+    RUBY
+
+    context 'Ruby >= 2.7', :ruby27 do # rubocop:disable RSpec/RepeatedExampleGroupDescription
+      it_behaves_like 'misaligned', <<~RUBY, false
+        case a
+        in b
+          end
+          ^^^ `end` at 3, 2 is not aligned with `case a` at 1, 0.
+      RUBY
+    end
+
+    it_behaves_like 'misaligned', <<~RUBY, :keyword
+      puts(if test
+           end)
+           ^^^ `end` at 2, 5 is not aligned with `puts(if test` at 1, 0.
+    RUBY
+
+    it_behaves_like 'misaligned', <<~RUBY, :keyword
+      var = if test
+            end
+            ^^^ `end` at 2, 6 is not aligned with `var = if test` at 1, 0.
+
+      var = unless test
+            end
+            ^^^ `end` at 2, 6 is not aligned with `var = unless test` at 1, 0.
+
+      var = while test
+            end
+            ^^^ `end` at 2, 6 is not aligned with `var = while test` at 1, 0.
+
+      var = until test
+            end
+            ^^^ `end` at 2, 6 is not aligned with `var = until test` at 1, 0.
+
+      var = case a when b
+            end
+            ^^^ `end` at 2, 6 is not aligned with `var = case a when b` at 1, 0.
+
+      var << if test
+             end
+             ^^^ `end` at 2, 7 is not aligned with `var << if test` at 1, 0.
+
+      var << unless test
+             end
+             ^^^ `end` at 2, 7 is not aligned with `var << unless test` at 1, 0.
+
+      var << while test
+             end
+             ^^^ `end` at 2, 7 is not aligned with `var << while test` at 1, 0.
+
+      var << until test
+             end
+             ^^^ `end` at 2, 7 is not aligned with `var << until test` at 1, 0.
+
+      var << case a when b
+             end
+             ^^^ `end` at 2, 7 is not aligned with `var << case a when b` at 1, 0.
+    RUBY
+
+    context 'Ruby >= 2.7', :ruby27 do # rubocop:disable RSpec/RepeatedExampleGroupDescription
+      it_behaves_like 'misaligned', <<~RUBY, :keyword
+        var << case a
+               in b
+               end
+               ^^^ `end` at 3, 7 is not aligned with `var << case a` at 1, 0.
+      RUBY
+    end
+
+    it_behaves_like 'misaligned', <<~RUBY, false
+      var =
+        if test
+      end
+      ^^^ `end` at 3, 0 is not aligned with `if test` at 2, 2.
+    RUBY
+
+    it_behaves_like 'aligned', 'var = if',     'test',     'end'
+    it_behaves_like 'aligned', 'var = unless', 'test',     'end'
+    it_behaves_like 'aligned', 'var = while',  'test',     'end'
+    it_behaves_like 'aligned', 'var << while', 'test',     'end'
+    it_behaves_like 'aligned', 'var = until',  'test',     'end'
+    it_behaves_like 'aligned', 'var = case',   'a when b', 'end'
+
+    it_behaves_like 'aligned', "var =\n  if",  'test', '  end'
+  end
+
+  context 'when EnforcedStyleAlignWith is variable' do
+    # same as 'EnforcedStyleAlignWith' => 'keyword',
+    # as long as assignments or `case` are not involved
+    let(:cop_config) { { 'EnforcedStyleAlignWith' => 'variable', 'AutoCorrect' => true } }
+
+    it_behaves_like 'misaligned', <<~RUBY, false
+      class Test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `class` at 1, 0.
+
+      module Test
+             end
+             ^^^ `end` at 2, 7 is not aligned with `module` at 1, 0.
+
+      class << self
+        end
+        ^^^ `end` at 2, 2 is not aligned with `class` at 1, 0.
+
+      if test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `if` at 1, 0.
+
+      unless test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `unless` at 1, 0.
+
+      while test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `while` at 1, 0.
+
+      until test
+        end
+        ^^^ `end` at 2, 2 is not aligned with `until` at 1, 0.
+
+      case a when b
+        end
+        ^^^ `end` at 2, 2 is not aligned with `case` at 1, 0.
+    RUBY
+
+    it_behaves_like 'aligned', 'class',          'Test',     'end'
+    it_behaves_like 'aligned', 'class << self;', 'Test',     'end'
+    it_behaves_like 'aligned', 'module',         'Test',     'end'
+    it_behaves_like 'aligned', 'if',             'test',     'end'
+    it_behaves_like 'aligned', 'unless',         'test',     'end'
+    it_behaves_like 'aligned', 'while',          'test',     'end'
+    it_behaves_like 'aligned', 'until',          'test',     'end'
+    it_behaves_like 'aligned', 'case',           'a when b', 'end'
+    context 'Ruby >= 2.7', :ruby27 do # rubocop:disable RSpec/RepeatedExampleGroupDescription
+      it_behaves_like 'aligned', 'case', 'a; in b', 'end'
+    end
+
+    it_behaves_like 'misaligned', <<~RUBY, :start_of_line
+      puts 1; class Test
+      end
+      ^^^ `end` at 2, 0 is not aligned with `class` at 1, 8.
+
+      puts 1; module Test
+      end
+      ^^^ `end` at 2, 0 is not aligned with `module` at 1, 8.
+
+      puts 1; class << self
+      end
+      ^^^ `end` at 2, 0 is not aligned with `class` at 1, 8.
+
+      puts 1; if test
+      end
+      ^^^ `end` at 2, 0 is not aligned with `if` at 1, 8.
+
+      puts 1; unless test
+      end
+      ^^^ `end` at 2, 0 is not aligned with `unless` at 1, 8.
+
+      puts 1; while test
+      end
+      ^^^ `end` at 2, 0 is not aligned with `while` at 1, 8.
+
+      puts 1; until test
+      end
+      ^^^ `end` at 2, 0 is not aligned with `until` at 1, 8.
+
+      puts 1; case a when b
+      end
+      ^^^ `end` at 2, 0 is not aligned with `case` at 1, 8.
+    RUBY
+
+    context 'Ruby >= 2.7', :ruby27 do # rubocop:disable RSpec/RepeatedExampleGroupDescription
+      it_behaves_like 'misaligned', <<~RUBY, :start_of_line
+        puts 1; case a
+                in b
+        end
+        ^^^ `end` at 3, 0 is not aligned with `case` at 1, 8.
+      RUBY
+    end
+
+    it_behaves_like 'aligned', 'puts 1; class',          'Test',     '        end'
+    it_behaves_like 'aligned', 'puts 1; class << self;', 'Test',     '        end'
+    it_behaves_like 'aligned', 'puts 1; module',         'Test',     '        end'
+    it_behaves_like 'aligned', 'puts 1; if',             'Test',     '        end'
+    it_behaves_like 'aligned', 'puts 1; unless',         'Test',     '        end'
+    it_behaves_like 'aligned', 'puts 1; while',          'Test',     '        end'
+    it_behaves_like 'aligned', 'puts 1; until',          'Test',     '        end'
+    it_behaves_like 'aligned', 'puts 1; case',           'a when b', '        end'
+
+    it 'registers an offense when using `+` operator method and `end` is not aligned' do
+      expect_offense(<<~RUBY)
+        variable + if condition
+                     foo
+                   else
+                     bar
+                   end
+                   ^^^ `end` at 5, 11 is not aligned with `variable + if` at 1, 0.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        variable + if condition
+                     foo
+                   else
+                     bar
+        end
+      RUBY
+    end
+
+    it 'registers an offense when using `-` operator method and `end` is not aligned' do
+      expect_offense(<<~RUBY)
+        variable - if condition
+                     foo
+                   else
+                     bar
+                   end
+                   ^^^ `end` at 5, 11 is not aligned with `variable - if` at 1, 0.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        variable - if condition
+                     foo
+                   else
+                     bar
+        end
+      RUBY
+    end
+
+    it 'registers an offense when using `+` operator method with `if` inside `begin` and `end` is not aligned' do
+      expect_offense(<<~RUBY)
+        variable + (if bar
+                      baz
+                    end)
+                    ^^^ `end` at 3, 12 is not aligned with `variable + (if` at 1, 0.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        variable + (if bar
+                      baz
+        end)
+      RUBY
+    end
+
+    it 'registers an offense when using `+` operator method with `if` inside multiple `begin`s and `end` is not aligned' do
+      expect_offense(<<~RUBY)
+        variable + ((if bar
+                      baz
+                    end))
+                    ^^^ `end` at 3, 12 is not aligned with `variable + ((if` at 1, 0.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        variable + ((if bar
+                      baz
+        end))
+      RUBY
+    end
+
+    it 'registers an offense when using a conditional statement in a method argument and `end` is not aligned' do
+      expect_offense(<<~RUBY)
+        format(
+          case condition
+          when foo
+            bar
+          else
+            baz
+        end, qux
+        ^^^ `end` at 7, 0 is not aligned with `case` at 2, 2.
+        )
+      RUBY
+
+      expect_correction(<<~RUBY)
+        format(
+          case condition
+          when foo
+            bar
+          else
+            baz
+          end, qux
+        )
+      RUBY
+    end
+
+    it 'does not register an offense when using a conditional assignment on the same line and `end` with method call is aligned' do
+      expect_no_offenses(<<~RUBY)
+        value = if condition
+          do_something
+        end.method_call
+      RUBY
+    end
+
+    it 'does not register an offense when using a conditional assignment in a method argument on the same line and `end` with safe navigation method call is aligned' do
+      expect_no_offenses(<<~RUBY)
+        value = if condition
+          do_something
+        end&.method_call
+      RUBY
+    end
+
+    it 'registers an offense when using a conditional statement in a method argument on the same line and `end` with method call is not aligned' do
+      expect_offense(<<~RUBY)
+        do_something case condition
+                     when expr
+                     end.method_call
+                     ^^^ `end` at 3, 13 is not aligned with `do_something case` at 1, 0.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        do_something case condition
+                     when expr
+        end.method_call
+      RUBY
+    end
+
+    it 'registers an offense when using a pattern matching in a method argument and `end` is not aligned', :ruby27 do
+      expect_offense(<<~RUBY)
+        format(
+          case pattern
+          in foo
+            bar
+          else
+            baz
+        end, qux
+        ^^^ `end` at 7, 0 is not aligned with `case` at 2, 2.
+        )
+      RUBY
+
+      expect_correction(<<~RUBY)
+        format(
+          case pattern
+          in foo
+            bar
+          else
+            baz
+          end, qux
+        )
+      RUBY
+    end
+  end
+
+  context 'correct + opposite' do
+    it 'registers an offense and corrects' do
+      expect_offense(<<~RUBY)
+        x = if a
+              a1
+            end
+        y = if b
+          b1
+        end
+        ^^^ `end` at 6, 0 is not aligned with `if` at 4, 4.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        x = if a
+              a1
+            end
+        y = if b
+          b1
+            end
+      RUBY
+    end
+  end
+
+  context 'when end is preceded by something else than whitespace' do
+    it 'registers an offense and corrects' do
+      expect_offense(<<~RUBY)
+        module A
+        puts a end
+               ^^^ `end` at 2, 7 is not aligned with `module` at 1, 0.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        module A
+        puts a#{trailing_whitespace}
+        end
+      RUBY
+    end
+  end
+
+  context 'when end is on the same line as `else` body' do
+    it 'registers an offense and corrects' do
+      expect_offense(<<~RUBY)
+        if test
+          foo
+        else
+          bar end
+              ^^^ `end` at 4, 6 is not aligned with `if` at 1, 0.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        if test
+          foo
+        else
+          bar#{trailing_whitespace}
+        end
+      RUBY
+    end
+  end
+
+  context 'case as argument' do
+    context 'when EnforcedStyleAlignWith is keyword' do
+      let(:cop_config) { { 'EnforcedStyleAlignWith' => 'keyword', 'AutoCorrect' => true } }
+
+      it_behaves_like 'aligned', 'test case', 'a when b', '     end'
+
+      it_behaves_like 'misaligned', <<~RUBY, :start_of_line
+        test case a when b
+        end
+        ^^^ `end` at 2, 0 is not aligned with `case` at 1, 5.
+      RUBY
+    end
+
+    context 'when EnforcedStyleAlignWith is variable' do
+      let(:cop_config) { { 'EnforcedStyleAlignWith' => 'variable', 'AutoCorrect' => true } }
+
+      it_behaves_like 'aligned', 'test case', 'a when b', 'end'
+
+      it_behaves_like 'misaligned', <<~RUBY, :keyword
+        test case a when b
+             end
+             ^^^ `end` at 2, 5 is not aligned with `test case` at 1, 0.
+      RUBY
+    end
+
+    context 'when EnforcedStyleAlignWith is start_of_line' do
+      let(:cop_config) { { 'EnforcedStyleAlignWith' => 'start_of_line', 'AutoCorrect' => true } }
+
+      it_behaves_like 'aligned', 'test case a when b', '', 'end'
+
+      it_behaves_like 'misaligned', <<~RUBY, :keyword
+        test case a when b
+             end
+             ^^^ `end` at 2, 5 is not aligned with `test case a when b` at 1, 0.
+      RUBY
+    end
+  end
+
+  context 'case-match as argument', :ruby27 do
+    context 'when EnforcedStyleAlignWith is keyword' do
+      let(:cop_config) { { 'EnforcedStyleAlignWith' => 'keyword', 'AutoCorrect' => true } }
+
+      it_behaves_like 'aligned', 'test case', 'a; in b', '     end'
+
+      it_behaves_like 'misaligned', <<~RUBY, :start_of_line
+        test case a; in b
+        end
+        ^^^ `end` at 2, 0 is not aligned with `case` at 1, 5.
+      RUBY
+    end
+
+    context 'when EnforcedStyleAlignWith is variable' do
+      let(:cop_config) { { 'EnforcedStyleAlignWith' => 'variable', 'AutoCorrect' => true } }
+
+      it_behaves_like 'aligned', 'test case', 'a; in b', 'end'
+
+      it_behaves_like 'misaligned', <<~RUBY, :keyword
+        test case a; in b
+             end
+             ^^^ `end` at 2, 5 is not aligned with `test case` at 1, 0.
+      RUBY
+    end
+
+    context 'when EnforcedStyleAlignWith is start_of_line' do
+      let(:cop_config) { { 'EnforcedStyleAlignWith' => 'start_of_line', 'AutoCorrect' => true } }
+
+      it_behaves_like 'aligned', 'test case a; in b', '', 'end'
+
+      it_behaves_like 'misaligned', <<~RUBY, :keyword
+        test case a; in b
+             end
+             ^^^ `end` at 2, 5 is not aligned with `test case a; in b` at 1, 0.
+      RUBY
+    end
+  end
+
+  context 'regarding assignment' do
+    context 'when EnforcedStyleAlignWith is keyword' do
+      it_behaves_like 'misaligned', <<~RUBY, :start_of_line
+        var = if test
+        end
+        ^^^ `end` at 2, 0 is not aligned with `if` at 1, 6.
+
+        var = unless test
+        end
+        ^^^ `end` at 2, 0 is not aligned with `unless` at 1, 6.
+
+        var = while test
+        end
+        ^^^ `end` at 2, 0 is not aligned with `while` at 1, 6.
+
+        var = until test
+        end
+        ^^^ `end` at 2, 0 is not aligned with `until` at 1, 6.
+
+        var << until test
+        end
+        ^^^ `end` at 2, 0 is not aligned with `until` at 1, 7.
+      RUBY
+
+      it_behaves_like 'aligned', 'var = if',     'test',     '      end'
+      it_behaves_like 'aligned', 'var = unless', 'test',     '      end'
+      it_behaves_like 'aligned', 'var = while',  'test',     '      end'
+      it_behaves_like 'aligned', 'var = until',  'test',     '      end'
+      it_behaves_like 'aligned', 'var = case',   'a when b', '      end'
+
+      it_behaves_like 'aligned', 'var[0] = case', 'a when b', '         end'
+
+      context 'Ruby >= 2.7', :ruby27 do
+        it_behaves_like 'aligned', 'var = case', 'a; in b', '      end'
+        it_behaves_like 'aligned', 'var[0] = case', 'a; in b', '         end'
+      end
+
+      it 'registers an offense and corrects `if...end || ""` with `end` not aligned to keyword' do
+        expect_offense(<<~RUBY)
+          var = if test
+                  foo
+          end || ""
+          ^^^ `end` at 3, 0 is not aligned with `if` at 1, 6.
+        RUBY
+
+        expect_correction(<<~RUBY)
+          var = if test
+                  foo
+                end || ""
+        RUBY
+      end
+
+      it 'does not register an offense for `if...end || ""` with `end` aligned to keyword' do
+        expect_no_offenses(<<~RUBY)
+          var = if test
+                  foo
+                end || ""
+        RUBY
+      end
+
+      it 'registers an offense and corrects `if...end && ""` with `end` not aligned to keyword' do
+        expect_offense(<<~RUBY)
+          var = if test
+                  foo
+          end && ""
+          ^^^ `end` at 3, 0 is not aligned with `if` at 1, 6.
+        RUBY
+
+        expect_correction(<<~RUBY)
+          var = if test
+                  foo
+                end && ""
+        RUBY
+      end
+
+      it 'does not register an offense for `if...end && ""` with `end` aligned to keyword' do
+        expect_no_offenses(<<~RUBY)
+          var = if test
+                  foo
+                end && ""
+        RUBY
+      end
+
+      it 'does not register an offense for an empty `begin`' do
+        expect_no_offenses(<<~RUBY)
+          foo = ()
+        RUBY
+      end
+    end
+
+    context 'when EnforcedStyleAlignWith is variable' do
+      let(:cop_config) { { 'EnforcedStyleAlignWith' => 'variable', 'AutoCorrect' => true } }
+
+      it_behaves_like 'aligned', 'var << if',    'test',     'end'
+      it_behaves_like 'aligned', 'var = if',     'test',     'end'
+      it_behaves_like 'aligned', 'var = unless', 'test',     'end'
+      it_behaves_like 'aligned', 'var = while',  'test',     'end'
+      it_behaves_like 'aligned', 'var = until',  'test',     'end'
+      it_behaves_like 'aligned', 'var = until',  'test',     'end.ab.join("")'
+      it_behaves_like 'aligned', 'var = until',  'test',     'end.ab.tap {}'
+      it_behaves_like 'aligned', 'var = until', 'test', 'end.ab.tap { _1 }'
+      context 'Ruby >= 3.4', :ruby34 do
+        it_behaves_like 'aligned', 'var = until', 'test', 'end.ab.tap { it }'
+      end
+
+      it_behaves_like 'aligned', 'var = case',   'a when b', 'end'
+      it_behaves_like 'aligned', "var =\n  if",  'test', '  end'
+      context 'Ruby >= 2.7', :ruby27 do
+        it_behaves_like 'aligned', 'var = case', 'a; in b', 'end'
+      end
+
+      it 'does not register an offense for `if...end || ""` with `end` aligned to variable' do
+        expect_no_offenses(<<~RUBY)
+          var = if test
+                  foo
+          end || ""
+        RUBY
+      end
+
+      it 'registers an offense and corrects `if...end || ""` with `end` not aligned to variable' do
+        expect_offense(<<~RUBY)
+          var = if test
+                  foo
+                end || ""
+                ^^^ `end` at 3, 6 is not aligned with `var = if` at 1, 0.
+        RUBY
+
+        expect_correction(<<~RUBY)
+          var = if test
+                  foo
+          end || ""
+        RUBY
+      end
+
+      it 'does not register an offense for `if...end && ""` with `end` aligned to variable' do
+        expect_no_offenses(<<~RUBY)
+          var = if test
+                  foo
+          end && ""
+        RUBY
+      end
+
+      it 'registers an offense and corrects `if...end && ""` with `end` not aligned to variable' do
+        expect_offense(<<~RUBY)
+          var = if test
+                  foo
+                end && ""
+                ^^^ `end` at 3, 6 is not aligned with `var = if` at 1, 0.
+        RUBY
+
+        expect_correction(<<~RUBY)
+          var = if test
+                  foo
+          end && ""
+        RUBY
+      end
+
+      it_behaves_like 'misaligned', <<~RUBY, :keyword
+        var = if test
+              end
+              ^^^ `end` at 2, 6 is not aligned with `var = if` at 1, 0.
+
+        var = unless test
+              end
+              ^^^ `end` at 2, 6 is not aligned with `var = unless` at 1, 0.
+
+        var = while test
+              end
+              ^^^ `end` at 2, 6 is not aligned with `var = while` at 1, 0.
+
+        var = until test
+              end
+              ^^^ `end` at 2, 6 is not aligned with `var = until` at 1, 0.
+
+        var << if test
+               end
+               ^^^ `end` at 2, 7 is not aligned with `var << if` at 1, 0.
+
+        var << unless test
+               end
+               ^^^ `end` at 2, 7 is not aligned with `var << unless` at 1, 0.
+
+        var[x] = while test
+                 end
+                 ^^^ `end` at 2, 9 is not aligned with `var[x] = while` at 1, 0.
+
+        var << until test
+               end
+               ^^^ `end` at 2, 7 is not aligned with `var << until` at 1, 0.
+      RUBY
+
+      # If there's a line break after = we align with the keyword even if the
+      # style is `variable`.
+      it_behaves_like 'misaligned', <<~RUBY, false
+        var =
+          if test
+        end
+        ^^^ `end` at 3, 0 is not aligned with `if` at 2, 2.
+
+        var =
+          unless test
+         end
+         ^^^ `end` at 3, 1 is not aligned with `unless` at 2, 2.
+
+        var =
+          # comment
+          while test
+           end
+           ^^^ `end` at 4, 3 is not aligned with `while` at 3, 2.
+
+        var =
+          until test
+            do_something
+            end
+            ^^^ `end` at 4, 4 is not aligned with `until` at 2, 2.
+      RUBY
+
+      it_behaves_like 'misaligned', <<~RUBY, :keyword
+        var = until test
+              end.j
+              ^^^ `end` at 2, 6 is not aligned with `var = until` at 1, 0.
+      RUBY
+
+      it_behaves_like 'aligned', '@var = if',  'test', 'end'
+      it_behaves_like 'aligned', '@@var = if', 'test', 'end'
+      it_behaves_like 'aligned', '$var = if',  'test', 'end'
+      it_behaves_like 'aligned', 'CNST = if',  'test', 'end'
+      it_behaves_like 'aligned', 'a, b = if',  'test', 'end'
+      it_behaves_like 'aligned', 'var ||= if', 'test', 'end'
+      it_behaves_like 'aligned', 'var &&= if', 'test', 'end'
+      it_behaves_like 'aligned', 'var += if',  'test', 'end'
+      it_behaves_like 'aligned', 'h[k] = if',  'test', 'end'
+      it_behaves_like 'aligned', 'h.k = if',   'test', 'end'
+
+      it_behaves_like 'misaligned', <<~RUBY, :keyword
+        var = case a when b
+              end
+              ^^^ `end` at 2, 6 is not aligned with `var = case` at 1, 0.
+
+        @var = if test
+               end
+               ^^^ `end` at 2, 7 is not aligned with `@var = if` at 1, 0.
+
+        @@var = if test
+                end
+                ^^^ `end` at 2, 8 is not aligned with `@@var = if` at 1, 0.
+
+        $var = if test
+               end
+               ^^^ `end` at 2, 7 is not aligned with `$var = if` at 1, 0.
+
+        CNST = if test
+               end
+               ^^^ `end` at 2, 7 is not aligned with `CNST = if` at 1, 0.
+
+        a, b = if test
+               end
+               ^^^ `end` at 2, 7 is not aligned with `a, b = if` at 1, 0.
+
+        var ||= if test
+                end
+                ^^^ `end` at 2, 8 is not aligned with `var ||= if` at 1, 0.
+
+        var &&= if test
+                end
+                ^^^ `end` at 2, 8 is not aligned with `var &&= if` at 1, 0.
+
+        var += if test
+               end
+               ^^^ `end` at 2, 7 is not aligned with `var += if` at 1, 0.
+
+        h[k] = if test
+               end
+               ^^^ `end` at 2, 7 is not aligned with `h[k] = if` at 1, 0.
+
+        var << case a when b
+               end
+               ^^^ `end` at 2, 7 is not aligned with `var << case` at 1, 0.
+
+        @var << if test
+                end
+                ^^^ `end` at 2, 8 is not aligned with `@var << if` at 1, 0.
+
+        @@var << if test
+                 end
+                 ^^^ `end` at 2, 9 is not aligned with `@@var << if` at 1, 0.
+
+        $var << if test
+                end
+                ^^^ `end` at 2, 8 is not aligned with `$var << if` at 1, 0.
+
+        CNST << if test
+                end
+                ^^^ `end` at 2, 8 is not aligned with `CNST << if` at 1, 0.
+
+        h[k] << if test
+                end
+                ^^^ `end` at 2, 8 is not aligned with `h[k] << if` at 1, 0.
+      RUBY
+
+      it_behaves_like 'misaligned', <<~RUBY, false
+        h.k = if test
+                 end
+                 ^^^ `end` at 2, 9 is not aligned with `h.k = if` at 1, 0.
+      RUBY
+
+      context 'Ruby 2.7', :ruby27 do
+        it_behaves_like 'misaligned', <<~RUBY, :keyword
+          var = case a; in b
+                end
+                ^^^ `end` at 2, 6 is not aligned with `var = case` at 1, 0.
+        RUBY
+      end
+    end
+  end
+end

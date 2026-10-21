@@ -1,0 +1,133 @@
+# frozen_string_literal: true
+
+RSpec.describe RuboCop::Cop::Lint::InterpolationCheck, :config do
+  it 'registers an offense and corrects for interpolation in single quoted string' do
+    expect_offense(<<~'RUBY')
+      'foo #{bar}'
+      ^^^^^^^^^^^^ Interpolation in single quoted string detected. Use double quoted strings if you need interpolation.
+    RUBY
+
+    expect_correction(<<~'RUBY')
+      "foo #{bar}"
+    RUBY
+  end
+
+  it 'registers an offense and corrects when containing a closing brace without double quotes' do
+    expect_offense(<<~'RUBY')
+      'foo #{bar} }'
+      ^^^^^^^^^^^^^^ Interpolation in single quoted string detected. Use double quoted strings if you need interpolation.
+    RUBY
+
+    expect_correction(<<~'RUBY')
+      "foo #{bar} }"
+    RUBY
+  end
+
+  it 'registers an offense and corrects when including interpolation and double quoted string in single quoted string' do
+    expect_offense(<<~'RUBY')
+      'foo "#{bar}"'
+      ^^^^^^^^^^^^^^ Interpolation in single quoted string detected. Use double quoted strings if you need interpolation.
+    RUBY
+
+    expect_correction(<<~'RUBY')
+      %{foo "#{bar}"}
+    RUBY
+  end
+
+  it 'registers an offense for interpolation in single quoted split string' do
+    expect_offense(<<~'RUBY')
+      'x' \
+        'foo #{bar}'
+        ^^^^^^^^^^^^ Interpolation in single quoted string detected. Use double quoted strings if you need interpolation.
+    RUBY
+  end
+
+  it 'registers an offense for interpolation in double + single quoted split string' do
+    expect_offense(<<~'RUBY')
+      "x" \
+        'foo #{bar}'
+        ^^^^^^^^^^^^ Interpolation in single quoted string detected. Use double quoted strings if you need interpolation.
+    RUBY
+  end
+
+  it 'does not register an offense for properly interpolation strings' do
+    expect_no_offenses(<<~'RUBY')
+      hello = "foo #{bar}"
+    RUBY
+  end
+
+  it 'does not register an offense for interpolation in nested strings' do
+    expect_no_offenses(<<~'RUBY')
+      foo = "bar '#{baz}' qux"
+    RUBY
+  end
+
+  it 'does not register an offense for interpolation in a regexp' do
+    expect_no_offenses(<<~'RUBY')
+      /\#{20}/
+    RUBY
+  end
+
+  it 'does not register an offense for an escaped interpolation' do
+    expect_no_offenses(<<~'RUBY')
+      "\#{msg}"
+    RUBY
+  end
+
+  it 'does not crash for \xff' do
+    expect_no_offenses(<<~'RUBY')
+      foo = "\xff"
+    RUBY
+  end
+
+  it 'does not register an offense for escaped crab claws in dstr' do
+    expect_no_offenses(<<~'RUBY')
+      foo = "alpha #{variable} beta \#{gamma}\" delta"
+    RUBY
+  end
+
+  it 'does not register offense for strings in %w()' do
+    expect_no_offenses(<<~'RUBY')
+      %w("#{a}-foo")
+    RUBY
+  end
+
+  it 'does not register an offense when using invalid syntax in interpolation' do
+    expect_no_offenses(<<~'RUBY')
+      '#{%<expression>s}'
+    RUBY
+  end
+
+  it 'does not register an offense when using invalid syntax in interpolation with double quotes' do
+    expect_no_offenses(<<~'RUBY')
+      'Text `A("#{%<base>s}/%<path>s")` and `B` with C.'
+    RUBY
+  end
+
+  it 'does not register an offense when double quotes and unbalanced braces would break percent literal' do
+    expect_no_offenses(<<~'RUBY')
+      'a "b" } #{c}'
+    RUBY
+  end
+
+  it 'registers an offense and corrects interpolation in a multiline single quoted string' do
+    expect_offense(<<~'RUBY')
+      foo = 'something with #{interpolation}
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Interpolation in single quoted string detected. Use double quoted strings if you need interpolation.
+      spanning lines'
+    RUBY
+
+    expect_correction(<<~'RUBY')
+      foo = "something with #{interpolation}
+      spanning lines"
+    RUBY
+  end
+
+  it 'does not register an offense (or crash) for interpolation in a heredoc' do
+    expect_no_offenses(<<~'RUBY')
+      foo = <<~TEXT
+        something with #{interpolation}
+      TEXT
+    RUBY
+  end
+end
