@@ -53,15 +53,7 @@ fn conflicting_space_inside_parens_style(cx: &Investigation<'_, '_>, arguments: 
     if arguments.range_source(arguments.loc().begin.unwrap()) != "(" {
         return false;
     }
-    // `config.for_enabled_cop('Layout/SpaceInsideParens')`.
-    let parens = cx.config.for_cop("Layout/SpaceInsideParens");
-    let enabled = !matches!(
-        parens.get("Enabled"),
-        None | Some(Value::Bool(false)) | Some(Value::Null)
-    );
-    if !enabled {
-        return false;
-    }
+    let parens = cx.config.for_enabled_cop("Layout/SpaceInsideParens");
     match parens.get("EnforcedStyle").and_then(Value::as_str) {
         Some("no_space") => style(cx) == "space",
         Some("space" | "compact") => style(cx) == "no_space",

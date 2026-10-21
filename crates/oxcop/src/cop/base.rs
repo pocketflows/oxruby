@@ -335,6 +335,21 @@ impl<'a, 'src> Investigation<'a, 'src> {
         }
     }
 
+    /// `max_line_length` (`autocorrect_logic.rb`): `Layout/LineLength`'s
+    /// `Max` (default 120), or `None` when that cop is disabled.
+    pub fn max_line_length(&self) -> Option<i64> {
+        if !self.config.cop_enabled_in_config("Layout/LineLength") {
+            return None;
+        }
+        Some(
+            self.config
+                .for_cop("Layout/LineLength")
+                .get("Max")
+                .and_then(Value::as_i64)
+                .unwrap_or(120),
+        )
+    }
+
     pub fn target_ruby_version(&self) -> f64 {
         self.processed_source.ruby_version()
     }
