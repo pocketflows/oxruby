@@ -5,7 +5,8 @@ EnsureReturn, Syntax (done before) and MissingCopEnableDirective (`runtime`).
 
 ## Done (whole upstream spec passes; example counts)
 
-AmbiguousBlockAssociation 52, ArrayLiteralInRegexp 32, BigDecimalNew 3,
+AmbiguousBlockAssociation 52, AmbiguousOperator 17,
+AmbiguousRegexpLiteral 15, ArrayLiteralInRegexp 32, BigDecimalNew 3,
 BinaryOperatorWithIdenticalOperands 23, BooleanSymbol 10,
 CircularArgumentReference 13, ConstantDefinitionInBlock 27,
 ConstantOverwrittenInRescue 8, DataDefineOverride 8, Debugger 97,
@@ -49,6 +50,13 @@ the `percent_literal` mixin (NestedPercentLiteral, PercentStringArray,
 PercentSymbolArray) and `cop/utils/format_string.rs`
 (FormatParameterMismatch).
 
+## Prism warnings
+
+AmbiguousOperator and AmbiguousRegexpLiteral read Prism's warnings
+(`processed_source.parse_result().warnings()`) and recognize the ones
+`Prism::Translation::Parser` maps to `:ambiguous_prefix`/`:ambiguous_regexp`
+by their message text: the Rust Prism API has no warning type.
+
 ## Shared changes
 
 - `cop/base.rs`: `Investigation::add_global_offense` (with
@@ -62,8 +70,7 @@ PercentSymbolArray) and `cop/utils/format_string.rs`
 
 ## Left
 
-ArgumentMismatch, AmbiguousAssignment,
-AmbiguousOperator, AmbiguousRegexpLiteral, ConstantReassignment,
+ArgumentMismatch, AmbiguousAssignment, ConstantReassignment,
 ConstantResolution, CopDirectiveSyntax, DeprecatedReference,
 DuplicateMagicComment, DuplicateMethods,
 DuplicateRegexpCharacterClassElement, ElseLayout,
