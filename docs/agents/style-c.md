@@ -10,6 +10,13 @@
 - Style/OpenStructUse 12
 - Style/OptionHash 10
 - Style/Proc 6
+- Style/NegatedIfElseCondition 32
+- Style/NestedFileDirname 4 (1 more is `unsupported_on: :prism`)
+- Style/NestedParenthesizedCalls 12
+- Style/NilLambda 31
+- Style/NonNilCheck 22
+- Style/NumberedParameters 4
+- Style/NumericLiteralPrefix 15
 
 ## Left
 
@@ -17,8 +24,17 @@ Everything else in Style N–R (see `../rubocop/lib/rubocop/cop/style/[n-r]*.rb`
 
 ## Blocked / principled failures
 
-None yet.
+- **auto-gen-config state through the shim** (owner: `runtime`, `spec/oxcop/`).
+  Some specs assert `cop.config_to_allow_offenses` or
+  `read_exclude_limit(cop, 'Max')` after `expect_offense`: Ruby cop-instance
+  state for `--auto-gen-config` (`exclude_limit`, `self.max = n`,
+  `config_to_allow_offenses = {...}`). The shim builds offenses from the
+  binary's JSON and never sets that state, so it is always `{}`. Needs a
+  channel binary → JSON → shim → Ruby cop object. Blocked cops (ported, on
+  `style-c-wip`, everything else in their specs passes):
+  - Style/NumberedParametersLimit (11/12; 1 auto-gen example)
+  - Style/NumericLiterals (24/28; 4 auto-gen examples)
 
 ## Mixins owned
 
-None yet.
+- `cop/mixin/integer_node.rs` (IntegerNode)

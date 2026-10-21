@@ -10,6 +10,7 @@ pub mod configurable_naming;
 pub mod frozen_string_literal;
 pub mod heredoc;
 pub mod ignored_node;
+pub mod integer_node;
 pub mod negative_conditional;
 pub mod parentheses;
 pub mod range_help;
