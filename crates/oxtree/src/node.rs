@@ -582,6 +582,7 @@ pub struct Node {
 }
 
 /// The tree: an arena of nodes plus the source it was parsed from.
+#[derive(Debug)]
 pub struct Ast {
     pub nodes: Vec<Node>,
     pub source: String,
