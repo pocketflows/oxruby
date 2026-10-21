@@ -2,6 +2,7 @@
 
 use crate::ast::{Node, NodeType};
 use crate::cop::mixin::ruby_regex;
+use crate::cop::mixin::util::regexp_escape;
 use crate::cop::{Cop, Investigation};
 use crate::processed_source::ProcessedSource;
 use crate::regex;
@@ -151,24 +152,3 @@ fn source_to_regexp(source: &str) -> Option<String> {
     Some(regexp_to_s(&format!(r"\s*{}", segments.join(r"\\?#"))))
 }
 
-/// `Regexp.escape`.
-fn regexp_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '[' | ']' | '{' | '}' | '(' | ')' | '|' | '-' | '*' | '.' | '\\' | '?' | '+' | '^'
-            | '$' | '#' => {
-                out.push('\\');
-                out.push(c);
-            }
-            ' ' => out.push_str("\\ "),
-            '\n' => out.push_str("\\n"),
-            '\t' => out.push_str("\\t"),
-            '\r' => out.push_str("\\r"),
-            '\x0c' => out.push_str("\\f"),
-            '\x0b' => out.push_str("\\v"),
-            c => out.push(c),
-        }
-    }
-    out
-}

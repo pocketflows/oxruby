@@ -12,6 +12,7 @@ use crate::ast::{Node, NodeType};
 use crate::cop::mixin::configurable_enforced_style::style;
 use crate::cop::mixin::ignored_node::IgnoredNodes;
 use crate::cop::mixin::util::parentheses;
+use crate::cop::mixin::util::regexp_escape;
 use crate::cop::{Corrector, Cop, Investigation};
 use crate::processed_source::{ProcessedSource, Range};
 
@@ -295,24 +296,6 @@ fn longest_line(node: Node<'_>, assignment: &str) -> String {
     format!("{assignment}{longest}")
 }
 
-/// `Regexp.escape`.
-fn regexp_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '[' | ']' | '{' | '}' | '(' | ')' | '|' | '-' | '*' | '.' | '\\' | '?' | '+' | '^'
-            | '$' | '#' => {
-                out.push('\\');
-                out.push(c);
-            }
-            ' ' => out.push_str("\\ "),
-            '\n' => out.push_str("\\n"),
-            '\t' => out.push_str("\\t"),
-            c => out.push(c),
-        }
-    }
-    out
-}
 
 /// `safe_to_correct?`: `correction_parses?(node)`; a correction that raises
 /// (here: one that finds the tree in an unexpected shape) is not safe.

@@ -1,6 +1,7 @@
 //! Port of `lib/rubocop/cop/style/disable_cops_within_source_code_directive.rb`.
 
 use crate::cop::mixin::ruby_regex;
+use crate::cop::mixin::util::regexp_escape;
 use crate::cop::{Cop, Investigation};
 use crate::directive_comment::DirectiveComment;
 use crate::processed_source::Comment;
@@ -102,21 +103,3 @@ fn listed(names: &[&str], cop: &str) -> bool {
     names.contains(&cop) || names.contains(&cop.split('/').next().unwrap_or(""))
 }
 
-/// `Regexp.escape`.
-fn regexp_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '[' | ']' | '{' | '}' | '(' | ')' | '|' | '-' | '*' | '.' | '\\' | '?' | '+' | '^'
-            | '$' | '#' => {
-                out.push('\\');
-                out.push(c);
-            }
-            ' ' => out.push_str("\\ "),
-            '\n' => out.push_str("\\n"),
-            '\t' => out.push_str("\\t"),
-            c => out.push(c),
-        }
-    }
-    out
-}

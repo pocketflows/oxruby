@@ -31,32 +31,25 @@ Notes:
   `correction_parses?`) applies the correction and reparses with Prism,
   locally; it doesn't use style-d's `reparsed_equivalence` mixin.
 
-## Done, waiting on branch `style-a-wip` (they touch shared files)
+## Landed in the second batch (after the gate freeze)
 
-Main's full gate was frozen by the coordinator; these need a full-gate
-landing:
+AmbiguousEndlessMethodDefinition 31, ArrayIntersect 93, BisectedAttrAccessor 14,
+CaseLikeIf 38, ClassAndModuleChildren 60 (+7 pending: rubydex project index),
+CombinableDefined 39, CommentAnnotation 29, ComparableClamp 20,
+Documentation 61 (+6 pending: rubydex), EmptyElse 124, Encoding 13,
+EndlessMethod 71.
 
-- Encoding 13 (adds `MagicComment#encoding_specified` and `#without`).
-- ArrayIntersect 93 (`target_ruby.rs`: a string `TargetRubyVersion` such as
-  `'3.1'` is read with Ruby's `to_f`; the spec configures one).
-- EndlessMethod 71, AmbiguousEndlessMethodDefinition 31 (new mixin
-  `endless_method_rewriter`).
-- CommentAnnotation 29, Documentation 61 (+6 pending: rubydex project index,
-  as upstream without it) (new mixins `annotation_comment`,
-  `documentation_comment`; `Util.regexp_escape`).
-- BisectedAttrAccessor 14 (`Investigation::correct`, Base#correct outside
-  `add_offense`).
+- CaseLikeIf's `regexp_with_named_captures?` looks for `(?<name>` / `(?'name'`
+  in the regexp's literal parts (written before the regexp_parser port
+  landed; it could now use `RegexpNode#parsed_tree`).
 
 ## Left
 
-- CaseLikeIf: needs `min_branches_count` (style-b, not landed yet).
-- EmptyElse: needs `on_normal_if_unless` (style-b, not landed yet).
-- ClassAndModuleChildren, ComparableClamp: need `alignment` (layout-b, not
-  landed yet).
-- DocumentationMethod: needs `def_node` (claimed by depts, not written yet).
-- Copyright: needs comment tokens (`processed_source.tokens` is a stub).
-- DirectiveScope: needs tokens (`comment_only_line?`) and CommentConfig's
-  `statement_scope_after` and directive back-references on disabled ranges.
+- DocumentationMethod: needs `def_node` (claimed by depts, not on main yet).
+- Copyright: needs comment tokens (now landing).
+- DirectiveScope: needs tokens (`comment_only_line?`) plus public
+  CommentConfig `comment_only_line` / `statement_scope_after` (the analyzer
+  has them privately; `cop_disabled_line_ranges` and `directives` are public).
 
 ## Mixins owned (claimed in .coord/claims)
 
@@ -64,18 +57,14 @@ Landed: `string_help` (`StringHelp::candidate` does the `on_str`/`on_regexp`
 guards), `empty_parameter`, `interpolation` (`NODE_TYPES` +
 `interpolations(node)`), `string_literals_help`, `method_preference`,
 `allowed_receivers`, `dig_help`.
-Pending (on `style-a-wip`): `endless_method_rewriter`,
-`annotation_comment`, `documentation_comment`.
+Also landed: `endless_method_rewriter`, `annotation_comment`,
+`documentation_comment`.
 
 ## Shared edits
 
-- `magic_comment.rs`, `target_ruby.rs`, `cop/base.rs`
-  (`Investigation::correct`), `cop/mixin/util.rs` (`regexp_escape`): pending,
-  see above.
-- `Regexp.escape` is still duplicated privately in a few of my cops
-  (ConditionalAssignment, DocumentDynamicEvalDefinition,
-  DisableCopsWithinSourceCodeDirective); switch them to `util::regexp_escape`
-  once it lands.
+- `magic_comment.rs`: `encoding_specified`, `without(type)`.
+- `cop/base.rs`: `Investigation::correct` (Base#correct outside add_offense).
+- `cop/mixin/util.rs`: `regexp_escape` (Regexp.escape); my cops use it.
 
 ## Notes for the coordinator / runtime
 
