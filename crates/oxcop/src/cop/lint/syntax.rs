@@ -17,6 +17,9 @@ impl Cop for Syntax {
 
     fn on_other_file(&mut self, cx: &mut Investigation<'_, '_>) {
         let processed_source = cx.processed_source;
+        if let Some(error) = processed_source.parser_error() {
+            cx.add_global_offense(&beautify_message(error));
+        }
         let ruby_version = format_version(processed_source.ruby_version());
         for diagnostic in processed_source.diagnostics() {
             let message = format!(
@@ -27,6 +30,19 @@ impl Cop for Syntax {
             cx.add_offense(range, &message);
         }
     }
+}
+
+/// `beautify_message`: `message.capitalize`, plus a final period.
+fn beautify_message(message: &str) -> String {
+    let mut chars = message.chars();
+    let mut message: String = match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars.flat_map(char::to_lowercase)).collect(),
+        None => String::new(),
+    };
+    if !message.ends_with('.') {
+        message.push('.');
+    }
+    message
 }
 
 /// Expand zero-length diagnostic ranges so that editors and formatters can

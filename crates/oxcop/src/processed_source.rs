@@ -159,6 +159,8 @@ pub struct ProcessedSource<'src> {
     parse_result: ParseResult<'src>,
     line_starts: Vec<usize>,
     diagnostics: Vec<Diagnostic>,
+    /// `parser_error`: the `EncodingError` the buffer raised for the source.
+    parser_error: Option<String>,
     lines: Vec<&'src str>,
     ruby_version: f64,
     ast: Ast,
@@ -224,6 +226,7 @@ impl<'src> ProcessedSource<'src> {
             parse_result,
             line_starts,
             diagnostics,
+            parser_error: None,
             lines,
             ruby_version,
             comments,
@@ -232,6 +235,20 @@ impl<'src> ProcessedSource<'src> {
             comment_index: OnceCell::new(),
             ast_with_comments: OnceCell::new(),
         }
+    }
+
+    /// A source whose bytes `Buffer#source=` rejected (an invalid byte
+    /// sequence, an unknown encoding in the magic comment): `parse` keeps
+    /// the error as `parser_error` and leaves no AST, comments or tokens.
+    pub fn with_parser_error(ruby_version: f64, path: &Path, error: String) -> Self {
+        let mut processed_source = Self::new("", "", ruby_version, path);
+        processed_source.parser_error = Some(error);
+        processed_source
+    }
+
+    /// `parser_error`.
+    pub fn parser_error(&self) -> Option<&str> {
+        self.parser_error.as_deref()
     }
 
     /// `file_path` (`buffer.name`).
@@ -387,7 +404,7 @@ impl<'src> ProcessedSource<'src> {
     }
 
     pub fn valid_syntax(&self) -> bool {
-        self.diagnostics.is_empty()
+        self.parser_error.is_none() && self.diagnostics.is_empty()
     }
 
     pub fn diagnostics(&self) -> &[Diagnostic] {

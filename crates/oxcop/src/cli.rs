@@ -226,6 +226,15 @@ fn validate_compatibility(options: &Options) -> Result<(), String> {
     {
         return Err("Lint/RedundantCopDisableDirective cannot be used with --only.".to_owned());
     }
+    // `except_syntax?`
+    if !options.raw_config
+        && options
+            .except
+            .iter()
+            .any(|cop| cop == "Lint/Syntax" || cop == "Syntax")
+    {
+        return Err("Syntax checking cannot be turned off.".to_owned());
+    }
     Ok(())
 }
 
@@ -335,7 +344,7 @@ fn dump_ast(options: &Options, io: &mut Io) -> i32 {
                 return STATUS_ERROR;
             }
         };
-        let (source, _) = crate::source_encoding::decode(&bytes);
+        let (source, _) = crate::source_encoding::decode_lossy(&bytes);
         let buffer = crate::processed_source::normalize_newlines(&source);
         let processed = crate::processed_source::ProcessedSource::new(
             &source,

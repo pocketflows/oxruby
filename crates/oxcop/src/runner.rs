@@ -15,7 +15,7 @@ use crate::formatter::Formatter;
 use crate::options::{AutocorrectMode, FailLevel, Options};
 use crate::path_util;
 use crate::processed_source::ProcessedSource;
-use crate::source_encoding;
+use crate::source_encoding::{self, SourceEncoding};
 use crate::target_finder::TargetFinder;
 use crate::target_ruby::target_ruby_version;
 
@@ -132,7 +132,7 @@ impl<'a> Runner<'a> {
             inspector: Inspector {
                 options,
                 selection: Selection {
-                    only: options.only.clone(),
+                    only: only_cops(options),
                     except: options.except.clone(),
                     registry_from_config: options.raw_config,
                 },
@@ -378,23 +378,36 @@ impl Inspector<'_> {
                 }
             },
         };
-        let (source, encoding) = source_encoding::decode(&bytes);
-        let (mut corrected_source, offenses) =
-            self.do_inspection_loop(file, source.clone(), config, &mut result);
+        // `ProcessedSource#parse` rescues the buffer's `EncodingError`: the
+        // file is investigated as one without valid syntax (Lint/Syntax
+        // reports the error), with no source to correct.
+        let (source, encoding, parser_error) = match source_encoding::decode(&bytes) {
+            Ok((source, encoding)) => (source, encoding, None),
+            Err(error) => (String::new(), SourceEncoding::default(), Some(error)),
+        };
+        let (mut corrected_source, offenses) = self.do_inspection_loop(
+            file,
+            source.clone(),
+            parser_error.as_deref(),
+            config,
+            &mut result,
+        );
         let mut offenses: Vec<Offense> = offenses.into_iter().flatten().collect();
         offenses.sort();
 
-        // add_redundant_disables
+        // add_redundant_disables (a source with a parser error has no
+        // comments, so no directives).
         let current = corrected_source.as_deref().unwrap_or(&source);
-        if let Some((new_offenses, updated)) =
-            self.redundant_disables(file, current, config, &offenses, &mut result)
+        if parser_error.is_none()
+            && let Some((new_offenses, updated)) =
+                self.redundant_disables(file, current, config, &offenses, &mut result)
         {
             offenses.extend(new_offenses);
             if let Some(updated) = updated {
                 // One more loop: removing a disable can make an enable
                 // redundant.
                 let (again, more) =
-                    self.do_inspection_loop(file, updated.clone(), config, &mut result);
+                    self.do_inspection_loop(file, updated.clone(), None, config, &mut result);
                 corrected_source = Some(again.unwrap_or(updated));
                 for offense in more.into_iter().flatten() {
                     if !offenses.contains(&offense) {
@@ -497,7 +510,7 @@ impl Inspector<'_> {
             let Ok(bytes) = std::fs::read(file) else {
                 continue;
             };
-            let (source, _) = source_encoding::decode(&bytes);
+            let (source, _) = source_encoding::decode_lossy(&bytes);
             let buffer_source = crate::processed_source::normalize_newlines(&source);
             let path = Path::new(name);
             let processed_source =
@@ -513,6 +526,7 @@ impl Inspector<'_> {
         &self,
         file: &Path,
         mut source: String,
+        parser_error: Option<&str>,
         config: &Config,
         result: &mut FileResult,
     ) -> (Option<String>, Vec<Vec<Offense>>) {
@@ -541,8 +555,12 @@ impl Inspector<'_> {
             }
             let new_source = {
                 let buffer_source = crate::processed_source::normalize_newlines(&source);
-                let processed_source =
-                    ProcessedSource::new(&source, &buffer_source, ruby_version, file);
+                let processed_source = match parser_error {
+                    Some(error) => {
+                        ProcessedSource::with_parser_error(ruby_version, file, error.to_owned())
+                    }
+                    None => ProcessedSource::new(&source, &buffer_source, ruby_version, file),
+                };
                 // `--quiet-first-pass`: the spec shim's autocorrect run
                 // repeats the investigation it just reported.
                 let report = if self.options.quiet_first_pass && offenses_by_iteration.is_empty() {
@@ -575,6 +593,16 @@ impl Inspector<'_> {
 
         (corrected.then_some(source), offenses_by_iteration)
     }
+}
+
+/// `--only`, with `Lint/Syntax` first, as `Options#add_cop_selection_csv_option`
+/// adds it (not for RuboCop's specs, which run the cop alone).
+fn only_cops(options: &Options) -> Vec<String> {
+    let mut only = options.only.clone();
+    if !options.raw_config && !only.is_empty() && !only.iter().any(|cop| cop == "Lint/Syntax") {
+        only.insert(0, "Lint/Syntax".to_owned());
+    }
+    only
 }
 
 /// Reads `--auto-gen-state`: `{"config_to_allow_offenses": {cop: {...}},
