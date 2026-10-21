@@ -33,18 +33,24 @@
 - Style/RedundantAssignment 12
 - Style/RedundantCurrentDirectoryInPath 13
 - Style/RedundantEach 36
+- Style/RedundantDoubleSplatHashBraces 30
+- Style/RedundantFetchBlock 15
 - Style/RedundantException 32
 - Style/RedundantFileExtensionInRequire 5
 - Style/RedundantFilterChain 45
 - Style/RedundantFreeze 47
 - Style/RedundantHeredocDelimiterQuotes 17
 - Style/RedundantInterpolationUnfreeze 16
+- Style/RedundantInitialize 23
+- Style/RedundantPercentQ 27
 - Style/RedundantMinMaxBy 33
 - Style/RedundantRegexpConstructor 11
 - Style/RedundantSelfAssignmentBranch 22
+- Style/RedundantSelfAssignment 14
 - Style/RedundantSortBy 8
 - Style/RedundantStructKeywordInit 12
 - Style/ReturnNil 5
+- Style/ReturnNilInPredicateMethodDefinition 39
 - Style/ReverseFind 14
 
 ## Left
@@ -74,3 +80,10 @@ Everything else in Style N–R (see `../rubocop/lib/rubocop/cop/style/[n-r]*.rb`
 ## Mixins owned
 
 - `cop/mixin/integer_node.rs` (IntegerNode)
+
+## Shared-file edits
+
+- `cop/mixin/allowed_pattern.rs`: `allowed_pattern_regexes` and
+  `config_regex` accept Ruby regexps in config (`!ruby/regexp /src/flags`, as
+  the spec shim dumps `AllowedPatterns: [/foo/]`); `matches_allowed_pattern`
+  uses them. `allowed_patterns` (strings only) is unchanged.
