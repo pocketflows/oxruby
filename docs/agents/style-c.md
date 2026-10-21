@@ -24,6 +24,7 @@
 - Style/OptionalArguments 13
 - Style/OptionalBooleanParameter 8
 - Style/PartitionInsteadOfDoubleSelect 37
+- Style/PercentQLiterals 21
 - Style/PerlBackrefs 14
 - Style/PredicateWithKind 64
 - Style/PreferredHashMethods 9
@@ -34,6 +35,7 @@
 - Style/RedundantArrayFlatten 10
 - Style/RedundantAssignment 12
 - Style/RedundantBegin 62
+- Style/RedundantCapitalW 13
 - Style/RedundantCondition 102
 - Style/RedundantConstantBase 11 (3 pending: need the `rubydex` project index, as upstream without it)
 - Style/RedundantCurrentDirectoryInPath 13
@@ -42,9 +44,11 @@
 - Style/RedundantFetchBlock 15
 - Style/RedundantException 32
 - Style/RedundantFileExtensionInRequire 5
+- Style/RedundantFormat 306
 - Style/RedundantFilterChain 45
 - Style/RedundantFreeze 47
 - Style/RedundantHeredocDelimiterQuotes 17
+- Style/RedundantInterpolation 29
 - Style/RedundantInterpolationUnfreeze 16
 - Style/RedundantInitialize 23
 - Style/RedundantPercentQ 27
