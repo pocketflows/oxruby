@@ -665,7 +665,8 @@ fn only_cops(options: &Options) -> Vec<String> {
     only
 }
 
-/// Reads `--target-gems`: `{"names": [...], "path_sourced": [...]}`.
+/// Reads `--target-gems`: `{"names": [...], "path_sourced": [...]}`, and
+/// optionally `"versions": {name: version}`.
 fn read_target_gems(path: &Path) -> Result<crate::lockfile::TargetGems, ConfigError> {
     let error = |e: &dyn std::fmt::Display| ConfigError(format!("{}: {e}", path.display()));
     let json: serde_json::Value =
@@ -681,9 +682,20 @@ fn read_target_gems(path: &Path) -> Result<crate::lockfile::TargetGems, ConfigEr
             })
             .unwrap_or_default()
     };
+    let versions = json
+        .get("versions")
+        .and_then(serde_json::Value::as_object)
+        .map(|versions| {
+            versions
+                .iter()
+                .filter_map(|(name, v)| Some((name.clone(), v.as_str()?.to_owned())))
+                .collect()
+        })
+        .unwrap_or_default();
     Ok(crate::lockfile::TargetGems {
         names: list("names"),
         path_sourced: list("path_sourced"),
+        versions,
     })
 }
 

@@ -59,6 +59,12 @@ pub trait Cop {
         None
     }
 
+    /// `requires_gem(gem_name, *version_requirements)`: the cop only runs
+    /// when the target's lockfile has each gem at a satisfying version.
+    fn gem_requirements(&self) -> &'static [(&'static str, &'static [&'static str])] {
+        &[]
+    }
+
     fn on_new_investigation(&mut self, _cx: &mut Investigation<'_, '_>) {}
 
     fn on_node<'a>(&mut self, _cx: &mut Investigation<'a, '_>, _node: Node<'a>) {}
@@ -383,6 +389,12 @@ impl<'a, 'src> Investigation<'a, 'src> {
 
     pub fn target_ruby_version(&self) -> f64 {
         self.processed_source.ruby_version()
+    }
+
+    /// `target_gem_version(gem_name)`: the gem's version in the target's
+    /// lockfile.
+    pub fn target_gem_version(&self, gem_name: &str) -> Option<crate::gem_version::Version> {
+        crate::lockfile::target_gems(self.config)?.version(gem_name)
     }
 
     /// The source of a range.

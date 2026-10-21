@@ -45,18 +45,42 @@ Owner: `config` (round 2). Scope: configuration loading gaps (ROADMAP
   `Gem::Version` / `Gem::Requirement`, for the gemspec source and for
   `requires_gem` later), `Config::bundler_lock_file_path`.
 
+- **ConfigFinder** stops at the project root (topmost `Gemfile` /
+  `gems.rb` above the working directory, cached per run in `ConfigLoader`)
+  and then tries `<root>/.config/.rubocop.yml` and
+  `<root>/.config/rubocop/config.yml` before the user's files.
+- **`add_excludes_from_files`**: the topmost `.rubocop.yml` up to the
+  project root adds its `AllCops: Exclude` to nested configurations;
+  `--ignore-parent-exclusion` (new) turns it off.
+- **`add_missing_namespaces`**: unqualified or wrongly qualified cop names
+  are qualified, with upstream's "no department given" / "has the wrong
+  namespace" warnings and the AmbiguousCopName error. The registry is core
+  cops + plugin cops from the default configuration + the file's own keys
+  outside core departments (plugin/custom cops, which upstream has
+  registered by then). Not ported: skipping ConfigObsoletion's deprecated
+  names (ConfigObsoletion itself isn't ported).
+- **`inherit_from` globs**, through `path_util::dir_glob` (a `Dir.glob`
+  port: braces, `**/`, no dotfiles, relative to the working directory as
+  upstream's is).
+- **`gem_versions_in_target`** in `lockfile.rs` (index's module, extended):
+  `TargetGems::versions` / `version(name)`, `cx.target_gem_version(name)`,
+  and `Cop::gem_requirements()` (`requires_gem`), checked by the team as
+  `target_satisfies_all_gem_version_requirements?` does. No core cop uses
+  it; plugin ports will. The spec shim's `--target-gems` accepts an
+  optional `versions` map but the shim doesn't send it yet.
+
+All checked against rubocop (code's bundle, `BUNDLE_GEMFILE`) on scratch
+projects, and gated by the real-config compare on ../code (0 differences).
+
 ## Left
 
-- `gem_versions_in_target` / `path_sourced_gems_in_target`: the `index`
-  agent claimed `lockfile` (for Lint/NameTypo), so `Lockfile` is theirs.
-  `Config::bundler_lock_file_path` and `gem_version::Version` are ready for
-  it. `Cop::Base#requires_gem` then needs `gem_requirements` on `Cop`
-  (no core cop uses it; plugin ports will).
-- ConfigFinder's project-root stop and `.config/` lookups,
-  `add_excludes_from_files` (+ `--ignore-parent-exclusion`),
-  `add_missing_namespaces`, `inherit_from` globs (see below for progress).
-- Remote `inherit_from` URLs: needs an HTTP client (and RemoteConfig's
-  cache). Decision for the user: add a crates.io HTTP dependency, shell
-  out to `curl`, or let the Ruby launcher fetch them.
+- Remote `inherit_from` URLs: needs an HTTP client and RemoteConfig's
+  cache (`cache_root`, 24 h). **Decision for the user:** add a crates.io
+  HTTP dependency, shell out to `curl`, or let the Ruby launcher fetch them.
 - Plugins whose `rules` aren't `config/default.yml` (`type: :object`):
-  needs the plugin's Ruby code; the launcher could resolve them.
+  needs the plugin's Ruby code; the launcher could resolve them and pass
+  the hash.
+- `XDG_CONFIG_HOME` containing `~` isn't expanded (`File.expand_path`
+  would).
+- ConfigValidator (roadmap item 5) would use `target_ruby::is_supported`
+  and `Source::name` for the "unsupported Ruby version" error.

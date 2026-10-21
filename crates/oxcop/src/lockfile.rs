@@ -1,6 +1,7 @@
 //! Port of the parts of `lib/rubocop/lockfile.rb` and `Config`
 //! (`gem_versions_in_target`, `path_sourced_gems_in_target`) that Lint/NameTypo uses: the names of the
-//! target's locked gems, and which of them come from a local path.
+//! target's locked gems, and which of them come from a local path; and
+//! their versions, for `Cop::Base#requires_gem` / `target_gem_version`.
 //!
 //! Bundler's `LockfileParser` is replaced by a reading of the lockfile's
 //! sections: every `GEM`, `GIT` and `PATH` section lists its gems under
@@ -18,6 +19,39 @@ pub struct TargetGems {
     pub names: Vec<String>,
     /// `path_sourced_gems_in_target`.
     pub path_sourced: Vec<String>,
+    /// `gem_versions_in_target`: each locked gem's version (the last spec
+    /// of that name, as `specs.to_h` keeps).
+    pub versions: Vec<(String, String)>,
+}
+
+impl TargetGems {
+    /// `gem_versions_in_target[gem_name]`.
+    pub fn version(&self, gem_name: &str) -> Option<crate::gem_version::Version> {
+        let (_, version) = self.versions.iter().find(|(name, _)| name == gem_name)?;
+        crate::gem_version::Version::new(version)
+    }
+}
+
+/// `Base#target_satisfies_all_gem_version_requirements?`: every
+/// `requires_gem` requirement is met by the target's locked version (a
+/// target without a lockfile, or without the gem, satisfies none).
+pub fn satisfies_all_gem_version_requirements(
+    config: &Config,
+    gem_requirements: &[(&str, &[&str])],
+) -> bool {
+    if gem_requirements.is_empty() {
+        return true;
+    }
+    let Some(gems) = target_gems(config) else {
+        return false;
+    };
+    gem_requirements.iter().all(|(gem_name, requirements)| {
+        let Some(version) = gems.version(gem_name) else {
+            return false;
+        };
+        crate::gem_version::Requirement::new(requirements)
+            .is_some_and(|requirement| requirement.is_satisfied_by(&version))
+    })
 }
 
 /// What RuboCop's specs stub `gem_versions_in_target` and
@@ -78,6 +112,17 @@ pub fn parse(source: &str) -> TargetGems {
         let Some(name) = spec.split(' ').next().filter(|name| !name.is_empty()) else {
             continue;
         };
+        // Bundler's `NAME_VERSION`: `name (version[-platform])`.
+        if let Some(version) = spec[name.len()..]
+            .strip_prefix(" (")
+            .and_then(|rest| rest.split(')').next())
+            .map(|version| version.split('-').next().unwrap_or(version))
+        {
+            match gems.versions.iter_mut().find(|(n, _)| n == name) {
+                Some((_, existing)) => *existing = version.to_owned(),
+                None => gems.versions.push((name.to_owned(), version.to_owned())),
+            }
+        }
         if !gems.names.iter().any(|n| n == name) {
             gems.names.push(name.to_owned());
         }
@@ -106,5 +151,34 @@ mod tests {
             ["my_app", "flipper", "rails", "railties", "nokogiri"]
         );
         assert_eq!(gems.path_sourced, ["my_app"]);
+        assert_eq!(gems.version("nokogiri").unwrap().as_str(), "1.16.0");
+        assert_eq!(gems.version("rails").unwrap().as_str(), "7.1.0");
+        assert!(gems.version("activerecord").is_none());
+    }
+
+    // `Base#target_satisfies_all_gem_version_requirements?`
+    #[test]
+    fn gem_requirements_need_a_satisfying_locked_version() {
+        let dir = std::env::temp_dir().join(format!("oxcop-requires-gem-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("Gemfile.lock"),
+            "GEM\n  remote: https://rubygems.org/\n  specs:\n    rails (7.1.3)\n\nBUNDLED WITH\n   2.5.0\n",
+        )
+        .unwrap();
+        let config = Config::new(Default::default(), Some(dir.join(".rubocop.yml")));
+        let satisfied =
+            |reqs: &[(&str, &[&str])]| satisfies_all_gem_version_requirements(&config, reqs);
+        assert!(satisfied(&[]));
+        assert!(satisfied(&[("rails", &[">= 7.0"])]));
+        assert!(satisfied(&[("rails", &[])]));
+        assert!(!satisfied(&[("rails", &[">= 7.2"])]));
+        assert!(!satisfied(&[("sidekiq", &[])]));
+        let without_lockfile = Config::new(Default::default(), None);
+        assert!(!satisfies_all_gem_version_requirements(
+            &without_lockfile,
+            &[("rails", &[])]
+        ));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

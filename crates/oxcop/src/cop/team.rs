@@ -123,6 +123,10 @@ impl<'a> Team<'a> {
                     && cop
                         .maximum_target_ruby_version()
                         .is_none_or(|max| target <= max)
+                    && crate::lockfile::satisfies_all_gem_version_requirements(
+                        self.config,
+                        cop.gem_requirements(),
+                    )
             })
             .collect()
     }
