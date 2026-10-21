@@ -31,6 +31,7 @@
 - Style/RedundantArrayConstructor 13
 - Style/RedundantArrayFlatten 10
 - Style/RedundantAssignment 12
+- Style/RedundantBegin 62
 - Style/RedundantCurrentDirectoryInPath 13
 - Style/RedundantEach 36
 - Style/RedundantDoubleSplatHashBraces 30
