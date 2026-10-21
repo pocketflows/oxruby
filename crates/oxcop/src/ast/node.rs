@@ -1305,6 +1305,14 @@ impl<'a> Node<'a> {
     }
 
     /// `modifier_form?`
+    /// `single_line_condition?` (ConditionalNode).
+    pub fn is_single_line_condition(&self) -> bool {
+        match (self.loc().keyword, self.condition()) {
+            (Some(keyword), Some(condition)) => self.line_of(keyword) == condition.first_line(),
+            _ => false,
+        }
+    }
+
     pub fn is_modifier_form(&self) -> bool {
         match self.ty() {
             NodeType::If => (self.is_if() || self.is_unless()) && self.loc().end.is_none(),
