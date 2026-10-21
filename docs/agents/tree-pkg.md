@@ -45,13 +45,8 @@ and homepage, and `lib/oxtree/version.rb` (`VERSION`, plus
 - The launcher passes every argument straight to the binary. It doesn't set
   the `OXCOP_RUBY_*` environment that oxcop's launcher sets, because nothing
   in oxtree reads it. Ask for it if the CLI needs the Ruby version.
-- **`stree` executable (decision pending with the user):** opt-in at gem
-  build time only. `OXTREE_STREE=1 rake oxtree:gem:...` adds `exe/stree` to
-  the gem's files and executables. RubyGems makes bin stubs at install time
-  from `spec.executables`, so it can't be a run-time switch. The published
-  gems would need one of: build with `OXTREE_STREE=1` (every user gets an
-  `stree` that shadows syntax_tree's), publish a separate `oxtree-stree` gem,
-  or no `stree` at all (the default now).
+- **No `stree` executable** (the user's decision): the gem ships only
+  `oxtree`. An earlier `OXTREE_STREE=1` build-time opt-in was removed.
 
 ### Rake (`rakelib/oxtree.rake`)
 
@@ -85,8 +80,6 @@ and tests without running `oxtree:check` a second time.
 - Installed the `ruby` gem the same way. `bin/oxtree` prints "oxtree does not
   ship a prebuilt binary for arm64-darwin-24 ..." and exits 2. With
   `OXTREE_BINARY=...` it runs.
-- With `OXTREE_STREE=1` the native gem also installs `bin/stree`, which runs
-  the same binary.
 - `bundle exec rake version:check cargo:check oxtree:version:check` (the
   default task minus the rspec run) passes with both crates, and so does
   `rake oxtree:check`.
@@ -109,8 +102,6 @@ Additive lines only:
 
 ## Decisions for the user
 
-- **`stree` executable:** see "Gem" above. It's off unless the gem is built
-  with `OXTREE_STREE=1`.
 - **Publishing oxtree on the next tag:** with the release.yml change, a `v*`
   tag would `gem push` oxtree 0.1.0, whose binary has only dev commands until
   tree-cli's CLI lands. Decide whether to gate the `oxtree:gem:*` release

@@ -14,9 +14,8 @@ gem "oxtree", require: false
 bundle exec oxtree check '**/*.rb'   # stree's commands, options and output
 ```
 
-The gem installs only an `oxtree` executable. An `stree`-named alias, which
-would shadow syntax_tree's, is included only in gems built with
-`OXTREE_STREE=1`.
+The gem installs a single `oxtree` executable. It has no `stree` alias, so
+it never shadows syntax_tree's when both are bundled.
 
 oxtree is early: see the [project README](https://github.com/theodoretliu/oxruby)
 for status.

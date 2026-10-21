@@ -24,13 +24,7 @@ Gem::Specification.new do |spec|
     "rubygems_mfa_required" => "true"
   }
 
-  # An `stree` executable would shadow syntax_tree's when both are bundled,
-  # so it is opt-in at build time: OXTREE_STREE=1 rake oxtree:gem:...
-  executables = ["oxtree"]
-  executables << "stree" if ENV["OXTREE_STREE"] == "1"
-
-  spec.files = Dir["lib/**/*.rb", "exe/*/oxtree", "LICENSE.txt", "README.md"] +
-               executables.map { |name| "exe/#{name}" }
+  spec.files = Dir["lib/**/*.rb", "exe/oxtree", "exe/*/oxtree", "LICENSE.txt", "README.md"]
   spec.bindir = "exe"
-  spec.executables = executables
+  spec.executables = ["oxtree"]
 end
