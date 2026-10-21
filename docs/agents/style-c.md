@@ -27,8 +27,10 @@
 - Style/PredicateWithKind 64
 - Style/PreferredHashMethods 9
 - Style/RandomWithOffset 29
+- Style/ReduceToHash 23
 - Style/RedundantArrayConstructor 13
 - Style/RedundantArrayFlatten 10
+- Style/RedundantAssignment 12
 - Style/RedundantException 32
 - Style/RedundantFileExtensionInRequire 5
 - Style/RedundantFreeze 47
@@ -54,6 +56,13 @@ Everything else in Style N–R (see `../rubocop/lib/rubocop/cop/style/[n-r]*.rb`
   `style-c-wip`, everything else in their specs passes):
   - Style/NumberedParametersLimit (11/12; 1 auto-gen example)
   - Style/NumericLiterals (24/28; 4 auto-gen examples)
+- **Invalid UTF-8 in a spec's cop config** (owner: `runtime`,
+  `spec/oxcop/binary.rb`). `with_config` does `YAML.dump(config.to_h)`,
+  which raises `ArgumentError: invalid byte sequence in UTF-8` for a config
+  string like `"\x82"`. Dumping such strings as `!binary` (e.g. force
+  `ASCII-8BIT` encoding on invalid strings before dumping) would fix it; the
+  binary side already decodes `!binary` values for this cop.
+  - Style/RedundantArgument (14/15), on `style-c-wip`.
 
 ## Mixins owned
 
