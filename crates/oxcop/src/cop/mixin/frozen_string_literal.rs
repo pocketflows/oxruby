@@ -19,6 +19,14 @@ pub fn leading_comment_lines<'p>(ps: &'p ProcessedSource<'_>) -> &'p [&'p str] {
     }
 }
 
+/// `leading_magic_comments`
+pub fn leading_magic_comments<'p>(ps: &'p ProcessedSource<'_>) -> Vec<MagicComment<'p>> {
+    leading_comment_lines(ps)
+        .iter()
+        .map(|line| MagicComment::parse(line))
+        .collect()
+}
+
 /// `frozen_string_literal_comment_exists?`
 pub fn frozen_string_literal_comment_exists(ps: &ProcessedSource<'_>) -> bool {
     leading_comment_lines(ps)
