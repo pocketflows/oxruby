@@ -25,6 +25,8 @@ pub struct Config {
     pub pending_cops_option: Option<bool>,
     /// `--preview` / `--no-preview` (`Config#preview?(options)`).
     pub preview_option: Option<bool>,
+    /// `Config#target_ruby` (`TargetRuby.new(self)`), resolved once.
+    target_ruby: OnceLock<crate::target_ruby::Source>,
 }
 
 /// The cops RuboCop's registry would know about for this configuration:
@@ -150,6 +152,7 @@ impl Config {
             badge_configs: OnceLock::new(),
             pending_cops_option: None,
             preview_option: None,
+            target_ruby: OnceLock::new(),
         }
     }
 
@@ -301,6 +304,28 @@ impl Config {
             (Some(added), Some(pinned)) => added <= pinned,
             _ => false,
         }
+    }
+
+    /// `Config#target_ruby`: where the target Ruby version comes from.
+    pub fn target_ruby(&self) -> &crate::target_ruby::Source {
+        self.target_ruby
+            .get_or_init(|| crate::target_ruby::source(self))
+    }
+
+    /// `Config#bundler_lock_file_path`: the nearest `Gemfile.lock` (else
+    /// `gems.locked`) upwards from the base directory, for a configuration
+    /// loaded from a file.
+    pub fn bundler_lock_file_path(&self) -> Option<PathBuf> {
+        self.loaded_path.as_ref()?;
+        ["Gemfile.lock", "gems.locked"]
+            .into_iter()
+            .find_map(|name| {
+                crate::file_finder::find_file_upwards(
+                    name,
+                    &self.base_dir_for_path_parameters,
+                    None,
+                )
+            })
     }
 
     /// `Config#preview?(options)`: `--[no-]preview`, else `AllCops: Preview`.
