@@ -2,7 +2,8 @@
 
 ## Landed on main (whole upstream spec passes; example counts)
 
-ClassStructure 41, DotPosition 40, EmptyComment 15,
+BlockEndNewline 18, ClassStructure 41, ClosingHeredocIndentation 11,
+DotPosition 40, EmptyComment 15,
 EmptyLineAfterGuardClause 59, EmptyLineAfterMultilineCondition 22,
 EmptyLineBetweenDefs 46, EmptyLinesAfterModuleInclusion 61,
 EmptyLinesAroundArguments 22, EmptyLinesAroundAttributeAccessor 20,
@@ -15,8 +16,7 @@ need the full gate, which the coordinator asked us not to run until main is
 green. Each spec passes in full against the binary:
 
 AccessModifierIndentation 41, ArgumentAlignment 55, ArrayAlignment 25,
-AssignmentIndentation 10, BlockAlignment 94, BlockEndNewline 18,
-CaseIndentation 50, ClosingHeredocIndentation 11,
+AssignmentIndentation 10, BlockAlignment 94, CaseIndentation 50,
 ClosingParenthesisIndentation 44, CommentIndentation 33,
 ConditionPosition 18, ElseAlignment 62, EmptyLines 5,
 EmptyLinesAroundAccessModifier 176, EmptyLinesAroundBeginBody 11,
