@@ -79,13 +79,12 @@ fn enclosing_instance_method(node: Node<'_>) -> Option<Node<'_>> {
         match ancestor.ty() {
             NodeType::Def => return Some(ancestor),
             NodeType::Defs | NodeType::Sclass => return None,
-            _ if ancestor.is_any_block() => {
-                if ancestor
+            _ if ancestor.is_any_block()
+                && ancestor
                     .method_name()
-                    .is_some_and(|name| CONTEXT_CHANGING_BLOCKS.contains(&name))
-                {
-                    return None;
-                }
+                    .is_some_and(|name| CONTEXT_CHANGING_BLOCKS.contains(&name)) =>
+            {
+                return None;
             }
             _ => {}
         }
