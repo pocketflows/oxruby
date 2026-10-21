@@ -2,73 +2,101 @@
 
 ## Done (whole upstream spec passes; example counts)
 
-- Layout/MultilineArrayBraceLayout 35
-- Layout/MultilineHashBraceLayout 34
-- Layout/MultilineMethodCallBraceLayout 44
-- Layout/MultilineMethodDefinitionBraceLayout 26
-- Layout/MultilineArrayLineBreaks 6
-- Layout/MultilineHashKeyLineBreaks 10
-- Layout/MultilineMethodArgumentLineBreaks 18
-- Layout/MultilineMethodParameterLineBreaks 14
-- Layout/ParameterAlignment 19
-- Layout/SpaceAfterColon 12
-- Layout/SpaceAfterMethodName 8
-- Layout/SpaceAfterNot 6
-- Layout/SpaceBeforeBrackets 28
-- Layout/SpaceInsideRangeLiteral 7
-- Layout/SpaceInLambdaLiteral 15
-- Layout/SpaceAroundMethodCallOperator 51
-- Layout/SingleLineBlockChain 9
-- Layout/SpaceAroundBlockParameters 49
-- Layout/SpaceAroundKeyword 110
-- Layout/MultilineBlockLayout 30
+Landed on main (656c62a, cop-only landing):
 
-## Shared helpers I own
+- Layout/SpaceAfterColon 12, SpaceAfterMethodName 8, SpaceAfterNot 6,
+  SpaceBeforeBrackets 28, SpaceInsideRangeLiteral 7, SpaceInLambdaLiteral 15,
+  SpaceAroundMethodCallOperator 51, SingleLineBlockChain 9,
+  SpaceAroundKeyword 110, TrailingEmptyLines 20,
+  LineContinuationLeadingSpace 32
+
+Green on `layout-b`, waiting for a full-gate landing (they add shared
+files):
+
+- Layout/MultilineArrayBraceLayout 35, MultilineHashBraceLayout 34,
+  MultilineMethodCallBraceLayout 44, MultilineMethodDefinitionBraceLayout 26
+- Layout/MultilineArrayLineBreaks 6, MultilineHashKeyLineBreaks 10,
+  MultilineMethodArgumentLineBreaks 18, MultilineMethodParameterLineBreaks 14
+- Layout/ParameterAlignment 19, SpaceAroundBlockParameters 49,
+  MultilineBlockLayout 30, MultilineMethodCallIndentation 287,
+  LineEndStringConcatenationIndentation 59, MultilineAssignmentLayout 34
+- Token-based (need the `tokens` agent's token builder, cherry-picked onto
+  `layout-b` as `Build processed_source.tokens ...`; it drops out of the
+  branch when `tokens` lands it): SpaceAfterComma 9, SpaceAfterSemicolon 9,
+  SpaceBeforeComma 6, SpaceBeforeSemicolon 9, SpaceBeforeComment 5,
+  LeadingEmptyLines 10, LineContinuationSpacing 31, SpaceInsideParens 28,
+  SpaceInsideReferenceBrackets 47, SpaceAroundEqualsInParameterDefault 11,
+  SpaceInsideStringInterpolation 12, SpaceInsideArrayLiteralBrackets 99,
+  SpaceInsideHashLiteralBraces 40, SpaceBeforeFirstArg 12,
+  SpaceAroundOperators 111, RescueEnsureAlignment 99
+
+## Shared helpers I own (claimed in `.coord/claims`)
 
 - `cop/mixin/alignment.rs` (Alignment): `check_alignment` takes the cop's
-  `message(node)` and `autocorrect(corrector, node)` as closures, and hands
+  `message(node)` and `autocorrect(corrector, node)` as closures and hands
   `column_delta` to `autocorrect` instead of keeping it in `@column_delta`.
-  `each_bad_alignment` returns `(node, column_delta)` pairs.
 - `cop/correctors/alignment_corrector.rs` (`correct`, `align_end`; a
   `Target::Node`/`Target::Range` stands for "node or range").
-- `cop/mixin/multiline_literal_brace_layout.rs` and
-  `cop/correctors/multiline_literal_brace_corrector.rs`: the cop passes
-  `children(node)` and its four messages.
-- `cop/mixin/multiline_element_line_breaks.rs`,
+- `cop/mixin/multiline_literal_brace_layout.rs`,
+  `cop/correctors/multiline_literal_brace_corrector.rs`,
+  `cop/mixin/multiline_element_line_breaks.rs`,
   `cop/correctors/empty_line_corrector.rs`.
-- Additive: `Investigation::current_offense_ranges()` (for
-  `@current_offenses` lookups) and `Investigation::max_line_length()`
-  (`autocorrect_logic.rb`) in base.rs; `Config::cop_enabled_in_config`
-  (`Config#cop_enabled?` alone, where `pending` is truthy) and
-  `Config::for_enabled_cop` in config.rs.
+- `cop/mixin/multiline_expression_indentation.rs` (a trait for the cop's
+  hooks, plus free helpers), `cop/mixin/match_range.rs` (no user yet; for
+  the percent-literal cops).
+- `ast/token.rs`: rubocop-ast's `Token` predicates (`is_comma`,
+  `is_left_parens`, `is_space_after`, ...) as an `impl Token`.
+- `cop/mixin/space_after_punctuation.rs`, `space_before_punctuation.rs`,
+  `surrounding_space.rs` (trait for `autocorrect` + `@ignored_nodes`),
+  `cop/correctors/space_corrector.rs`,
+  `cop/mixin/preceding_following_alignment.rs` (a struct holding the Ruby
+  mixin's memoized line sets; ExtraSpacing in layout-a's range will want
+  `alignment_lines` from it).
+- Claimed, not written yet: `check_line_breakable` (LineLength).
+- Copied verbatim from their owners (identical files, so rebases merge
+  cleanly): `punctuation_corrector.rs` (style-d), `rational_literal.rs`
+  (lint-a), `check_assignment.rs` and `end_keyword_alignment.rs` (layout-a).
+- Additive in shared files: `Investigation::current_offense_ranges()` and
+  `Investigation::max_line_length()` (base.rs); `Config::cop_enabled_in_config`
+  (`Config#cop_enabled?` alone, `pending` is truthy) and
+  `Config::for_enabled_cop` (config.rs).
 
 ## Left
 
-Not token-based: LeadingEmptyLines (tokens), LineContinuationLeadingSpace,
-LineEndStringConcatenationIndentation, LineLength, MultilineAssignmentLayout,
-MultilineMethodCallIndentation, MultilineOperationIndentation,
-RedundantLineBreak, RescueEnsureAlignment, SpaceBeforeFirstArg,
-SpaceInsideArrayPercentLiteral, SpaceInsideBlockBraces,
-SpaceInsidePercentLiteralDelimiters, TrailingEmptyLines.
-
-Blocked on tokens: SpaceAfterComma, SpaceAfterSemicolon, SpaceBeforeComma,
-SpaceBeforeSemicolon, SpaceBeforeComment, SpaceAroundEqualsInParameterDefault,
-SpaceAroundOperators, SpaceInsideArrayLiteralBrackets,
-SpaceInsideHashLiteralBraces, SpaceInsideParens, SpaceInsideReferenceBrackets,
-SpaceInsideStringInterpolation, LineContinuationSpacing.
+- LineLength: needs LineLengthHelp (style-b, on their branch only),
+  EndlessMethodRewriter (claimed by style-a, not written) and my
+  CheckLineBreakable. 3 of its examples use `raise_error`/
+  `config_to_allow_offenses`; check before porting.
+- SpaceInsideArrayPercentLiteral, SpaceInsidePercentLiteralDelimiters: need
+  PercentLiteral (claimed by lint-a, not written yet) and my MatchRange.
+- RedundantLineBreak: needs CheckSingleLineSuitability and
+  ReparsedEquivalence (style-d, on their branch only) and CheckAssignment.
 
 ## Blocked on the spec shim (runtime)
 
-- Layout/SpaceBeforeBlockBraces: ported (all offenses and corrections
-  pass), but 9 of 18 examples assert `cop.config_to_allow_offenses`
-  (the `--auto-gen-config` bookkeeping) and 1 expects the cop to raise
-  `Unknown EnforcedStyleForEmptyBraces selected!`. The shim can't see
-  either: it would need the binary to report `config_to_allow_offenses`
-  per investigation and to surface a cop's exception message so
-  `raise_error(msg)` matches. Same need in layout-a's DefEndAlignment and
-  my MultilineOperationIndentation specs (11 spec files in all use
-  `config_to_allow_offenses`). The port is parked on `layout-b-wip`.
+Ported, every offense and correction passes, but examples assert things the
+shim can't see. Parked (the files are on `layout-b-wip`):
+
+- Layout/SpaceBeforeBlockBraces: 9 of 18 examples assert
+  `cop.config_to_allow_offenses` (the `--auto-gen-config` bookkeeping) and 1
+  expects the cop to raise `Unknown EnforcedStyleForEmptyBraces selected!`.
+- Layout/SpaceInsideBlockBraces: 42 of 43 pass; 1 expects the same raise.
+- Layout/MultilineOperationIndentation (not ported yet): 7
+  `config_to_allow_offenses` assertions; also needs CheckAssignment.
+
+What the shim would need: (1) the binary reports a cop's raised error
+message for the investigation and the shim re-raises it as a RuntimeError
+with that message (RuboCop's specs run the Commissioner with
+`raise_error: true`); (2) the binary reports `config_to_allow_offenses` per
+investigation and the shim sets it on `cop`. 11 spec files across all
+departments use `config_to_allow_offenses`.
+
+## Notes for others
+
+- runtime: the full gate's `compare_with_rubocop` oxcop pass took ~4.5
+  CPU-minutes (debug build, ~400 cops) at one point, vs ~1 s with 18 cops.
+  That makes the landing race long enough to lose several times in a row.
 
 ## Principled failures
 
-None yet.
+None.
