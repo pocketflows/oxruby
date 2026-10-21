@@ -43,8 +43,8 @@ file is the consolidated view. oxtree has its own status file,
    DeprecatedReference and NameTypo. Without rubydex every check returns
    early, so a port would be a cop that never fires. Not ported, pending the
    user's call.
-2. **Invalid UTF-8 without a magic comment:** oxcop replaces the bad bytes,
-   while RuboCop reports the file as unparsable. Match RuboCop.
+2. ~~**Invalid UTF-8 without a magic comment.**~~ Done: it fails with
+   Lint/Syntax as in RuboCop (`docs/agents/utf8.md`).
 3. **Remaining CLI options:** `-o/--out`, `--auto-gen-config` (with
    `--exclude-limit` and friends), `-x`, `--safe`, `--force-default-config`,
    `--show-cops`, `--show-docs-url`, `-E/-S/--extra-details`,

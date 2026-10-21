@@ -148,8 +148,8 @@ invalid-UTF-8 strings in a spec's cop config
   bytes. A magic `encoding:` comment is honoured as
   `Parser::Source::Buffer` does: `BINARY` keeps one character per byte
   (U+00XX, written back as those bytes), other encodings are transcoded to
-  UTF-8 (encoding_rs). No comment means UTF-8 (invalid bytes are replaced;
-  RuboCop reports such files as unparsable instead).
+  UTF-8 (encoding_rs). No comment means UTF-8. Invalid bytes fail the file
+  with a Lint/Syntax offense, as in RuboCop (see `docs/agents/utf8.md`).
 - **State carries over** as upstream's class-level hashes do: the team
   keeps each cop's `AutoGenState` across the autocorrect loop, and the shim
   passes the current Ruby state in (`--auto-gen-state FILE`), so
