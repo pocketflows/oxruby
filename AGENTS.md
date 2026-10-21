@@ -29,6 +29,9 @@ bundle exec rake compare                 # diff vs real rubocop on ../code
   crate root starts with `#![forbid(unsafe_code)]`. Use safe std APIs
   instead (`str::from_utf8`, `char_indices`, checked slicing), and depend on
   other crates through their safe Rust APIs rather than writing FFI glue.
+  The one approved exception is `vendor/ruby-prism`, a vendored copy of the
+  upstream crate with an added `parse_with_options` (target Ruby version,
+  token stream); see its `OXCOP.md`. Any other FFI needs the user's sign-off.
 - `../rubocop` is checked out at the tracked tag (see `version.rs`). Read the
   Ruby source and its spec before porting a cop.
 
