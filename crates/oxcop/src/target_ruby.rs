@@ -11,7 +11,11 @@ pub fn target_ruby_version(config: &Config) -> f64 {
     if let Some(version) = config
         .for_all_cops()
         .get("TargetRubyVersion")
-        .and_then(|v| v.as_f64())
+        // `TargetRubyVersion.to_f`: a string such as `'3.0'` works too.
+        .and_then(|v| {
+            v.as_f64()
+                .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+        })
     {
         return version;
     }
