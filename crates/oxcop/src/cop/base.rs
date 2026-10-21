@@ -146,6 +146,10 @@ pub struct CopOptions {
     pub display_cop_names: Option<bool>,
     pub json_format: bool,
     pub ignore_disable_comments: bool,
+    /// `@options.key?(:stdin)`: the source came from `--stdin`.
+    pub stdin: bool,
+    /// `RuboCop::LSP.enabled?` (the shim's hidden `--lsp`).
+    pub lsp: bool,
 }
 
 /// An exception raised by a cop: a Ruby `raise` in the port. `class` is the
@@ -283,6 +287,16 @@ impl<'a, 'src> Investigation<'a, 'src> {
 
     pub fn cop_name(&self) -> &'static str {
         self.cop_name
+    }
+
+    /// `@options.key?(:stdin)`.
+    pub fn stdin(&self) -> bool {
+        self.options.stdin
+    }
+
+    /// `RuboCop::LSP.enabled?`.
+    pub fn lsp(&self) -> bool {
+        self.options.lsp
     }
 
     pub fn cop_config(&self) -> &'a Mapping {

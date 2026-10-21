@@ -80,6 +80,9 @@ struct Inspector<'a> {
     options: &'a Options,
     selection: Selection,
     cop_options: CopOptions,
+    /// `--auto-gen-state`: the state RuboCop's class-level hashes hold when
+    /// the run starts (the spec shim's current values).
+    auto_gen_seed: std::collections::BTreeMap<String, AutoGenState>,
 }
 
 /// What inspecting one file produced, reported in file order.
@@ -92,7 +95,7 @@ struct FileResult {
     errors: Vec<String>,
     corrected_stdin: Option<Vec<u8>>,
     raised: Vec<CopError>,
-    auto_gen: Vec<(&'static str, AutoGenState)>,
+    auto_gen: Vec<(String, AutoGenState)>,
     /// A `RuboCop::ValidationError`, which stops the run.
     validation_error: Option<CopError>,
 }
@@ -111,6 +114,11 @@ impl<'a> Runner<'a> {
                     except: options.except.clone(),
                 },
                 cop_options,
+                auto_gen_seed: options
+                    .auto_gen_state
+                    .as_deref()
+                    .map(read_auto_gen_state)
+                    .unwrap_or_default(),
             },
             corrected_stdin: None,
             errors: Vec::new(),
@@ -120,6 +128,9 @@ impl<'a> Runner<'a> {
 
     pub fn find_target_files(&mut self) -> Result<Vec<PathBuf>, ConfigError> {
         if let Some(stdin_path) = &self.options.stdin {
+            if self.options.keep_stdin_path {
+                return Ok(vec![stdin_path.clone()]);
+            }
             return Ok(vec![path_util::expand_path(stdin_path)]);
         }
         TargetFinder::new(&mut self.config_store, self.options.force_exclusion)
@@ -160,7 +171,7 @@ impl<'a> Runner<'a> {
                 runner.errors.extend(result.errors);
                 runner.spec_report.raised.extend(result.raised);
                 for (cop, state) in result.auto_gen {
-                    runner.spec_report.auto_gen.insert(cop.to_owned(), state);
+                    runner.spec_report.auto_gen.insert(cop, state);
                 }
                 if result.corrected_stdin.is_some() {
                     runner.corrected_stdin = result.corrected_stdin;
@@ -271,6 +282,26 @@ impl Inspector<'_> {
         result
     }
 
+    /// `--prior`: investigates earlier sources with the team's cops, which it
+    /// then keeps for the real source (offenses are discarded).
+    fn investigate_priors(&self, team: &mut Team<'_>, ruby_version: f64) {
+        team.persist_cops = true;
+        for prior in &self.options.prior {
+            let Some((name, file)) = prior.rsplit_once('=') else {
+                continue;
+            };
+            let Ok(bytes) = std::fs::read(file) else {
+                continue;
+            };
+            let (source, _) = source_encoding::decode(&bytes);
+            let buffer_source = crate::processed_source::normalize_newlines(&source);
+            let path = Path::new(name);
+            let processed_source =
+                ProcessedSource::new(&source, &buffer_source, ruby_version, path);
+            team.investigate(&processed_source);
+        }
+    }
+
     /// Inspects (and with autocorrect, re-inspects) until no more corrections
     /// are made. Returns the corrected source, if any, and the offenses found
     /// in each iteration.
@@ -284,6 +315,10 @@ impl Inspector<'_> {
         let ruby_version = target_ruby_version(config);
         let mut team = Team::new(config, &self.selection, self.cop_options);
         team.persist_cops = self.options.persist_cops;
+        if !self.options.prior.is_empty() {
+            self.investigate_priors(&mut team, ruby_version);
+        }
+        *team.auto_gen.borrow_mut() = self.auto_gen_seed.clone();
         let mut offenses_by_iteration: Vec<Vec<Offense>> = Vec::new();
         let mut seen_sources: Vec<String> = Vec::new();
         let mut corrected = false;
@@ -310,10 +345,8 @@ impl Inspector<'_> {
                 }
                 result.cop_errors.extend(report.errors);
                 result.raised.extend(report.raised);
-                for (cop, state) in report.auto_gen {
-                    result.auto_gen.retain(|(name, _)| *name != cop);
-                    result.auto_gen.push((cop, state));
-                }
+                // The team's state so far, which includes earlier iterations.
+                result.auto_gen = report.auto_gen;
                 offenses_by_iteration.push(report.offenses);
                 match report.corrector {
                     Some(corrector) if self.cop_options.autocorrect != AutocorrectMode::Off => {
@@ -331,4 +364,38 @@ impl Inspector<'_> {
 
         (corrected.then_some(source), offenses_by_iteration)
     }
+}
+
+/// Reads `--auto-gen-state`: `{"config_to_allow_offenses": {cop: {...}},
+/// "detected_styles": {cop: [...]}}`.
+fn read_auto_gen_state(path: &Path) -> std::collections::BTreeMap<String, AutoGenState> {
+    let mut states = std::collections::BTreeMap::<String, AutoGenState>::new();
+    let Ok(json) = std::fs::read_to_string(path) else {
+        return states;
+    };
+    let Ok(serde_json::Value::Object(json)) = serde_json::from_str(&json) else {
+        return states;
+    };
+    if let Some(serde_json::Value::Object(configs)) = json.get("config_to_allow_offenses") {
+        for (cop, config) in configs {
+            if let Ok(Value::Mapping(config)) = serde_yaml_ng::to_value(config) {
+                states
+                    .entry(cop.clone())
+                    .or_default()
+                    .config_to_allow_offenses = config;
+            }
+        }
+    }
+    if let Some(serde_json::Value::Object(styles)) = json.get("detected_styles") {
+        for (cop, detected) in styles {
+            if let Some(list) = detected.as_array() {
+                states.entry(cop.clone()).or_default().detected_style = Some(
+                    list.iter()
+                        .filter_map(|s| s.as_str().map(str::to_owned))
+                        .collect(),
+                );
+            }
+        }
+    }
+    states
 }

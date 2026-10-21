@@ -196,6 +196,8 @@ fn execute_runner(options: &Options, io: &mut Io) -> Result<i32, String> {
         display_cop_names: options.display_cop_names(),
         json_format: matches!(format.as_str(), "json" | "j"),
         ignore_disable_comments: false,
+        stdin: options.stdin.is_some(),
+        lsp: options.lsp,
     };
     let mut runner = Runner::new(options, cop_options);
 

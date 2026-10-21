@@ -136,6 +136,26 @@ pub struct Options {
     #[arg(long = "spec-report", hide = true, value_name = "FILE")]
     pub spec_report: Option<PathBuf>,
 
+    /// Before the `--stdin` source, investigate FILE as if it were NAME with
+    /// the same cop instances (`NAME=FILE`, repeatable): a spec example
+    /// keeps one cop object across its investigations.
+    #[arg(long = "prior", hide = true, value_name = "NAME=FILE")]
+    pub prior: Vec<String>,
+
+    /// Report the `--stdin` path as given instead of expanding it (a spec's
+    /// `processed_source.file_path` is the buffer name).
+    #[arg(long = "keep-stdin-path", hide = true)]
+    pub keep_stdin_path: bool,
+
+    /// The `--auto-gen-config` state to start from (JSON, as `--spec-report`
+    /// writes it).
+    #[arg(long = "auto-gen-state", hide = true, value_name = "FILE")]
+    pub auto_gen_state: Option<PathBuf>,
+
+    /// `RuboCop::LSP.enabled?` for cops that report differently under LSP.
+    #[arg(long = "lsp", hide = true)]
+    pub lsp: bool,
+
     /// Print the names of cops that have been ported to oxcop, then exit.
     #[arg(long = "show-ported-cops", hide = true)]
     pub show_ported_cops: bool,

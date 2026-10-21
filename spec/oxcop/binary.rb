@@ -81,39 +81,57 @@ module Oxcop
         end
 
         # Offenses for `source` as RuboCop's JSON formatter would report them.
-        def offenses(source, path:, config:, cop_name:)
+        # `path` is the buffer name. `priors` are the `[name, source]` pairs
+        # the example investigated before with the same cop object, which the
+        # binary replays first so the cop's state carries over. With
+        # `real_file`, the binary inspects `path` on disk (where the spec
+        # wrote `source`) instead of reading `--stdin`.
+        def offenses(source, path:, config:, cop_name:, priors: [], real_file: false)
           @investigations = investigations.to_i + 1
-          with_config(config) do |config_path|
-            with_report do |report_path|
-              stdout, = run("--stdin", path, "-c", config_path, "--raw-config", "--only", cop_name,
-                            "--format", "json", "--no-display-cop-names", "--spec-report", report_path,
-                            stdin: source)
-              JSON.parse(stdout).fetch("files").flat_map { |file| file["offenses"] }
-            end
-          end
+          stdout, = invoke(source, path: path, config: config, cop_name: cop_name, priors: priors,
+                                   real_file: real_file,
+                                   args: ["--format", "json", "--no-display-cop-names"])
+          JSON.parse(stdout).fetch("files").flat_map { |file| file["offenses"] }
         end
 
         # `source` after autocorrecting with every correction (`-A`) until no
-        # more changes are made.
-        def autocorrect(source, path:, config:, cop_name:, once: false)
+        # more changes are made, in the source's encoding (so it compares
+        # equal to a spec's binary expected correction).
+        def autocorrect(source, path:, config:, cop_name:, once: false, priors: [], real_file: false)
+          stdout, = invoke(source, path: path, config: config, cop_name: cop_name, priors: priors,
+                                   real_file: real_file,
+                                   args: ["--persist-cops", *("--autocorrect-once" if once), "-A",
+                                          "--format", "quiet", "--stderr"])
+          return stdout.force_encoding(source.encoding) unless real_file
+
+          # The correction was written to the file; the spec's file keeps
+          # the source, as an in-memory correction would.
+          File.binread(path).force_encoding(source.encoding).tap { File.binwrite(path, source) }
+        end
+
+        def invoke(source, path:, config:, cop_name:, priors:, real_file:, args:)
+          input = real_file ? [path] : ["--stdin", path, "--keep-stdin-path"]
           with_config(config) do |config_path|
-            with_report(apply: false) do |report_path|
-              stdout, = run("--stdin", path, "-c", config_path, "--raw-config", "--persist-cops",
-                            *("--autocorrect-once" if once),
-                            "--only", cop_name, "-A", "--format", "quiet", "--stderr",
-                            "--spec-report", report_path, stdin: source)
-              # In the source's encoding, so it compares equal to the spec's
-              # expected (e.g. binary) correction.
-              stdout.force_encoding(source.encoding)
+            with_temp_files(priors.map(&:last)) do |prior_paths|
+              prior_args = priors.zip(prior_paths).flat_map { |(name, _), file| ["--prior", "#{name}=#{file}"] }
+              with_temp_files([JSON.generate(auto_gen_state(cop_name))]) do |(state_path)|
+                with_report do |report_path|
+                  run(*input, "-c", config_path, "--raw-config", "--only", cop_name, *prior_args,
+                      "--auto-gen-state", state_path, *("--lsp" if lsp?), "--spec-report", report_path,
+                      *args, stdin: real_file ? "" : source)
+                end
+              end
             end
           end
         end
 
         # The binary's `--spec-report`: re-raises what a cop raised (RuboCop's
-        # specs run cops with `raise_error: true`) and, with `apply`, copies
-        # the `--auto-gen-config` state into Ruby, where the specs read it
-        # (`cop.config_to_allow_offenses`, `read_exclude_limit`).
-        def with_report(apply: true)
+        # specs run cops with `raise_error: true`) and copies the
+        # `--auto-gen-config` state into Ruby, where the specs read it
+        # (`cop.config_to_allow_offenses`, `read_exclude_limit`). The binary
+        # starts from the current state (`--auto-gen-state`), so it
+        # accumulates across calls as RuboCop's class-level hashes do.
+        def with_report
           path = File.join(Dir.tmpdir, "oxcop-spec-report-#{Process.pid}.json")
           File.delete(path) if File.exist?(path)
           begin
@@ -127,7 +145,7 @@ module Oxcop
           end
           raise failed if failed
 
-          apply_auto_gen_state(report) if apply
+          apply_auto_gen_state(report)
           result
         end
 
@@ -154,6 +172,33 @@ module Oxcop
               cop_dir.mkpath
               cop_dir.join(parameter).write("#{value}\n", mode: "a")
             end
+          end
+        end
+
+        def lsp?
+          defined?(RuboCop::LSP) && RuboCop::LSP.enabled?
+        end
+
+        def auto_gen_state(cop_name)
+          formatter = RuboCop::Formatter::DisabledConfigFormatter
+          state = { "config_to_allow_offenses" => {}, "detected_styles" => {} }
+          if (config = formatter.config_to_allow_offenses&.[](cop_name))
+            state["config_to_allow_offenses"][cop_name] = config
+          end
+          if (styles = formatter.detected_styles&.[](cop_name))
+            state["detected_styles"][cop_name] = styles.map(&:to_s)
+          end
+          state
+        end
+
+        def with_temp_files(contents, paths = [], &block)
+          return yield paths if contents.empty?
+
+          Tempfile.create("oxcop-spec") do |file|
+            file.binmode
+            file.write(contents.first)
+            file.flush
+            with_temp_files(contents.drop(1), paths + [file.path], &block)
           end
         end
 

@@ -81,17 +81,27 @@ pub fn investigate(
     config: &Config,
     comment_config: &CommentConfig,
     options: CopOptions,
+    auto_gen: &std::collections::BTreeMap<String, AutoGenState>,
 ) -> Vec<CopReport> {
     let mut cxs: Vec<Investigation<'_, '_>> = cops
         .iter()
         .map(|cop| {
-            Investigation::new(
+            let mut cx = Investigation::new(
                 cop.as_ref(),
                 processed_source,
                 config,
                 comment_config,
                 options,
-            )
+            );
+            // Carried over from earlier investigations; exclude limits are
+            // reported per investigation.
+            if let Some(state) = auto_gen.get(cop.name()) {
+                cx.auto_gen = AutoGenState {
+                    exclude_limits: Vec::new(),
+                    ..state.clone()
+                };
+            }
+            cx
         })
         .collect();
 

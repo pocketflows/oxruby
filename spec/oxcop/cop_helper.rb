@@ -35,18 +35,23 @@ module Oxcop
       def _investigate(cop, processed_source)
         source = processed_source.raw_source
         options = {
-          path: processed_source.path || RuboCop::AST::ProcessedSource::STRING_SOURCE_NAME,
+          path: processed_source.buffer.name,
           config: cop.config,
-          cop_name: cop.cop_name
+          cop_name: cop.cop_name,
+          # The cop object keeps its state across the example's
+          # investigations, so the binary replays the earlier ones.
+          priors: (@oxcop_priors ||= []).dup,
+          real_file: real_file?(cop, processed_source)
         }
+        cop_options = cop.instance_variable_get(:@options) || {}
 
         # oxcop runs the whole correction loop itself (with `--persist-cops`, as
         # the `expect_correction` loop keeps the same cop instance). When
         # `expect_correction` re-investigates oxcop's final source, the loop
         # already reached its fixed point there, so there is nothing left to
-        # correct.
+        # correct. A cop told not to autocorrect makes no corrections.
         @oxcop_corrected_sources ||= []
-        @last_corrector = if @oxcop_corrected_sources.include?(source)
+        @last_corrector = if @oxcop_corrected_sources.include?(source) || cop_options[:autocorrect] == false
                             Corrector.new(source) { source }
                           else
                             Corrector.new(source) do
@@ -54,16 +59,35 @@ module Oxcop
                                     .tap { |s| @oxcop_corrected_sources << s }
                             end
                           end
-        Binary.offenses(source, **options).map { |offense| to_offense(offense, processed_source, cop) }
+        offenses = Binary.offenses(source, **options)
+        @oxcop_priors << [options[:path], source]
+        offenses.map { |offense| to_offense(offense, processed_source, cop) }
       end
 
       private
 
+      # The spec wrote the source to a real file (`expect_offense(source,
+      # file)`) and didn't tell the cop it came from stdin: inspect the file,
+      # as cops like Lint/ScriptPermission look at it on disk.
+      def real_file?(cop, processed_source)
+        path = processed_source.path
+        return false unless path && File.file?(path)
+        return false if (cop.instance_variable_get(:@options) || {}).key?(:stdin)
+
+        File.binread(path) == processed_source.raw_source.b
+      end
+
       def to_offense(hash, processed_source, cop)
         location = hash.fetch("location")
         buffer = processed_source.buffer
-        begin_pos = buffer.line_range(location.fetch("start_line")).begin_pos + location.fetch("start_column") - 1
-        range = Parser::Source::Range.new(buffer, begin_pos, begin_pos + location.fetch("length"))
+        range = if buffer.source.empty? && location.fetch("length").zero?
+                  # A global offense (`add_global_offense`) on an empty file.
+                  RuboCop::Cop::Offense::NO_LOCATION
+                else
+                  begin_pos = buffer.line_range(location.fetch("start_line")).begin_pos +
+                              location.fetch("start_column") - 1
+                  Parser::Source::Range.new(buffer, begin_pos, begin_pos + location.fetch("length"))
+                end
         status = if hash["corrected"] then :corrected
                  elsif hash["correctable"] then :uncorrected
                  else :unsupported

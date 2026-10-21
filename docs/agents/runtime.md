@@ -88,6 +88,28 @@ Owner: `runtime` (see the roster in `docs/PARALLEL.md`).
   (U+00XX, written back as those bytes), other encodings are transcoded to
   UTF-8 (encoding_rs). No comment means UTF-8 (invalid bytes are replaced;
   RuboCop reports such files as unparsable instead).
+- **State carries over** as upstream's class-level hashes do: the team
+  keeps each cop's `AutoGenState` across the autocorrect loop, and the shim
+  passes the current Ruby state in (`--auto-gen-state FILE`), so
+  `expect_offense` + `expect_correction` accumulate (FormatStringToken
+  420/420 with style-b-wip's port). Cops must still *call* the detection
+  functions: layout-a-wip's EndAlignment/DefEndAlignment/BeginEndAlignment
+  fail only because their ports don't call `correct_style_detected` /
+  `opposite_style_detected` / `unrecognized_style_detected` yet.
+- **One cop object per example**: the shim replays the example's earlier
+  investigations first (`--prior NAME=FILE`), so cop state carries over
+  between files as upstream's memoized `cop` does (DuplicateMethods: only
+  its class_eval example and the two `Dir.pwd`-stubbing ones fail).
+- **Buffer name**: the shim sends `processed_source.buffer.name` and
+  `--keep-stdin-path`, so `file_path` is the name as given (GemFilename
+  15/15 with depts-wip's port).
+- **Real files**: when the spec wrote the source to an existing file
+  (`expect_offense(src, file)`) and the cop's options have no `:stdin`, the
+  binary inspects the file itself (no `--stdin`), and `cx.stdin()` is
+  false, as Lint/ScriptPermission needs. A cop whose `@options[:autocorrect]`
+  is `false` gets no corrections. `cx.stdin()` / `cx.lsp()` mirror
+  `@options.key?(:stdin)` / `RuboCop::LSP.enabled?` (hidden `--lsp`).
+- **Global offenses on an empty buffer** come back as `Offense::NO_LOCATION`.
 - Plumbing: hidden `--spec-report FILE` writes `{config_to_allow_offenses,
   detected_styles, exclude_limits, raised}` as JSON (`runner::SpecReport`).
 

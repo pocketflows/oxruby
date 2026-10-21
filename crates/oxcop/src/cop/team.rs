@@ -22,8 +22,9 @@ pub struct InvestigationReport {
     pub errors: Vec<String>,
     /// What cops raised (for the spec shim).
     pub raised: Vec<CopError>,
-    /// Each cop's `--auto-gen-config` state, when it has any.
-    pub auto_gen: Vec<(&'static str, AutoGenState)>,
+    /// The team's `--auto-gen-config` state after this investigation (see
+    /// `Team::auto_gen`).
+    pub auto_gen: Vec<(String, AutoGenState)>,
     pub comment_config: CommentConfig,
     /// A cop's `validate_config` failed: nothing was investigated.
     pub validation_error: Option<CopError>,
@@ -36,6 +37,11 @@ pub struct Team<'a> {
     /// `--persist-cops`: reuse the cops mobilized for the first source.
     pub persist_cops: bool,
     persisted: std::cell::RefCell<Option<Vec<Box<dyn Cop>>>>,
+    /// Each cop's `--auto-gen-config` state. Upstream it lives in class-level
+    /// hashes, so it carries over from one investigation to the next (the
+    /// autocorrect loop, and in specs from `expect_offense` to
+    /// `expect_correction`). Exclude limits are the values set so far.
+    pub auto_gen: std::cell::RefCell<std::collections::BTreeMap<String, AutoGenState>>,
 }
 
 impl<'a> Team<'a> {
@@ -46,6 +52,7 @@ impl<'a> Team<'a> {
             options,
             persist_cops: false,
             persisted: std::cell::RefCell::new(None),
+            auto_gen: std::cell::RefCell::default(),
         }
     }
 
@@ -149,12 +156,14 @@ impl<'a> Team<'a> {
             .into_iter()
             .partition(|cop| self.autocorrects(cop.as_ref()));
 
+        let seed = self.auto_gen.borrow().clone();
         let mut reports = commissioner::investigate(
             &mut autocorrect_cops,
             processed_source,
             self.config,
             &comment_config,
             self.options,
+            &seed,
         );
         let corrector = collate_corrections(&reports, processed_source);
         if corrector.is_none() {
@@ -164,6 +173,7 @@ impl<'a> Team<'a> {
                 self.config,
                 &comment_config,
                 self.options,
+                &seed,
             ));
         }
 
@@ -176,15 +186,26 @@ impl<'a> Team<'a> {
         let mut offenses = Vec::new();
         let mut errors = Vec::new();
         let mut raised = Vec::new();
-        let mut auto_gen = Vec::new();
+        let mut state = self.auto_gen.borrow_mut();
         for report in reports {
             offenses.extend(report.offenses);
             errors.extend(report.errors);
             raised.extend(report.raised);
             if !report.auto_gen.is_empty() {
-                auto_gen.push((report.cop_name, report.auto_gen));
+                let entry = state.entry(report.cop_name.to_owned()).or_default();
+                let mut limits = std::mem::take(&mut entry.exclude_limits);
+                limits.extend(report.auto_gen.exclude_limits);
+                *entry = AutoGenState {
+                    exclude_limits: limits,
+                    ..report.auto_gen
+                };
             }
         }
+        let auto_gen = state
+            .iter()
+            .map(|(cop, state)| (cop.clone(), state.clone()))
+            .collect();
+        drop(state);
         InvestigationReport {
             offenses,
             corrector,
