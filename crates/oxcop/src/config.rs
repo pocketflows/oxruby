@@ -74,6 +74,31 @@ impl crate::directive_comment::CopRegistry for KnownCops {
     }
 }
 
+/// The registry as a run with `--only` sees it: cops named there count as
+/// enabled (`Registry#enabled_cop_name?`), so the config doesn't disable them.
+pub struct SelectedCops<'a> {
+    pub known: &'a KnownCops,
+    pub only: &'a [String],
+}
+
+impl crate::directive_comment::CopRegistry for SelectedCops<'_> {
+    fn names(&self) -> &[String] {
+        self.known.names()
+    }
+
+    fn is_department(&self, name: &str) -> bool {
+        self.known.is_department(name)
+    }
+
+    fn names_for_department(&self, department: &str) -> Vec<String> {
+        self.known.names_for_department(department)
+    }
+
+    fn enabled_by_option(&self, cop_name: &str) -> bool {
+        self.only.iter().any(|name| name == cop_name)
+    }
+}
+
 impl Config {
     pub fn new(hash: Mapping, loaded_path: Option<PathBuf>) -> Self {
         let base_dir_for_path_parameters = base_dir_for_path_parameters(loaded_path.as_deref());

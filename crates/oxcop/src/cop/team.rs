@@ -43,14 +43,19 @@ impl<'a> Team<'a> {
         }
     }
 
+    /// `Runner#mobilize_cop_badge?`, then `roundup_relevant_cops`: `--only`
+    /// and `--except` take departments, but only a cop named in `--only`
+    /// itself runs when the config disables it (`Registry#enabled_cop_name?`).
     fn selected(&self, name: &str, comment_config: &CommentConfig) -> bool {
         if registry::matches(name, &self.selection.except) {
             return false;
         }
-        if !self.selection.only.is_empty() {
-            return registry::matches(name, &self.selection.only);
+        if !self.selection.only.is_empty() && !registry::matches(name, &self.selection.only) {
+            return false;
         }
-        self.config.cop_enabled(name) || comment_config.cop_opted_in(name)
+        comment_config.cop_opted_in(name)
+            || self.selection.only.iter().any(|only| only == name)
+            || self.config.cop_enabled(name)
     }
 
     /// `roundup_relevant_cops`.
@@ -100,8 +105,11 @@ impl<'a> Team<'a> {
     }
 
     pub fn investigate(&self, processed_source: &ProcessedSource<'_>) -> InvestigationReport {
-        let comment_config =
-            CommentConfig::new(processed_source, self.config, self.config.known_cops());
+        let registry = crate::config::SelectedCops {
+            known: self.config.known_cops(),
+            only: &self.selection.only,
+        };
+        let comment_config = CommentConfig::new(processed_source, self.config, &registry);
         let persisted = self.persisted.borrow_mut().take();
         let cops = match persisted {
             Some(cops) => cops,

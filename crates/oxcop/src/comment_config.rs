@@ -199,7 +199,12 @@ impl Analyzer<'_, '_> {
         let mut analyses: HashMap<String, CopAnalysis> = HashMap::new();
 
         // inject_disabled_cops_directives
-        for cop_name in self.config.disabled_cop_names(self.registry.names()) {
+        for cop_name in self
+            .config
+            .disabled_cop_names(self.registry.names())
+            .into_iter()
+            .filter(|name| !self.registry.enabled_by_option(name))
+        {
             let analysis = analyses.entry(cop_name).or_default();
             // A synthetic `# rubocop:disable Cop` at line -infinity.
             *analysis = CopAnalysis {

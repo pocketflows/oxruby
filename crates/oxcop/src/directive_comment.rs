@@ -65,6 +65,10 @@ pub trait CopRegistry {
     fn names(&self) -> &[String];
     fn is_department(&self, name: &str) -> bool;
     fn names_for_department(&self, department: &str) -> Vec<String>;
+    /// Named in `--only`, which enables a cop the config disables.
+    fn enabled_by_option(&self, _cop_name: &str) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone)]
