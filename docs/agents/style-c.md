@@ -55,6 +55,7 @@
 - Style/RedundantHeredocDelimiterQuotes 17
 - Style/RedundantInterpolation 29
 - Style/RedundantInterpolationUnfreeze 16
+- Style/RedundantLineContinuation 174
 - Style/RedundantInitialize 23
 - Style/RedundantParentheses 337
 - Style/RedundantPercentQ 27
@@ -95,8 +96,10 @@ Style/RescueModifier, also parked there earlier, now pass on main and landed.
 
 ## Left
 
-- RedundantLineContinuation: needs `processed_source.tokens` (`tokens`),
-  plus MatchRange and ReparsedEquivalence.
+Nothing outside `style-c-pending`/`style-c-wip` (below).
+RedundantLineContinuation scans with the regexp directly instead of
+layout-b's MatchRange (not on main yet); switch it to `each_match_range`
+once that lands.
 
 ## Blocked / principled failures
 
