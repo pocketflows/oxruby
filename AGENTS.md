@@ -25,13 +25,11 @@ bundle exec rake compare                 # diff vs real rubocop on ../code
   is in characters, as in RuboCop.
 - Register new cops in `cop/registry.rs`; that also makes their upstream
   specs run instead of being skipped.
-- **No `unsafe`.** The `unsafe` keyword never appears in our code. Every
-  crate root starts with `#![forbid(unsafe_code)]`. Use safe std APIs
-  instead (`str::from_utf8`, `char_indices`, checked slicing), and depend on
-  other crates through their safe Rust APIs rather than writing FFI glue.
-  The one approved exception is `vendor/ruby-prism`, a vendored copy of the
-  upstream crate with an added `parse_with_options` (target Ruby version,
-  token stream); see its `OXCOP.md`. Any other FFI needs the user's sign-off.
+- **No `unsafe` in code we write**, including patches to vendored crates.
+  Every crate root starts with `#![forbid(unsafe_code)]`. Use safe std APIs
+  (`str::from_utf8`, `char_indices`, checked slicing). Crates.io dependencies
+  are fine even though they use `unsafe` internally; call their safe APIs and
+  never write FFI glue. Prism comes from crates.io `ruby-prism` (pinned).
 - `../rubocop` is checked out at the tracked tag (see `version.rs`). Read the
   Ruby source and its spec before porting a cop.
 
