@@ -5,3 +5,4 @@
 /gems/*/exe/*/
 .DS_Store
 /spec/examples.txt
+/.worktrees/
