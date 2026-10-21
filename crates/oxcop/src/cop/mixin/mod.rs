@@ -59,6 +59,8 @@ pub mod reparsed_equivalence;
 pub mod require_library;
 pub mod rescue_node;
 pub mod safe_assignment;
+pub mod space_after_punctuation;
+pub mod space_before_punctuation;
 pub mod statement_modifier;
 pub mod string_help;
 pub mod string_literals_help;
