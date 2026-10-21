@@ -309,6 +309,12 @@ impl Config {
     }
 
     pub fn file_to_include(&self, file: &Path) -> bool {
+        self.file_to_include_by(file, |_| true)
+    }
+
+    /// `file_to_include?(file) { |pattern| ... }`: only the patterns the
+    /// block accepts are tried.
+    fn file_to_include_by(&self, file: &Path, accept: impl Fn(&str) -> bool) -> bool {
         let relative = self.path_relative_to_config(file);
         let is_hidden = relative.starts_with('.') && !relative.starts_with("..");
         if is_hidden && !self.possibly_include_hidden() {
@@ -316,7 +322,21 @@ impl Config {
         }
         let absolute = path_util::expand_path(file).to_string_lossy().into_owned();
         patterns(self.for_all_cops(), "Include")
+            .filter(|pattern| accept(pattern))
             .any(|pattern| match_path(pattern, &relative) || match_path(pattern, &absolute))
+    }
+
+    /// `allowed_camel_case_file?(file)`.
+    pub fn allowed_camel_case_file(&self, file: &Path) -> bool {
+        // Gemspecs are allowed to have dashes because that fits with bundler
+        // best practices in the case when the gem is nested under a namespace
+        // (e.g., `bundler-console` conveys `Bundler::Console`).
+        if file.extension().is_some_and(|e| e == "gemspec") {
+            return true;
+        }
+        self.file_to_include_by(file, |pattern| {
+            pattern.bytes().any(|b| b.is_ascii_uppercase())
+        })
     }
 
     pub fn file_to_exclude(&self, file: &Path) -> bool {
