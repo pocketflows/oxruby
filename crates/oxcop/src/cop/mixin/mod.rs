@@ -15,6 +15,7 @@ pub mod code_length;
 pub mod comments_help;
 pub mod configurable_enforced_style;
 pub mod configurable_naming;
+pub mod configurable_numbering;
 pub mod dig_help;
 pub mod documentation_comment;
 pub mod duplication;
