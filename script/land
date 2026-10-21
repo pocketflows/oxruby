@@ -92,6 +92,15 @@ gate() {
         cop_files+=("${BASH_REMATCH[1]}/${BASH_REMATCH[2]}")
         local spec="spec/rubocop/cop/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}_spec.rb"
         [[ -f "$spec" ]] && specs+=("$spec")
+        # Some cops split their spec (conditional_assignment_assign_*_spec.rb):
+        # take prefixed files that describe this cop.
+        local extra
+        for extra in "spec/rubocop/cop/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"_*_spec.rb; do
+          [[ -f "$extra" ]] || continue
+          ruby -e 'c = File.read(ARGV[0])[/RSpec\.describe RuboCop::Cop::\w+::(\w+)/, 1].to_s
+                   s = c.gsub(/([A-Z]+)([A-Z][a-z])/, "\\1_\\2").gsub(/([a-z\d])([A-Z])/, "\\1_\\2").downcase
+                   exit(s == ARGV[1] ? 0 : 1)' "$extra" "${BASH_REMATCH[2]}" && specs+=("$extra")
+        done
       elif [[ "$path" =~ ^docs/ ]]; then
         :
       else
