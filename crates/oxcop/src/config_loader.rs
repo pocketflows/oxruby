@@ -230,15 +230,22 @@ fn warn_about_unsupported_keys(hash: &Mapping) {
     }
 }
 
+thread_local! {
+    static SEEN_WARNINGS: RefCell<std::collections::HashSet<String>> = RefCell::default();
+}
+
 fn warn_once(message: &str) {
-    thread_local! {
-        static SEEN: RefCell<std::collections::HashSet<String>> = RefCell::default();
-    }
-    SEEN.with(|seen| {
+    SEEN_WARNINGS.with(|seen| {
         if seen.borrow_mut().insert(message.to_owned()) {
-            eprintln!("oxcop: {message}");
+            use std::io::Write;
+            let _ = writeln!(crate::cli::stderr(), "oxcop: {message}");
         }
     });
+}
+
+/// Each run warns once per message (`--server` handles many runs).
+pub fn reset_warnings() {
+    SEEN_WARNINGS.with(|seen| seen.borrow_mut().clear());
 }
 
 /// Port of `ConfigStore`: caches the resolved configuration per config file

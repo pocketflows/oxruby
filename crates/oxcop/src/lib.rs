@@ -16,6 +16,7 @@ pub mod path_util;
 pub mod prism;
 pub mod processed_source;
 pub mod runner;
+pub mod server;
 pub mod target_finder;
 pub mod target_ruby;
 pub mod version;

@@ -1,6 +1,6 @@
 //! Port of `lib/rubocop/runner.rb`.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use serde_yaml_ng::Value;
@@ -55,12 +55,16 @@ impl<'a> Runner<'a> {
     }
 
     /// Returns whether all files passed (no offense at or above `FailLevel`).
-    pub fn run(&mut self, formatter: &mut dyn Formatter) -> Result<bool, ConfigError> {
+    pub fn run(
+        &mut self,
+        formatter: &mut dyn Formatter,
+        stdin: &mut dyn Read,
+    ) -> Result<bool, ConfigError> {
         let files = self.find_target_files()?;
         let stdin_source = match self.options.stdin {
             Some(_) => {
                 let mut source = String::new();
-                std::io::stdin()
+                stdin
                     .read_to_string(&mut source)
                     .map_err(|e| ConfigError(format!("reading stdin: {e}")))?;
                 Some(source)
@@ -166,7 +170,7 @@ impl<'a> Runner<'a> {
                     ProcessedSource::new(&source, &buffer_source, ruby_version, file);
                 let report = team.investigate(&processed_source);
                 for error in &report.errors {
-                    eprintln!("{error}");
+                    let _ = writeln!(crate::cli::stderr(), "{error}");
                 }
                 offenses_by_iteration.push(report.offenses);
                 match report.corrector {
