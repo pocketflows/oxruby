@@ -75,6 +75,8 @@ pub fn on_pair(
         if node.is_value_omission() || require_hash_value(hash_key_source, node) {
             return;
         }
+        // `self.config_to_allow_offenses = { 'Enabled' => false }`
+        crate::cop::mixin::configurable_enforced_style::no_acceptable_style_bang(cx);
         (OMIT_HASH_VALUE_MSG, format!("{hash_key_source}:"))
     } else {
         if !node.is_value_omission() {
