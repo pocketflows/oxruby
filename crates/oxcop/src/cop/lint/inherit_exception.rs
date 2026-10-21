@@ -1,11 +1,10 @@
 //! Port of `lib/rubocop/cop/lint/inherit_exception.rb`.
-//!
-//! Without a project index (`rubydex` isn't supported), `inherits_exception_via`
-//! is always `nil`, as in RuboCop without one.
 
 use crate::ast::node_pattern::NodePattern;
 use crate::ast::{Node, NodeType};
 use crate::cop::mixin::configurable_enforced_style::style;
+use crate::cop::mixin::project_index_help::resolve_constant_in_index;
+use crate::project_index::{Decl, DefKind, ProjectIndex};
 use crate::cop::{Cop, Investigation};
 
 static CLASS_NEW_CALL: NodePattern =
@@ -52,7 +51,48 @@ fn on_class<'a>(cx: &mut Investigation<'a, '_>, node: Node<'a>) {
         cx.add_offense_with_correction(parent_class.source_range(), &message(preferred), |corrector| {
             corrector.replace(parent_class.source_range(), preferred);
         });
+    } else if let Some(via) = inherits_exception_via(cx, parent_class) {
+        // No autocorrection: the `Exception` inheritance lives at another
+        // class' definition site, possibly in another file.
+        let message = format!(
+            "Inherit from `{}` instead of `Exception` (inherited via `{via}`).",
+            preferred_base_class(cx)
+        );
+        cx.add_offense(parent_class.source_range(), &message);
     }
+}
+
+/// `inherits_exception_via`: with the project index, indirect inheritance
+/// is detected by walking the parent's indexed ancestry: `Exception` itself
+/// is not indexed, so a chain ending in it shows up as an ancestor whose
+/// superclass reference is unresolved and literally named `Exception`.
+fn inherits_exception_via(cx: &Investigation<'_, '_>, parent_class: Node<'_>) -> Option<String> {
+    let index = cx.project_index()?;
+    if !parent_class.is(NodeType::Const) {
+        return None;
+    }
+    let declaration = resolve_constant_in_index(&index, parent_class)?;
+    if !declaration.is_class() {
+        return None;
+    }
+    exception_ancestor(&index, declaration).map(|ancestor| index.name(ancestor))
+}
+
+fn exception_ancestor(index: &ProjectIndex, declaration: Decl) -> Option<Decl> {
+    index
+        .ancestors(declaration)
+        .into_iter()
+        .find(|ancestor| ancestor.is_class() && exception_superclass_reference(index, *ancestor))
+}
+
+fn exception_superclass_reference(index: &ProjectIndex, ancestor: Decl) -> bool {
+    index.definitions(ancestor).into_iter().any(|definition| {
+        definition.kind == DefKind::Class
+            && index.superclass(definition).is_some_and(|superclass| {
+                !superclass.resolved
+                    && superclass.name.strip_prefix("::").unwrap_or(&superclass.name) == "Exception"
+            })
+    })
 }
 
 fn on_send<'a>(cx: &mut Investigation<'a, '_>, node: Node<'a>) {

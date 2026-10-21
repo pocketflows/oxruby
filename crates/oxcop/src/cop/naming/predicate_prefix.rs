@@ -1,10 +1,11 @@
-//! Port of `lib/rubocop/cop/naming/predicate_prefix.rb`. The project index
-//! (`overrides_inherited_method?`) is not available, as when RuboCop runs
-//! without one.
+//! Port of `lib/rubocop/cop/naming/predicate_prefix.rb`.
 
 use crate::ast::node_pattern::NodePattern;
 use crate::ast::{Node, NodeType};
 use crate::cop::mixin::allowed_methods::allowed_method;
+use crate::cop::mixin::project_index_help::{
+    indexed_singleton_of, inherited_index_member, resolve_constant_in_index,
+};
 use crate::cop::{Cop, Investigation};
 
 static SORBET_RETURN_TYPE: NodePattern =
@@ -36,6 +37,9 @@ impl Cop for PredicatePrefix {
                         && !sorbet_sig(node, "T::Boolean")))
             })
             .collect();
+        if offending.is_empty() || overrides_inherited_method(cx, node) {
+            return;
+        }
         for prefix in offending {
             let message = message(method_name, &expected_name(cx, method_name, prefix));
             cx.add_offense(node.loc().name.unwrap(), &message);
@@ -109,4 +113,38 @@ fn expected_name(cx: &Investigation<'_, '_>, method_name: &str, prefix: &str) ->
 
 fn message(method_name: &str, new_name: &str) -> String {
     format!("Rename `{method_name}` to `{new_name}`.")
+}
+
+/// `overrides_inherited_method?`: when `AllCops/UseProjectIndex` is
+/// enabled, methods that override a method defined by an ancestor elsewhere
+/// in the project are not reported.
+fn overrides_inherited_method(cx: &Investigation<'_, '_>, node: Node<'_>) -> bool {
+    let Some(index) = cx.project_index() else {
+        return false;
+    };
+    let Some(namespace_node) = node
+        .ancestors()
+        .find(|a| a.is(NodeType::Class) || a.is(NodeType::Module))
+    else {
+        return false;
+    };
+    let Some(declaration) = namespace_node
+        .identifier()
+        .and_then(|identifier| resolve_constant_in_index(&index, identifier))
+        .filter(|declaration| declaration.is_namespace())
+    else {
+        return false;
+    };
+    let scope = if node.is(NodeType::Defs) {
+        indexed_singleton_of(&index, declaration)
+    } else {
+        Some(declaration)
+    };
+    scope.is_some_and(|scope| {
+        inherited_index_member(
+            &index,
+            scope,
+            &format!("{}()", node.method_name().unwrap_or_default()),
+        )
+    })
 }

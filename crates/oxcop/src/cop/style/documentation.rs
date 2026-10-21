@@ -1,11 +1,9 @@
 //! Port of `lib/rubocop/cop/style/documentation.rb`.
-//!
-//! `documented_elsewhere?` needs the `rubydex` project index, which isn't
-//! supported; without one RuboCop returns false there too.
 
 use crate::ast::node_pattern::NodePattern;
 use crate::ast::{Child, Node, NodeType};
 use crate::cop::mixin::documentation_comment::documentation_comment;
+use crate::cop::mixin::project_index_help::{FILE_URI_PREFIX, resolve_constant_in_index, same_file};
 use crate::cop::mixin::range_help::range_between;
 use crate::cop::{Cop, Investigation};
 use crate::processed_source::ProcessedSource;
@@ -47,6 +45,9 @@ fn check(cx: &mut Investigation<'_, '_>, node: Node<'_>, body: Option<Node<'_>>)
         return;
     }
     if body.is_some_and(|b| include_statement_only(&Child::Node(b.id()), b)) {
+        return;
+    }
+    if documented_elsewhere(cx, node) {
         return;
     }
     let range = range_between(
@@ -160,4 +161,43 @@ fn qualify_const(node: Option<Node<'_>>, out: &mut Vec<String>) {
             out.push(short_name.to_owned());
         }
     }
+}
+
+/// `documented_elsewhere?`: with the project index, the documentation
+/// requirement is satisfied by a comment on any other definition of the
+/// same class or module.
+fn documented_elsewhere(cx: &Investigation<'_, '_>, node: Node<'_>) -> bool {
+    let Some(index) = cx.project_index() else {
+        return false;
+    };
+    let Some(declaration) = node
+        .identifier()
+        .and_then(|identifier| resolve_constant_in_index(&index, identifier))
+        .filter(|declaration| declaration.is_namespace())
+    else {
+        return false;
+    };
+    let current = cx.processed_source.file_path();
+    index.definitions(declaration).into_iter().any(|definition| {
+        let Some(location) = index.location(definition) else {
+            return false;
+        };
+        // `other_definition?`
+        let other = location.uri.starts_with(FILE_URI_PREFIX)
+            && location.file_path.is_some_and(|path| {
+                !same_file(&path, std::path::Path::new(&current))
+                    || location.start_line as usize + 1 != node.first_line()
+            });
+        // `documenting_comments?`
+        other
+            && index.comments(definition).iter().any(|comment| {
+                let text = comment.trim();
+                !text.is_empty()
+                    && !regex!(
+                        r"\A\#\s*(rubocop:|frozen_string_literal:|encoding:|shareable_constant_value:|typed:|-\*-)"
+                    )
+                    .find(text)
+                    .is_some()
+            })
+    })
 }

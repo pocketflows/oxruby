@@ -150,7 +150,9 @@ pub fn resolved_superclass_reference(index: &ProjectIndex, definition: Def) -> b
     if definition.kind != DefKind::Class {
         return true;
     }
-    index.superclass_resolved(definition) != Some(false)
+    index
+        .superclass(definition)
+        .is_none_or(|superclass| superclass.resolved)
 }
 
 /// `resolved_mixin_references?`.

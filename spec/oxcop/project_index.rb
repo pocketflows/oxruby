@@ -21,6 +21,14 @@ module Oxcop
       Lint/ArgumentMismatch
       Lint/DeprecatedReference
       Lint/NameTypo
+      Lint/ConstantResolution
+      Lint/InheritException
+      Lint/MissingSuper
+      Naming/AccessorMethodName
+      Naming/PredicatePrefix
+      Style/Documentation
+      Style/MissingRespondToMissing
+      Style/RedundantConstantBase
       Style/StaticClass
     ].freeze
 

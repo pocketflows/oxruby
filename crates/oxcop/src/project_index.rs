@@ -176,6 +176,15 @@ pub enum Visibility {
     Private,
 }
 
+/// A `Rubydex::ConstantReference`: `resolved` is false for an
+/// `UnresolvedConstantReference`, whose `name` is the referenced name's last
+/// segment (`rdx_constant_reference_name`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstantReference {
+    pub resolved: bool,
+    pub name: String,
+}
+
 /// The kinds of `Rubydex::Mixin`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MixinKind {
@@ -507,13 +516,12 @@ impl ProjectIndex {
         .unwrap_or_default()
     }
 
-    /// `ClassDefinition#superclass`: `None` without a superclass, else
-    /// whether the reference resolved.
-    pub fn superclass_resolved(&self, def: Def) -> Option<bool> {
+    /// `ClassDefinition#superclass`.
+    pub fn superclass(&self, def: Def) -> Option<ConstantReference> {
         self.with_definition(def, |graph, definition| match definition {
             Definition::Class(class) => class
                 .superclass_ref()
-                .map(|id| constant_reference_resolved(graph, *id)),
+                .map(|id| constant_reference(graph, *id)),
             _ => None,
         })
         .flatten()
@@ -536,7 +544,7 @@ impl ProjectIndex {
                         RdxMixin::Prepend(_) => MixinKind::Prepend,
                         RdxMixin::Extend(_) => MixinKind::Extend,
                     },
-                    resolved: constant_reference_resolved(graph, *mixin.constant_reference_id()),
+                    resolved: constant_reference(graph, *mixin.constant_reference_id()).resolved,
                 })
                 .collect()
         })
@@ -592,12 +600,18 @@ impl ProjectIndex {
     }
 }
 
-fn constant_reference_resolved(graph: &Graph, id: ConstantReferenceId) -> bool {
-    graph
+fn constant_reference(graph: &Graph, id: ConstantReferenceId) -> ConstantReference {
+    let name = graph
         .constant_references()
         .get(&id)
-        .and_then(|reference| graph.names().get(reference.name_id()))
-        .is_some_and(|name| matches!(name, NameRef::Resolved(_)))
+        .and_then(|reference| graph.names().get(reference.name_id()));
+    ConstantReference {
+        resolved: name.is_some_and(|name| matches!(name, NameRef::Resolved(_))),
+        name: name
+            .and_then(|name| graph.strings().get(name.str()))
+            .map(|string| string.as_str().to_owned())
+            .unwrap_or_default(),
+    }
 }
 
 fn method_signatures(method: &rubydex::model::definitions::MethodDefinition) -> Vec<Signature> {
@@ -758,6 +772,6 @@ mod tests {
             .collect();
         assert!(descendants.contains(&"Child".to_owned()));
         let child_def = index.definitions(child)[0];
-        assert_eq!(index.superclass_resolved(child_def), Some(true));
+        assert!(index.superclass(child_def).unwrap().resolved);
     }
 }

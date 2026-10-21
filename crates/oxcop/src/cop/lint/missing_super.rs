@@ -1,11 +1,10 @@
 //! Port of `lib/rubocop/cop/lint/missing_super.rb`.
-//!
-//! Without a project index (`rubydex` isn't supported),
-//! `index_verified_stateless_ancestry?` is always false, as in RuboCop
-//! without one.
 
 use crate::ast::node_pattern::NodePattern;
 use crate::ast::{Node, NodeType};
+use crate::cop::mixin::project_index_help::{
+    fully_resolved_index_ancestry, resolve_constant_in_index,
+};
 use crate::cop::{Cop, Investigation};
 
 const CONSTRUCTOR_MSG: &str = "Call `super` to initialize state of the parent class.";
@@ -88,6 +87,7 @@ fn inside_class_with_stateful_parent(cx: &Investigation<'_, '_>, node: Node<'_>)
         class_node
             .parent_class()
             .is_some_and(|parent_class| !allowed_class(cx, parent_class))
+            && !index_verified_stateless_ancestry(cx, class_node)
     } else {
         false
     }
@@ -99,4 +99,32 @@ fn allowed_class(cx: &Investigation<'_, '_>, node: Node<'_>) -> bool {
     };
     STATELESS_CLASSES.contains(&name.as_str())
         || cx.cop_config_list("AllowedParentClasses").contains(&name.as_str())
+}
+
+/// `index_verified_stateless_ancestry?`: with the project index, the
+/// offense is skipped when the class' whole ancestry is resolvable and none
+/// of the inherited ancestors defines `initialize`.
+fn index_verified_stateless_ancestry(cx: &Investigation<'_, '_>, class_node: Node<'_>) -> bool {
+    let Some(index) = cx.project_index() else {
+        return false;
+    };
+    let Some(declaration) = class_node
+        .identifier()
+        .and_then(|identifier| resolve_constant_in_index(&index, identifier))
+        .filter(|declaration| declaration.is_class())
+    else {
+        return false;
+    };
+    let name = index.name(declaration);
+    if index
+        .ancestors(declaration)
+        .into_iter()
+        .filter(|ancestor| index.name(*ancestor) != name)
+        .any(|ancestor| index.member(ancestor, "initialize()").is_some())
+    {
+        return false;
+    }
+    // `extend` affects the singleton class and cannot introduce an
+    // inherited `initialize`, so unresolved extends are tolerated.
+    fully_resolved_index_ancestry(&index, declaration, true)
 }
