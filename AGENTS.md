@@ -25,6 +25,10 @@ bundle exec rake compare                 # diff vs real rubocop on ../code
   is in characters, as in RuboCop.
 - Register new cops in `cop/registry.rs`; that also makes their upstream
   specs run instead of being skipped.
+- **No `unsafe`.** The `unsafe` keyword never appears in our code. Every
+  crate root starts with `#![forbid(unsafe_code)]`. Use safe std APIs
+  instead (`str::from_utf8`, `char_indices`, checked slicing), and depend on
+  other crates through their safe Rust APIs rather than writing FFI glue.
 - `../rubocop` is checked out at the tracked tag (see `version.rs`). Read the
   Ruby source and its spec before porting a cop.
 
