@@ -60,7 +60,14 @@ fn safe_to_split(node: Node<'_>) -> bool {
         .any(|d| d.is_any(&[If, Case, Kwbegin, Rescue, Ensure]) || d.is_any_def())
         && !node.descendants().any(|d| {
             d.is_any(&[Dstr, Str])
-                && (d.is_heredoc() || d.str_content().is_some_and(|v| v.contains('\n')))
+                && (d.is_heredoc()
+                    // `value.include?("\n")`, also for strings that aren't
+                    // valid UTF-8 (a `dstr`'s parts are descendants too).
+                    || (d.is(Str)
+                        && d.children()
+                            .first()
+                            .and_then(|c| c.str_bytes())
+                            .is_some_and(|b| b.contains(&b'\n'))))
         })
         && !node
             .descendants()
