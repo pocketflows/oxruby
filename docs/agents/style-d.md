@@ -23,6 +23,11 @@ TrailingCommaInHashLiteral 41, SingleLineMethods 138, SymbolProc 77,
 Semicolon 39, TrailingCommaInBlockArgs 20, TrailingBodyOnClass 7,
 TrailingBodyOnModule 7, TrailingBodyOnMethodDefinition 12.
 
+Third batch: WhileUntilModifier 50, SpecialGlobalVars 31, SymbolArray 33,
+StringLiterals 58, StringLiteralsInInterpolation 13 (style detection feeds
+`config_to_allow_offenses`; an unsupported `EnforcedStyle` raises
+`Unknown style ... selected!` as upstream's `style` does).
+
 Shared changes: `util::symbol_inspect`; `util::ruby_inspect` escapes control
 characters as `\uXXXX` (Ruby's `String#inspect` for UTF-8); `prism.rs`
 parses with `partial_script: true`, as `Prism::Translation::Parser` does
@@ -40,14 +45,23 @@ RequireLibraryCorrector, StringLiteralCorrector, LineBreakCorrector.
 
 ## Left / blocked
 
-- Needs `cop.config_to_allow_offenses` through the spec shim (`runtime`,
-  `spec/oxcop/`): SpecialGlobalVars (4 of 31 examples), SymbolArray (2 of 33),
-  WordArray (5 of 60), StringLiterals (3 of 58). StringLiterals and
-  StringLiteralsInInterpolation also have a "bad EnforcedStyle raises
-  RuntimeError" example: the shim would need to raise when the binary
-  reports a cop error.
-  These are on local branch `style-d-wip`.
-- WhileUntilModifier: needs StatementModifier (claimed by `style-b`).
-- Note: `Alignment#configured_indentation_width` is copied privately into
-  SingleLineMethods and the TrailingBody cops until `layout-b` lands
-  `mixin/alignment.rs`.
+Every S–Z cop is landed except Style/WordArray (55 of 60 pass; file on
+local branch `style-d-wip`):
+- `:85` (US-ASCII default external encoding): RuboCop's correction depends
+  on the spec process's `Encoding.default_external` (`String#inspect`
+  escapes non-ASCII), which the binary can't see. Principled.
+- `:324` (two cop instances): relies on the class-level
+  `WordArray.largest_brackets` and on `config_to_allow_offenses` carried
+  from one `_investigate` to the next through `DisabledConfigFormatter`.
+  The binary starts each request with empty auto-gen state.
+- `:294`, `:309`: assert `config_to_allow_offenses` after
+  `expect_correction`. Upstream's state accumulates across the correction
+  loop (it lives in the formatter, keyed by cop name); `runner.rs` keeps
+  only the last iteration's state, so the final all-`%w` source overwrites
+  it. For `runtime`: carry `AutoGenState` across iterations of the
+  `--persist-cops` loop (and merge rather than replace in `runner.rs`).
+  SymbolArray's equivalent examples don't call `expect_correction`, so it
+  passes.
+
+`ArrayMinSize#array_style_detected` is ported; `largest_brackets` lives in
+the cop's `ArrayStyleState`, not on the class.

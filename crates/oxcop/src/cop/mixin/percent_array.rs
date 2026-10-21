@@ -6,8 +6,10 @@
 use crate::ast::Node;
 use crate::cop::Investigation;
 use crate::cop::correctors::percent_literal_corrector;
-use crate::cop::mixin::array_min_size::below_array_length;
-use crate::cop::mixin::configurable_enforced_style::style;
+use crate::cop::mixin::array_min_size::{
+    ArrayStyleState, array_style_detected, below_array_length,
+};
+use crate::cop::mixin::configurable_enforced_style::{no_acceptable_style_bang, style};
 
 pub trait PercentArray {
     /// `self.class::ARRAY_MSG`, with `%<prefer>s`.
@@ -16,6 +18,9 @@ pub trait PercentArray {
     const PERCENT_MSG: &'static str;
 
     fn build_bracketed_array(&self, cx: &Investigation<'_, '_>, node: Node<'_>) -> String;
+
+    /// The `array_style_detected` bookkeeping.
+    fn array_style_state(&mut self) -> &mut ArrayStyleState;
 
     fn invalid_percent_array_contents(&self, _cx: &Investigation<'_, '_>, _node: Node<'_>) -> bool {
         false
@@ -48,13 +53,18 @@ fn comments_in_array(cx: &Investigation<'_, '_>, node: Node<'_>) -> bool {
 
 /// `check_percent_array(node)`.
 pub fn check_percent_array<C: PercentArray>(
-    cop: &C,
+    cop: &mut C,
     cx: &mut Investigation<'_, '_>,
     node: Node<'_>,
 ) {
+    let size = node.child_nodes().count() as i64;
+    array_style_detected(cx, cop.array_style_state(), "percent", size);
     let brackets_required = cop.invalid_percent_array_contents(cx, node);
     if !(style(cx) == "brackets" || brackets_required) {
         return;
+    }
+    if brackets_required {
+        no_acceptable_style_bang(cx);
     }
     let bracketed_array = cop.build_bracketed_array(cx, node);
     let message = build_message_for_bracketed_array::<C>(&bracketed_array);
@@ -74,12 +84,21 @@ fn build_message_for_bracketed_array<C: PercentArray>(preferred_array_code: &str
 
 /// `check_bracketed_array(node, literal_prefix)`.
 pub fn check_bracketed_array<C: PercentArray>(
-    _cop: &C,
+    cop: &mut C,
     cx: &mut Investigation<'_, '_>,
     node: Node<'_>,
     literal_prefix: &str,
 ) {
-    if allowed_bracket_array(cx, node) || style(cx) != "percent" {
+    if allowed_bracket_array(cx, node) {
+        return;
+    }
+    array_style_detected(
+        cx,
+        cop.array_style_state(),
+        "brackets",
+        node.child_nodes().count() as i64,
+    );
+    if style(cx) != "percent" {
         return;
     }
     let config = cx.config;

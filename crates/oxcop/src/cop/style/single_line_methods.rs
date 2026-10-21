@@ -2,6 +2,7 @@
 
 use crate::ast::{Node, NodeType};
 use crate::cop::correctors::line_break_corrector::{break_line_before, move_comment};
+use crate::cop::mixin::alignment::configured_indentation_width;
 use crate::cop::{Cop, Corrector, Investigation};
 use crate::processed_source::Range;
 
@@ -44,17 +45,6 @@ impl Cop for SingleLineMethods {
     }
 }
 
-/// `Alignment#configured_indentation_width`.
-fn configured_indentation_width(cx: &Investigation<'_, '_>) -> usize {
-    cx.cop_config_int("IndentationWidth")
-        .or_else(|| {
-            cx.config
-                .for_cop("Layout/IndentationWidth")
-                .get("Width")
-                .and_then(serde_yaml_ng::Value::as_i64)
-        })
-        .unwrap_or(2) as usize
-}
 
 /// `correct_to_endless?(body_node)`.
 fn correct_to_endless(cx: &Investigation<'_, '_>, body_node: Option<Node<'_>>) -> bool {

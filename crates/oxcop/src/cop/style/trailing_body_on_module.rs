@@ -3,6 +3,7 @@
 use crate::ast::{Node, NodeType};
 use crate::cop::correctors::line_break_corrector;
 use crate::cop::mixin::trailing_body::{first_part_of, last_child, trailing_body};
+use crate::cop::mixin::alignment::configured_indentation_width;
 use crate::cop::{Cop, Investigation};
 
 const MSG: &str = "Place the first line of module body on its own line.";
@@ -36,14 +37,3 @@ impl Cop for TrailingBodyOnModule {
     }
 }
 
-/// `Alignment#configured_indentation_width`.
-fn configured_indentation_width(cx: &Investigation<'_, '_>) -> usize {
-    cx.cop_config_int("IndentationWidth")
-        .or_else(|| {
-            cx.config
-                .for_cop("Layout/IndentationWidth")
-                .get("Width")
-                .and_then(serde_yaml_ng::Value::as_i64)
-        })
-        .unwrap_or(2) as usize
-}
