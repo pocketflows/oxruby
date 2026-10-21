@@ -54,6 +54,15 @@ Owner: `runtime` (see the roster in `docs/PARALLEL.md`).
   when the file contains `<%`. **`inherit_gem`** resolves through
   `OXCOP_GEMS`; without the launcher it warns and is skipped.
 
+## CLI options (done so far)
+
+`--fail-level` (names, codes, `A`/`autocorrect`; `AllCops: FailLevel` of
+the pwd config otherwise), `--display-only-fail-level-offenses`,
+`--display-only-correctable`, `--display-only-safe-correctable`,
+`-F/--fail-fast` (newest file first, serial), `--enable-pending-cops`,
+`--disable-pending-cops`, `--only Lint/RedundantCopDisableDirective` is an
+error. Checked against rubocop's exit codes and output on a sample.
+
 ## Pending cops (done)
 
 The pending-cops warning (`PendingCopsReporter`) is printed to stderr as
@@ -163,6 +172,16 @@ invalid-UTF-8 strings in a spec's cop config
   detected_styles, exclude_limits, raised}` as JSON (`runner::SpecReport`).
 
 ## Left
+
+- CLI options still missing: `-o/--out` and several `-f`, `--auto-gen-config`
+  (+ `--exclude-limit`, `--no-offense-counts`, ...), `-x/--fix-layout`,
+  `--safe`, `--force-default-config`, `--ignore-parent-exclusion`,
+  `--only-guide-cops`, `-E`/`-S`/`--extra-details`, `--show-cops`,
+  `--show-docs-url`, `--disable-uncorrectable`, `--display-time`,
+  `--cache-root`, `--require`/`--plugin`, `-V`, `--editor-mode`.
+  `AllCops: DefaultFormatter` isn't honoured yet.
+- Result cache (`ResultCache`): not started. `--cache` is accepted and ignored.
+- ConfigValidator (unknown cops/params warnings, invalid values).
 
 - Debug oxcop on the full ../code compare was ~225 s with ~170 cops, and
   almost all of it is **Style/RedundantFreeze**: 55 s on app/models alone

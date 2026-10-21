@@ -12,7 +12,7 @@ use crate::cop::base::{AutoGenState, CopError, CopOptions, OffenseToCheck};
 use crate::cop::team::{Selection, Team};
 use crate::cop::{Offense, Severity};
 use crate::formatter::Formatter;
-use crate::options::{AutocorrectMode, Options};
+use crate::options::{AutocorrectMode, FailLevel, Options};
 use crate::path_util;
 use crate::processed_source::ProcessedSource;
 use crate::source_encoding;
@@ -191,8 +191,20 @@ impl<'a> Runner<'a> {
             }
             return Ok(vec![path_util::expand_path(stdin_path)]);
         }
-        TargetFinder::new(&mut self.config_store, self.options.force_exclusion)
-            .find(&self.options.paths)
+        let mut files = TargetFinder::new(&mut self.config_store, self.options.force_exclusion)
+            .find(&self.options.paths)?;
+        if self.options.fail_fast {
+            // `TargetFinder#order`: most recently modified file first.
+            files.sort_by_cached_key(|file| {
+                let mtime = std::fs::metadata(file)
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |d| d.as_secs());
+                std::cmp::Reverse(mtime)
+            });
+        }
+        Ok(files)
     }
 
     /// Returns whether all files passed (no offense at or above `FailLevel`).
@@ -234,17 +246,22 @@ impl<'a> Runner<'a> {
                 if result.corrected_stdin.is_some() {
                     runner.corrected_stdin = result.corrected_stdin;
                 }
-                let fail_level = runner.minimum_severity_to_fail(file)?;
-                if result
+                let minimum = runner.minimum_severity_to_fail()?;
+                let options = runner.options;
+                let succeeded = !result.offenses.iter().any(|offense| {
+                    considered_failure(options, minimum, offense)
+                        && offense_displayed(options, minimum, offense)
+                });
+                all_passed &= succeeded;
+                // `offenses_to_report`
+                let offenses: Vec<Offense> = result
                     .offenses
-                    .iter()
-                    .any(|offense| !offense.corrected() && offense.severity >= fail_level)
-                {
-                    all_passed = false;
-                }
-                formatter.file_finished(file, &result.offenses);
+                    .into_iter()
+                    .filter(|offense| offense_displayed(options, minimum, offense))
+                    .collect();
+                formatter.file_finished(file, &offenses);
                 inspected.push(file.to_path_buf());
-                Ok::<(), ConfigError>(())
+                Ok::<bool, ConfigError>(succeeded)
             };
 
         if self.run_in_parallel(&files) {
@@ -270,7 +287,10 @@ impl<'a> Runner<'a> {
                 let result = self
                     .inspector
                     .file_offenses(file, stdin_source.as_deref(), &config);
-                report(self, formatter, file, result)?;
+                let succeeded = report(self, formatter, file, result)?;
+                if self.options.fail_fast && !succeeded {
+                    break;
+                }
             }
         }
         formatter.finished(&inspected);
@@ -279,19 +299,65 @@ impl<'a> Runner<'a> {
 
     /// `Runner#run_in_parallel?`. Parallel by default, as RuboCop is; the
     /// offenses and their order are the same either way.
+    /// (`-F/--fail-fast` is incompatible with parallel inspection.)
     fn run_in_parallel(&self, files: &[PathBuf]) -> bool {
-        !self.options.no_parallel && self.options.stdin.is_none() && files.len() > 1
+        !self.options.no_parallel
+            && !self.options.fail_fast
+            && self.options.stdin.is_none()
+            && files.len() > 1
     }
 
-    fn minimum_severity_to_fail(&mut self, file: &Path) -> Result<Severity, ConfigError> {
-        let config = self.config_store.for_file(file)?;
+    /// `Severity.minimum_to_fail(options, config_store.for_pwd)`.
+    fn minimum_severity_to_fail(&mut self) -> Result<Severity, ConfigError> {
+        if let Some(FailLevel::Severity(severity)) = self.options.fail_level {
+            return Ok(severity);
+        }
+        let config = self.config_store.for_pwd()?;
         Ok(config
             .for_all_cops()
             .get("FailLevel")
             .and_then(Value::as_str)
-            .and_then(Severity::from_name)
+            .and_then(Severity::from_code_or_name)
             .unwrap_or(Severity::Refactor))
     }
+}
+
+/// `Runner#considered_failure?`.
+fn considered_failure(options: &Options, minimum: Severity, offense: &Offense) -> bool {
+    if offense.disabled() {
+        return false;
+    }
+    if options.fail_level == Some(FailLevel::Autocorrect) && offense.correctable() {
+        return true;
+    }
+    !offense.corrected() && offense.severity >= minimum
+}
+
+/// `Runner#offense_displayed?`.
+fn offense_displayed(options: &Options, minimum: Severity, offense: &Offense) -> bool {
+    if options.display_only_fail_level_offenses {
+        considered_failure(options, minimum, offense)
+    } else if options.display_only_safe_correctable {
+        supports_safe_autocorrect(offense)
+    } else if options.display_only_correctable {
+        offense.correctable()
+    } else {
+        true
+    }
+}
+
+/// `Runner#supports_safe_autocorrect?`: correctable, and safe by the cop's
+/// default configuration.
+fn supports_safe_autocorrect(offense: &Offense) -> bool {
+    let default = crate::config_loader::default_configuration()
+        .get(offense.cop_name.as_str())
+        .and_then(Value::as_mapping);
+    let flag = |key: &str| {
+        default
+            .and_then(|d| d.get(key))
+            .is_none_or(|v| v != &Value::Bool(false))
+    };
+    offense.correctable() && flag("Safe") && flag("SafeAutoCorrect")
 }
 
 impl Inspector<'_> {

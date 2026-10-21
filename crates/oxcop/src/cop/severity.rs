@@ -44,4 +44,17 @@ impl Severity {
             _ => return None,
         })
     }
+
+    /// `Severity.name_from_code` then the name: `C` or `convention`.
+    pub fn from_code_or_name(value: &str) -> Option<Self> {
+        Some(match value {
+            "I" => Self::Info,
+            "R" => Self::Refactor,
+            "C" => Self::Convention,
+            "W" => Self::Warning,
+            "E" => Self::Error,
+            "F" => Self::Fatal,
+            name => return Self::from_name(name),
+        })
+    }
 }

@@ -79,6 +79,29 @@ pub struct Options {
     #[arg(short = 'L', long = "list-target-files")]
     pub list_target_files: bool,
 
+    /// Minimum severity for exit with error code (a severity name or code,
+    /// or `autocorrect`/`A`).
+    #[arg(long = "fail-level", value_name = "SEVERITY", value_parser = parse_fail_level)]
+    pub fail_level: Option<FailLevel>,
+
+    /// Only output offense messages at the specified --fail-level or above.
+    #[arg(long = "display-only-fail-level-offenses")]
+    pub display_only_fail_level_offenses: bool,
+
+    /// Only output correctable offense messages.
+    #[arg(long = "display-only-correctable")]
+    pub display_only_correctable: bool,
+
+    /// Only output safe-correctable offense messages when combined with
+    /// --display-only-correctable.
+    #[arg(long = "display-only-safe-correctable")]
+    pub display_only_safe_correctable: bool,
+
+    /// Inspect files in order of modification time and stop after the
+    /// first file containing offenses.
+    #[arg(short = 'F', long = "fail-fast")]
+    pub fail_fast: bool,
+
     /// Run without pending cops.
     #[arg(long = "disable-pending-cops")]
     pub disable_pending_cops: bool,
@@ -183,6 +206,23 @@ pub struct Options {
     /// Print the names of cops that have been ported to oxcop, then exit.
     #[arg(long = "show-ported-cops", hide = true)]
     pub show_ported_cops: bool,
+}
+
+/// `--fail-level`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailLevel {
+    Severity(crate::cop::Severity),
+    /// Any correctable offense fails.
+    Autocorrect,
+}
+
+fn parse_fail_level(value: &str) -> Result<FailLevel, String> {
+    match value {
+        "A" | "autocorrect" => Ok(FailLevel::Autocorrect),
+        _ => crate::cop::Severity::from_code_or_name(value)
+            .map(FailLevel::Severity)
+            .ok_or_else(|| format!("invalid argument: --fail-level {value}")),
+    }
 }
 
 impl Options {
