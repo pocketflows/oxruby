@@ -10,6 +10,7 @@ pub mod annotation_comment;
 pub mod array_min_size;
 pub mod array_syntax;
 pub mod check_assignment;
+pub mod check_line_breakable;
 pub mod check_single_line_suitability;
 pub mod code_length;
 pub mod comments_help;

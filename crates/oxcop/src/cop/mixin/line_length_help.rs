@@ -37,6 +37,17 @@ pub fn max_line_length(cx: &Investigation<'_, '_>) -> Option<usize> {
     Some(as_usize(line_length_config(cx).get("Max")).unwrap_or(120))
 }
 
+/// `max_line_length` as the including cop sees it: `Layout/LineLength`
+/// aliases it to its own `max` (`cop_config['Max']`, even when the
+/// configuration disables the cop and `--only` runs it).
+fn cop_max_line_length(cx: &Investigation<'_, '_>) -> Option<usize> {
+    if cx.cop_name() == "Layout/LineLength" {
+        as_usize(cx.cop_config_value("Max"))
+    } else {
+        max_line_length(cx)
+    }
+}
+
 pub fn allow_rbs_inline_annotation(cx: &Investigation<'_, '_>) -> bool {
     truthy(line_length_config(cx).get("AllowRBSInlineAnnotation"))
 }
@@ -76,7 +87,7 @@ pub fn allow_qualified_name(cx: &Investigation<'_, '_>) -> bool {
 }
 
 pub fn allowed_position(cx: &Investigation<'_, '_>, line: &str, range: &CharRange<usize>) -> bool {
-    let max = max_line_length(cx).unwrap_or(usize::MAX);
+    let max = cop_max_line_length(cx).unwrap_or(usize::MAX);
     range.start < max && range.end == line_length(cx, line)
 }
 
@@ -106,7 +117,7 @@ pub fn find_excessive_range(
     let begin_position = begin_position + difference;
     let end_position = end_position + difference;
 
-    let max = max_line_length(cx).unwrap_or(usize::MAX);
+    let max = cop_max_line_length(cx).unwrap_or(usize::MAX);
     if begin_position < max && end_position < max {
         return None;
     }
@@ -262,11 +273,124 @@ pub fn uri_regexp(cx: &Investigation<'_, '_>) -> Option<onig::Regex> {
     ruby_regex(&pattern)
 }
 
-/// `valid_uri?`: `URI.parse` succeeds. Every match of `uri_regexp` is an
-/// absolute RFC 2396 URI, which `URI.parse` (the RFC 2396 parser in uri
-/// 0.13) accepts.
-fn valid_uri(_uri_ish_string: &str) -> bool {
-    true
+/// `URI::RFC3986_Parser::HOST` (uri 1.1.1), with `-` in group names
+/// spelled `_` (Oniguruma doesn't allow them).
+const RFC3986_HOST: &str = concat!(
+    r"(?<IP_literal>\[(?:(?<IPv6address>(?:\h{1,4}:){6}(?<ls32>\h{1,4}:\h{1,4}",
+    r"|(?<IPv4address>(?<dec_octet>[1-9]\d|1\d{2}|2[0-4]\d|25[0-5]|\d)",
+    r"\.\g<dec_octet>\.\g<dec_octet>\.\g<dec_octet>))",
+    r"|::(?:\h{1,4}:){5}\g<ls32>",
+    r"|\h{1,4}?::(?:\h{1,4}:){4}\g<ls32>",
+    r"|(?:(?:\h{1,4}:)?\h{1,4})?::(?:\h{1,4}:){3}\g<ls32>",
+    r"|(?:(?:\h{1,4}:){,2}\h{1,4})?::(?:\h{1,4}:){2}\g<ls32>",
+    r"|(?:(?:\h{1,4}:){,3}\h{1,4})?::\h{1,4}:\g<ls32>",
+    r"|(?:(?:\h{1,4}:){,4}\h{1,4})?::\g<ls32>",
+    r"|(?:(?:\h{1,4}:){,5}\h{1,4})?::\h{1,4}",
+    r"|(?:(?:\h{1,4}:){,6}\h{1,4})?::)",
+    r"|(?<IPvFuture>v\h++\.[!$&-.0-9:;=A-Z_a-z~]++))\])",
+    r"|\g<IPv4address>",
+    r"|(?<reg_name>(?:%\h\h|[!$&-.0-9;=A-Z_a-z~])*+)",
+);
+const RFC3986_USERINFO: &str = r"(?:%\h\h|[!$&-.0-9:;=A-Z_a-z~])*+";
+const RFC3986_SCHEME: &str = r"[A-Za-z][+\-.0-9A-Za-z]*+";
+const RFC3986_SEG: &str = r"(?:%\h\h|[!$&-.0-9:;=@A-Z_a-z~/])";
+const RFC3986_SEG_NC: &str = r"(?:%\h\h|[!$&-.0-9;=@A-Z_a-z~])";
+const RFC3986_FRAGMENT: &str = r"(?:%\h\h|[!$&-.0-9:;=@A-Z_a-z~/?])*+";
+
+/// `URI::RFC3986_Parser::RFC3986_URI`.
+fn rfc3986_uri() -> &'static onig::Regex {
+    regex!(&format!(
+        concat!(
+            r"\A(?<seg>{seg}){{0}}(?<URI>(?<scheme>{scheme}):(?<hier_part>//",
+            r"(?<authority>(?:(?<userinfo>{userinfo})@)?(?<host>{host})",
+            r"(?::(?<port>\d*+))?)(?<path_abempty>(?:/\g<seg>*+)?)",
+            r"|(?<path_absolute>/((?!/)\g<seg>++)?)|(?<path_rootless>(?!/)\g<seg>++)",
+            r"|(?<path_empty>))(?:\?(?<query>[^\#]*+))?(?:\#(?<fragment>{fragment}))?)\z",
+        ),
+        seg = RFC3986_SEG,
+        scheme = RFC3986_SCHEME,
+        userinfo = RFC3986_USERINFO,
+        host = RFC3986_HOST,
+        fragment = RFC3986_FRAGMENT,
+    ))
+}
+
+/// `URI::RFC3986_Parser::RFC3986_relative_ref`.
+fn rfc3986_relative_ref() -> &'static onig::Regex {
+    regex!(&format!(
+        concat!(
+            r"\A(?<seg>{seg}){{0}}(?<relative_ref>(?<relative_part>//",
+            r"(?<authority>(?:(?<userinfo>{userinfo})@)?(?<host>{host}(?<!/))?",
+            r"(?::(?<port>\d*+))?)(?<path_abempty>(?:/\g<seg>*+)?)",
+            r"|(?<path_absolute>/\g<seg>*+)|(?<path_noscheme>{seg_nc}++(?:/\g<seg>*+)?)",
+            r"|(?<path_empty>))(?:\?(?<query>[^\#]*+))?(?:\#(?<fragment>{fragment}))?)\z",
+        ),
+        seg = RFC3986_SEG,
+        seg_nc = RFC3986_SEG_NC,
+        userinfo = RFC3986_USERINFO,
+        host = RFC3986_HOST,
+        fragment = RFC3986_FRAGMENT,
+    ))
+}
+
+/// `valid_uri?`: `URI.parse` (uri 1.1.1's RFC 3986 parser, then the
+/// scheme's class) doesn't raise `URI::InvalidURIError`. `mailto` URIs it
+/// can't handle raise `InvalidComponentError` upstream, which isn't rescued;
+/// they count as invalid here.
+fn valid_uri(uri_ish_string: &str) -> bool {
+    let s = uri_ish_string;
+    // `URI must be ascii only`.
+    if !s.is_ascii() {
+        return false;
+    }
+    let (scheme, rest) = if rfc3986_uri().find(s).is_some() {
+        let (scheme, rest) = s.split_once(':').unwrap_or((s, ""));
+        (Some(scheme.to_ascii_uppercase()), rest)
+    } else if rfc3986_relative_ref().find(s).is_some() {
+        (None, s)
+    } else {
+        return false;
+    };
+    let (before_fragment, fragment) = match rest.split_once('#') {
+        Some((before, fragment)) => (before, Some(fragment)),
+        None => (rest, None),
+    };
+    let (path, query) = match before_fragment.split_once('?') {
+        Some((path, query)) => (path, Some(query)),
+        None => (before_fragment, None),
+    };
+    // `path-rootless`: the opaque part, which takes the query along.
+    let opaque = scheme.is_some() && !path.is_empty() && !path.starts_with('/');
+    if !opaque
+        && let Some(query) = query
+        && regex!(r"%[^0-9A-Fa-f][^0-9A-Fa-f]").find(query).is_some()
+    {
+        // `query=`: `invalid percent escape`.
+        return false;
+    }
+    match scheme.as_deref() {
+        // `URI::LDAP#initialize`: no fragment, and a path (`parse_dn`).
+        Some("LDAP" | "LDAPS") => fragment.is_none() && !opaque,
+        // `URI::FTP#initialize`: `raise InvalidURIError unless path`.
+        Some("FTP") => !opaque,
+        Some("MAILTO") => {
+            let opaque_part = if opaque {
+                Some(match query {
+                    Some(query) => format!("{path}?{query}"),
+                    None => path.to_owned(),
+                })
+            } else {
+                query.map(|query| format!("?{query}"))
+            };
+            opaque_part.is_some_and(|opaque| {
+                let to = opaque.split('?').next().unwrap_or("");
+                regex!(r"\A(?:[^@,;]+@[^@,;]+(?:\z|[,;]))*\z")
+                    .find(to)
+                    .is_some()
+            })
+        }
+        _ => true,
+    }
 }
 
 /// `line_length_without_directive`:
@@ -277,4 +401,41 @@ pub fn line_length_without_directive(line: &str) -> usize {
         None => line,
     };
     before.trim_end().chars().count()
+}
+
+#[cfg(test)]
+mod uri_tests {
+    use super::valid_uri;
+
+    #[test]
+    fn valid_uri_is_uri_parse() {
+        for (s, ok) in [
+            ("LDAP::DEFAULT_GROUP_UNIQUE_MEMBER_LIST_KEY", false),
+            ("LDAP:x", false),
+            ("http://a b", false),
+            ("ldap::foo", false),
+            ("http:", true),
+            ("http://example.com/a%zz", false),
+            ("https://example.com/path?a=1#frag", true),
+            ("https://example.com/?q=%zz", false),
+            ("ftp:opaque", false),
+            ("mailto:a@b.c", true),
+            ("mailto:nobody", false),
+            ("http://[::1]:80/x", true),
+            ("ldap://host/dc=x#frag", false),
+            ("otherprotocol://a.very.long/x", true),
+            ("http://exämple.com", false),
+            (
+                "https://docs.sentry.io/platforms/ruby/tracing/instrumentation/performance-metrics/#supported-measurement-units",
+                true,
+            ),
+            (
+                "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Noto+Serif:ital,wght@0,100..900;1,100..900&display=swap",
+                true,
+            ),
+            ("https://example.com/link", true),
+        ] {
+            assert_eq!(valid_uri(s), ok, "{s}");
+        }
+    }
 }
