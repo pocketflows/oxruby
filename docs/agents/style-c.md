@@ -73,6 +73,7 @@
 - Style/RedundantSort 50
 - Style/RedundantReturn 39
 - Style/RedundantSortBy 8
+- Style/RedundantStringEscape 328
 - Style/RedundantStructKeywordInit 12
 - Style/RegexpLiteral 65
 - Style/RequireOrder 24
@@ -82,23 +83,15 @@
 - Style/ReturnNilInPredicateMethodDefinition 39
 - Style/ReverseFind 14
 
-## Pending / WIP branches (local, not on main)
+## WIP branch (local, not on main)
 
-`style-c-pending` now only matters for Style/RedundantStringEscape (328,
-green): it needs layout-b's `mixin/match_range.rs`, which isn't on main yet
-(the branch carries a `TEMP` copy). Once it lands, cherry-pick
-`Port Style/RedundantStringEscape` onto `style-c` and land it. Everything
-else on that branch has landed.
-
-`style-c-wip` now only matters for Style/RedundantArgument (14/15; see
-below). The rest of what was parked there has landed.
+`style-c-wip` holds Style/RedundantArgument (14/15; blocker below). Every
+other N–R cop has landed; `style-c-pending` is fully landed and can be
+deleted.
 
 ## Left
 
-Nothing outside `style-c-pending`/`style-c-wip` (below).
-RedundantLineContinuation scans with the regexp directly instead of
-layout-b's MatchRange (not on main yet); switch it to `each_match_range`
-once that lands.
+Nothing but Style/RedundantArgument (blocked, below).
 
 ## Blocked / principled failures
 

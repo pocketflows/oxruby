@@ -1,5 +1,6 @@
 //! Port of `lib/rubocop/cop/style/redundant_line_continuation.rb`.
 
+use crate::cop::mixin::match_range::each_match_range;
 use crate::cop::mixin::range_help::range_between;
 use crate::cop::mixin::reparsed_equivalence::{
     Oversized, ReparsedEquivalence, verified_by_reparse,
@@ -73,7 +74,7 @@ impl ReparsedEquivalence<Range> for RedundantLineContinuation {
     }
 }
 
-/// `each_match_range(ast.source_range, /(\\\n)/)` (MatchRange) filtered.
+/// `line_continuation_candidates`.
 fn line_continuation_candidates(ps: &ProcessedSource<'_>, range: Range) -> Vec<Range> {
     let source = &ps.buffer_source()[range.begin_pos..range.end_pos];
     let string_content_ranges: Vec<Range> = ps
@@ -82,10 +83,8 @@ fn line_continuation_candidates(ps: &ProcessedSource<'_>, range: Range) -> Vec<R
         .filter(|t| STRING_TOKEN_TYPES.contains(&t.ty))
         .map(|t| t.range)
         .collect();
-    regex!(r"(\\\n)")
-        .captures_iter(source)
-        .filter_map(|c| c.pos(1))
-        .map(|(b, e)| range_between(range.begin_pos + b, range.begin_pos + e))
+    each_match_range(range, source, regex!(r"(\\\n)"))
+        .into_iter()
         .filter(|&r| {
             !within_comment(ps, r)
                 && !implicit_string_concatenation(ps, r)
