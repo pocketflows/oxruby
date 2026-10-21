@@ -37,11 +37,9 @@ pub fn message(color: &Colorizable, offense: &Offense) -> String {
     format!("{prefix}{}", annotate_message(color, &offense.message))
 }
 
-/// Highlights `backticked` code in messages.
+/// Highlights `backticked` code in messages. As in RuboCop's
+/// `gsub(/`(.*?)`/m, yellow('\1'))`, the backticks go even without color.
 fn annotate_message(color: &Colorizable, message: &str) -> String {
-    if !color.enabled {
-        return message.to_owned();
-    }
     let mut out = String::new();
     let mut rest = message;
     while let Some(start) = rest.find('`') {
@@ -165,5 +163,25 @@ impl Formatter for SimpleTextFormatter {
         let summary = summary(&self.color, self.options, inspected_files.len(), self.stats);
         let _ = write!(self.output, "\n{summary}\n");
         let _ = self.output.flush();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn annotate_message_strips_backticks_like_rubocop() {
+        let plain = Colorizable { enabled: false };
+        assert_eq!(
+            annotate_message(&plain, "Use `==` if you meant `a\nb`."),
+            "Use == if you meant a\nb."
+        );
+        assert_eq!(annotate_message(&plain, "a `` b `c"), "a  b `c");
+        let color = Colorizable { enabled: true };
+        assert_eq!(
+            annotate_message(&color, "Missing space after `#`."),
+            "Missing space after \x1b[33m#\x1b[0m."
+        );
     }
 }
