@@ -16,18 +16,22 @@ pub const TRAILING_COMMENT_MARKER: &str = "--";
 const COP_NAME_PATTERN: &str = r"([A-Za-z]\w+/)*(?:[A-Za-z]\w+)";
 const COP_NAME_PATTERN_NC: &str = r"(?:[A-Za-z]\w+/)*[A-Za-z]\w+";
 
-fn modes_pattern() -> String {
-    let mut modes = vec![
-        "disable",
-        "enable",
-        "todo",
-        "push",
-        "pop",
-        "disable-next",
-        "todo-next",
-        "enable-next",
-        "next",
-    ];
+/// `AVAILABLE_MODES`
+pub const AVAILABLE_MODES: &[&str] = &[
+    "disable",
+    "enable",
+    "todo",
+    "push",
+    "pop",
+    "disable-next",
+    "todo-next",
+    "enable-next",
+    "next",
+];
+
+/// `MODES_PATTERN`
+pub fn modes_pattern() -> String {
+    let mut modes = AVAILABLE_MODES.to_vec();
     // `sort_by { |mode| -mode.length }`
     modes.sort_by_key(|m| std::cmp::Reverse(m.len()));
     modes.join("|")
