@@ -80,10 +80,18 @@ module Oxcop
         end
       end
 
-      # The sources behind `cop.project_index = build_index(...)`.
+      # The sources behind `cop.project_index = build_index(...)`, with the
+      # lockfile gems the `:config` context stubs (Lint/NameTypo reads them).
       def project_index_sources(cop)
         index = cop.project_index if cop.respond_to?(:project_index)
-        index.sources if index.is_a?(ProjectIndex)
+        return unless index.is_a?(ProjectIndex)
+
+        config = cop.config
+        target_gems = {
+          "names" => (config.gem_versions_in_target || {}).keys,
+          "path_sourced" => config.path_sourced_gems_in_target || []
+        }
+        { sources: index.sources, target_gems: target_gems }
       end
 
       # The spec wrote the source to a real file (`expect_offense(source,

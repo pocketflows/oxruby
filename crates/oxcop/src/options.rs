@@ -221,6 +221,12 @@ pub struct Options {
     #[arg(long = "project-index-sources", hide = true, value_name = "FILE")]
     pub project_index_sources: Option<PathBuf>,
 
+    /// What RuboCop's specs stub `Config#gem_versions_in_target` and
+    /// `path_sourced_gems_in_target` with (JSON: `{"names": [...],
+    /// "path_sourced": [...]}`), instead of reading the target's lockfile.
+    #[arg(long = "target-gems", hide = true, value_name = "FILE")]
+    pub target_gems: Option<PathBuf>,
+
     /// No warnings from the first investigation (the spec shim's autocorrect
     /// run repeats one it already reported).
     #[arg(long = "quiet-first-pass", hide = true)]

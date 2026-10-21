@@ -13,6 +13,7 @@ pub mod ext;
 pub mod file_finder;
 pub mod formatter;
 pub mod gem_version;
+pub mod lockfile;
 pub mod magic_comment;
 pub mod name_similarity;
 pub mod options;

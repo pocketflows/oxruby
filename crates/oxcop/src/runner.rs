@@ -209,6 +209,13 @@ impl<'a> Runner<'a> {
     ) -> Result<bool, ConfigError> {
         let files = self.find_target_files()?;
         self.build_project_index(&files)?;
+        crate::lockfile::set_target_gems_override(
+            self.options
+                .target_gems
+                .as_deref()
+                .map(read_target_gems)
+                .transpose()?,
+        );
         let stdin_source = match self.options.stdin {
             Some(_) => {
                 let mut source = Vec::new();
@@ -656,6 +663,28 @@ fn only_cops(options: &Options) -> Vec<String> {
         only.insert(0, "Lint/Syntax".to_owned());
     }
     only
+}
+
+/// Reads `--target-gems`: `{"names": [...], "path_sourced": [...]}`.
+fn read_target_gems(path: &Path) -> Result<crate::lockfile::TargetGems, ConfigError> {
+    let error = |e: &dyn std::fmt::Display| ConfigError(format!("{}: {e}", path.display()));
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).map_err(|e| error(&e))?)
+            .map_err(|e| error(&e))?;
+    let list = |key: &str| -> Vec<String> {
+        json.get(key)
+            .and_then(serde_json::Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    Ok(crate::lockfile::TargetGems {
+        names: list("names"),
+        path_sourced: list("path_sourced"),
+    })
 }
 
 /// Reads `--project-index-sources`: `[[uri, source], ...]`.

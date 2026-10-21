@@ -126,14 +126,17 @@ module Oxcop
         # `offenses_to_check`: Lint/RedundantCopDisableDirective's, as
         # `[{"cop_name", "line", "last_line"}]`. `project_index`: the
         # `[uri, source]` pairs of the cop's `project_index`
-        # (spec/oxcop/project_index.rb).
+        # (spec/oxcop/project_index.rb) and the stubbed lockfile gems
+        # (`gem_versions_in_target`, `path_sourced_gems_in_target`).
         def invoke(source, path:, config:, cop_name:, priors:, real_file:, args:, offenses_to_check: nil,
                    warnings: true, project_index: nil)
           input = real_file ? [path] : ["--stdin", path, "--keep-stdin-path"]
           if project_index
-            return with_temp_files([JSON.generate(project_index)]) do |(index_path)|
+            files = [JSON.generate(project_index.fetch(:sources)), JSON.generate(project_index.fetch(:target_gems))]
+            return with_temp_files(files) do |(index_path, gems_path)|
               invoke(source, path: path, config: config, cop_name: cop_name, priors: priors,
-                             real_file: real_file, args: [*args, "--project-index-sources", index_path],
+                             real_file: real_file,
+                             args: [*args, "--project-index-sources", index_path, "--target-gems", gems_path],
                              offenses_to_check: offenses_to_check, warnings: warnings)
             end
           end

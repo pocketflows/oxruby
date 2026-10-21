@@ -20,6 +20,7 @@ module Oxcop
     INDEX_AWARE_COPS = %w[
       Lint/ArgumentMismatch
       Lint/DeprecatedReference
+      Lint/NameTypo
       Style/StaticClass
     ].freeze
 
