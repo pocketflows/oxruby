@@ -9,6 +9,8 @@ AmbiguousBlockAssociation 52, AmbiguousOperator 17,
 AmbiguousRegexpLiteral 15, ArrayLiteralInRegexp 32, BigDecimalNew 3,
 BinaryOperatorWithIdenticalOperands 23, BooleanSymbol 10,
 CircularArgumentReference 13, ConstantDefinitionInBlock 27,
+ConstantReassignment 68 (5 pending: project index),
+ConstantResolution 21 (3 pending: project index),
 ConstantOverwrittenInRescue 8, DataDefineOverride 8, Debugger 97,
 DeprecatedClassMethods 31, DeprecatedConstants 16,
 DeprecatedOpenSSLConstant 24,
@@ -70,8 +72,8 @@ by their message text: the Rust Prism API has no warning type.
 
 ## Left
 
-ArgumentMismatch, AmbiguousAssignment, ConstantReassignment,
-ConstantResolution, CopDirectiveSyntax, DeprecatedReference,
+ArgumentMismatch, AmbiguousAssignment, CopDirectiveSyntax,
+DeprecatedReference,
 DuplicateMagicComment, DuplicateMethods,
 DuplicateRegexpCharacterClassElement, ElseLayout,
 FormatParameterMismatch, MisplacedMagicComment,
@@ -80,6 +82,12 @@ OrderedMagicComments, OutOfRangeRegexpRef, PercentStringArray,
 PercentSymbolArray.
 
 ## Blocked / deferred
+
+- Index-only (`rubydex`): ArgumentMismatch, DeprecatedReference, NameTypo
+  do nothing without a project index (every check starts with
+  `return unless project_index`); all but one example of each spec is
+  pending upstream without rubydex. A port would be an empty cop whose spec
+  passes vacuously, so they are not ported. Decision for the user/coordinator.
 
 - Tokens (`processed_source.tokens` is a stub): MisplacedMagicComment
   (`sorted_tokens`); DuplicateMagicComment and OrderedMagicComments
