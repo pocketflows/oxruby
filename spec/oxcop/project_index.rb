@@ -24,12 +24,24 @@ module Oxcop
       Lint/ConstantResolution
       Lint/InheritException
       Lint/MissingSuper
+      Lint/SuperArgumentMismatch
+      Lint/UnusedPrivateMethod
       Naming/AccessorMethodName
       Naming/PredicatePrefix
+      Style/ClassAndModuleChildren
       Style/Documentation
       Style/MissingRespondToMissing
       Style/RedundantConstantBase
       Style/StaticClass
+    ].freeze
+
+    # Examples that drive the Ruby cop's internals with a real
+    # `Rubydex::Graph` instead of investigating through the binary, so
+    # they can't run here (see docs/agents/index.md). Lint/UnusedPrivateMethod's
+    # reference-name cache is `ProjectIndex#reference_names` in oxcop: one
+    # computation per index, shared by every cop instance.
+    RUBY_INTERNALS_EXAMPLES = [
+      "RuboCop::Cop::Lint::UnusedPrivateMethod with a project index the reference-name cache"
     ].freeze
 
     # Overrides spec/support/project_index_metadata.rb's helpers for
@@ -71,6 +83,10 @@ RSpec.configure do |config|
   config.before(:each, :project_index) do |example|
     cop_class = example.metadata[:described_class]
     next unless cop_class.is_a?(Class) && cop_class < RuboCop::Cop::Base
+
+    if Oxcop::Spec::RUBY_INTERNALS_EXAMPLES.any? { |prefix| example.full_description.start_with?(prefix) }
+      skip "oxcop: drives the Ruby cop's internals with a rubydex graph, which the shim doesn't build."
+    end
     next if Oxcop::Spec::INDEX_AWARE_COPS.include?(cop_class.cop_name)
 
     skip "oxcop: #{cop_class.cop_name}'s project-index code is not ported yet."

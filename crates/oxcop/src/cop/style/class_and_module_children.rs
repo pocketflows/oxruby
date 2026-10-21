@@ -1,16 +1,14 @@
 //! Port of `lib/rubocop/cop/style/class_and_module_children.rb`.
-//!
-//! The `rubydex` project index isn't supported, so the namespace keyword
-//! always comes from `heuristic_namespace_keyword` and every namespace is
-//! compactible, as upstream without an index.
 
 use crate::ast::{Child, Node, NodeType};
 use crate::cop::correctors::alignment_corrector::{self, Target};
 use crate::cop::mixin::alignment::{configured_indentation_width, indentation};
 use crate::cop::mixin::configurable_enforced_style::style;
+use crate::cop::mixin::project_index_help::{FILE_URI_PREFIX, resolve_constant_in_index, same_file};
 use crate::cop::mixin::range_help::range_between;
 use crate::cop::{Corrector, Cop, Investigation};
 use crate::processed_source::ProcessedSource;
+use crate::project_index::ProjectIndex;
 
 const NESTED_MSG: &str = "Use nested module/class definitions instead of compact style.";
 const COMPACT_MSG: &str = "Use compact module/class definition instead of nested style.";
@@ -93,6 +91,8 @@ impl Cop for ClassAndModuleChildren {
         let ps = cx.processed_source;
         let indentation = indentation(cx, node);
         let config = cx.config;
+        let index = cx.project_index();
+        let index = index.as_deref();
         cx.add_offense_with_correction(node.loc().name.unwrap(), message, |corrector| {
             if node.is(NodeType::Class)
                 && node.parent_class().is_some()
@@ -101,9 +101,9 @@ impl Cop for ClassAndModuleChildren {
                 return;
             }
             if styles.for_kind(node.ty()) == "nested" {
-                nest_definition(ps, corrector, node, styles, &indentation);
+                nest_definition(ps, index, corrector, node, styles, &indentation);
             } else {
-                compact_definition(ps, config, corrector, node, styles);
+                compact_definition(ps, index, config, corrector, node, styles);
             }
         });
     }
@@ -111,12 +111,13 @@ impl Cop for ClassAndModuleChildren {
 
 fn nest_definition(
     ps: &ProcessedSource<'_>,
+    index: Option<&ProjectIndex>,
     corrector: &mut Corrector,
     node: Node<'_>,
     styles: Styles<'_>,
     indentation: &str,
 ) {
-    let keyword = heuristic_namespace_keyword(node);
+    let keyword = namespace_keyword(index, node);
     let kind = if keyword == "class" {
         NodeType::Class
     } else {
@@ -148,6 +149,24 @@ fn nest_definition(
     );
 }
 
+/// `namespace_keyword`.
+fn namespace_keyword(index: Option<&ProjectIndex>, node: Node<'_>) -> &'static str {
+    indexed_namespace_keyword(index, node).unwrap_or_else(|| heuristic_namespace_keyword(node))
+}
+
+/// `indexed_namespace_keyword`.
+fn indexed_namespace_keyword(index: Option<&ProjectIndex>, node: Node<'_>) -> Option<&'static str> {
+    let index = index?;
+    let declaration = resolve_constant_in_index(index, node.identifier()?.namespace()?)?;
+    if declaration.is_class() {
+        Some("class")
+    } else if declaration.is_module() {
+        Some("module")
+    } else {
+        None
+    }
+}
+
 fn heuristic_namespace_keyword(node: Node<'_>) -> &'static str {
     let namespace = node.identifier().and_then(|i| i.namespace());
     let class_definition = node.left_sibling().is_some_and(|sibling| {
@@ -165,13 +184,14 @@ fn heuristic_namespace_keyword(node: Node<'_>) -> &'static str {
 
 fn compact_definition(
     ps: &ProcessedSource<'_>,
+    index: Option<&ProjectIndex>,
     config: &crate::config::Config,
     corrector: &mut Corrector,
     node: Node<'_>,
     styles: Styles<'_>,
 ) {
     let body = node.body().unwrap();
-    if styles.for_kind(body.ty()) == "nested" {
+    if styles.for_kind(body.ty()) == "nested" || !compactible_namespace(ps, index, node) {
         return;
     }
     // `compact_node`
@@ -269,4 +289,34 @@ fn const_namespace(node: Option<Node<'_>>) -> bool {
         Some(n) if n.is(NodeType::Const) => const_namespace(n.namespace()),
         Some(_) => false,
     }
+}
+
+/// `compactible_namespace?`: compacting removes this definition of the
+/// namespace, so with the project index the namespace must be defined
+/// somewhere else; without it the correction is performed regardless.
+fn compactible_namespace(ps: &ProcessedSource<'_>, index: Option<&ProjectIndex>, node: Node<'_>) -> bool {
+    let Some(index) = index else {
+        return true;
+    };
+    let Some(declaration) = node
+        .identifier()
+        .and_then(|identifier| resolve_constant_in_index(index, identifier))
+        .filter(|declaration| declaration.is_namespace())
+    else {
+        return false;
+    };
+    let current = ps.file_path();
+    index.definitions(declaration).into_iter().any(|definition| {
+        // `definition_elsewhere?`
+        let Some(location) = index.location(definition) else {
+            return false;
+        };
+        if !location.uri.starts_with(FILE_URI_PREFIX) {
+            return true;
+        }
+        location.file_path.is_some_and(|path| {
+            !same_file(&path, std::path::Path::new(&current))
+                || location.start_line as usize + 1 != node.first_line()
+        })
+    })
 }
