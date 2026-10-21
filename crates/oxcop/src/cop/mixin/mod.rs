@@ -18,6 +18,7 @@ pub mod end_keyword_alignment;
 pub mod first_element_line_break;
 pub mod frozen_string_literal;
 pub mod hash_alignment_styles;
+pub mod hash_shorthand_syntax;
 pub mod hash_subset;
 pub mod hash_transform_method;
 pub mod heredoc;
