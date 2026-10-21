@@ -37,7 +37,8 @@ AmbiguousEndlessMethodDefinition 31, ArrayIntersect 93, BisectedAttrAccessor 14,
 CaseLikeIf 38, ClassAndModuleChildren 60 (+7 pending: rubydex project index),
 CombinableDefined 39, CommentAnnotation 29, ComparableClamp 20,
 Documentation 61 (+6 pending: rubydex), EmptyElse 124, Encoding 13,
-EndlessMethod 71.
+EndlessMethod 71, DirectiveScope 16 (adds `comment_config::DirectiveScopes`:
+public `comment_only_line`, `statement_scope_after`, `qualified_cop_name`).
 
 - CaseLikeIf's `regexp_with_named_captures?` looks for `(?<name>` / `(?'name'`
   in the regexp's literal parts (written before the regexp_parser port
@@ -46,10 +47,18 @@ EndlessMethod 71.
 ## Left
 
 - DocumentationMethod: needs `def_node` (claimed by depts, not on main yet).
-- Copyright: needs comment tokens (now landing).
-- DirectiveScope: needs tokens (`comment_only_line?`) plus public
-  CommentConfig `comment_only_line` / `statement_scope_after` (the analyzer
-  has them privately; `cop_disabled_line_ranges` and `directives` are public).
+- Copyright: ported on branch `style-a-wip` (commit "WIP: Port
+  Style/Copyright"), 22 of 25 examples pass. The other three need spec-shim
+  (runtime) support, so it isn't landed:
+  - `when the source code file is empty adds an offense`: a global offense
+    (`add_global_offense`, `NO_LOCATION`) comes back from the binary's JSON as
+    line 1, column 1, length 0; the shim builds a real range from it, and on
+    an empty buffer `offense.location.source_line` raises.
+  - the two `fails to autocorrect ...` examples expect `expect_offense` to
+    raise `RuboCop::Warning`: upstream the cop autocorrects during the spec's
+    investigation and raises from the correction block. The shim's
+    offense run doesn't autocorrect, and a cop warning isn't turned into an
+    exception (oxcop reports it like `Team#handle_warning`, on stderr).
 
 ## Mixins owned (claimed in .coord/claims)
 

@@ -151,6 +151,49 @@ impl CommentConfig {
     }
 }
 
+/// The statement-scope queries of `CommentConfig` (`comment_only_line?`,
+/// `statement_scope_after`, `Registry.qualified_cop_name`), for cops that
+/// reason about directives (Style/DirectiveScope).
+pub struct DirectiveScopes<'a, 'src> {
+    analyzer: Analyzer<'a, 'src>,
+}
+
+impl<'a, 'src> DirectiveScopes<'a, 'src> {
+    pub fn new(processed_source: &'a ProcessedSource<'src>, config: &'a Config) -> Self {
+        Self {
+            analyzer: Analyzer {
+                processed_source,
+                config,
+                registry: config.known_cops(),
+                non_comment_token_lines: None,
+                stack: Vec::new(),
+                detached: Vec::new(),
+                statement_bounds: HashMap::new(),
+            },
+        }
+    }
+
+    /// `comment_only_line?(line_number)`.
+    pub fn comment_only_line(&mut self, line: i64) -> bool {
+        self.analyzer.comment_only_line(line)
+    }
+
+    /// `statement_scope_after(line)`: the first and last line of the
+    /// statement a directive on `line` applies to.
+    pub fn statement_scope_after(&mut self, line: i64) -> Option<(i64, i64)> {
+        self.analyzer.statement_scope_after(line)
+    }
+
+    /// `Registry.qualified_cop_name(name, file, correct_namespace: false)`.
+    pub fn qualified_cop_name(&self, name: &str) -> String {
+        self.analyzer.qualified_cop_name(name)
+    }
+
+    pub fn registry(&self) -> &'a dyn CopRegistry {
+        self.analyzer.registry
+    }
+}
+
 struct Analyzer<'a, 'src> {
     processed_source: &'a ProcessedSource<'src>,
     config: &'a Config,
