@@ -164,7 +164,7 @@ fn find_embed_tag(source: &str, from: usize) -> Option<EmbedMatch> {
     let bytes = source.as_bytes();
     let mut start = from;
     while start < bytes.len() {
-                let offset = source[start..].find('<')?;
+        let offset = source[start..].find('<')?;
         let lt = start + offset;
         if let Some(m) = match_embed_at(source, lt) {
             return Some(m);
@@ -219,7 +219,7 @@ fn match_embed_at(source: &str, lt: usize) -> Option<EmbedMatch> {
         match bytes[i] {
             b'"' | b'\'' => {
                 let quote = bytes[i] as char;
-                                let end = source[i + 1..].find(quote)?;
+                let end = source[i + 1..].find(quote)?;
                 i = i + 1 + end + 1;
             }
             b'>' => break,

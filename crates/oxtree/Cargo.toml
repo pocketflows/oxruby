@@ -19,4 +19,4 @@ oxc = []
 [dependencies]
 rayon = "1.10"
 regex = "1"
-ruby-prism = "1.9"
+ruby-prism = "=2.0.0-rc.2"

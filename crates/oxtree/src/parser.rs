@@ -33,11 +33,11 @@ impl std::error::Error for ParseError {}
 pub fn parse(source: &str) -> Result<Ast, ParseError> {
     let result = pm::parse(source.as_bytes());
     if let Some(error) = result.errors().next() {
-        let start = error.location().start_offset();
+        let start = error.location().start() as usize;
         let builder = Builder::new(source);
         let line = builder.line_of(start);
         return Err(ParseError {
-            message: error.message().to_string(),
+            message: String::from_utf8_lossy(error.message()).into_owned(),
             lineno: line,
             column: start - builder.line_starts[line - 1],
         });
@@ -46,13 +46,13 @@ pub fn parse(source: &str) -> Result<Ast, ParseError> {
     for comment in result.comments() {
         let loc = comment.location();
         builder.add_comment(
-            loc.start_offset(),
-            loc.end_offset(),
+            loc.start() as usize,
+            loc.end() as usize,
             matches!(comment.type_(), pm::CommentType::EmbDocComment),
         );
     }
     if let Some(data) = result.data_loc() {
-        builder.end_content(data.start_offset(), data.end_offset());
+        builder.end_content(data.start() as usize, data.end() as usize);
     }
     let program = result.node();
     let mut collector = TokenCollector::default();
@@ -129,8 +129,8 @@ struct Span {
 
 fn span(loc: &pm::Location<'_>) -> Span {
     Span {
-        start: loc.start_offset(),
-        end: loc.end_offset(),
+        start: loc.start() as usize,
+        end: loc.end() as usize,
     }
 }
 
@@ -1347,7 +1347,7 @@ impl<'s> Builder<'s> {
                 let n = node.as_match_predicate_node().unwrap();
                 let value = self.visit(&n.value());
                 let pattern = self.visit_pattern(&n.pattern());
-                let operator = self.kw(span(&n.operator_loc()));
+                let operator = self.kw(span(&n.keyword_loc()));
                 let loc = self.to(value, pattern);
                 self.add(
                     Kind::RAssign {
@@ -1510,7 +1510,7 @@ impl<'s> Builder<'s> {
             }
             pm::Node::NumberedParametersNode { .. }
             | pm::Node::ItParametersNode { .. }
-            | pm::Node::MissingNode { .. } => {
+            | pm::Node::ErrorRecoveryNode { .. } => {
                 let loc = self.fixed_loc(node_span(node).start);
                 self.add(Kind::VoidStmt, loc)
             }
@@ -2412,7 +2412,7 @@ impl<'s> Builder<'s> {
                     }
                 } else {
                     match element.as_symbol_node() {
-                        Some(symbol) => span(&symbol.value_loc().unwrap()),
+                        Some(symbol) => span(&symbol.content_loc()),
                         None => node_span(&element),
                     }
                 };
@@ -2454,7 +2454,7 @@ impl<'s> Builder<'s> {
                 let parts: Vec<NodeId> = if let Some(string) = element.as_string_node() {
                     vec![self.tstring_content(span(&string.content_loc()))]
                 } else if let Some(symbol) = element.as_symbol_node() {
-                    vec![self.tstring_content(span(&symbol.value_loc().unwrap()))]
+                    vec![self.tstring_content(span(&symbol.content_loc()))]
                 } else if let Some(interp) = element.as_interpolated_string_node() {
                     interp
                         .parts()
@@ -2869,7 +2869,7 @@ impl<'s> Builder<'s> {
             || opening_text.ends_with("':")
             || opening_text.ends_with("\":");
         if dyna {
-            let value = n.value_loc().map(|l| span(&l));
+            let value = Some(span(&n.content_loc()));
             let parts = match value {
                 Some(v) if v.start != v.end => vec![self.tstring_content(v)],
                 _ => vec![],
@@ -2879,7 +2879,7 @@ impl<'s> Builder<'s> {
         if closing_text == ":" {
             return self.token(node_span(node), |value| Kind::Label { value });
         }
-        let value_span = span(&n.value_loc().unwrap());
+        let value_span = span(&n.content_loc());
         if opening.is_none() && closing.is_none() {
             let value = self.visit_token(value_span, true);
             let loc = self.loc(value);
@@ -3265,15 +3265,18 @@ impl<'s> Builder<'s> {
                 }
             }
         };
-        let block = params.block().map(|b| {
-            let name = b.name_loc().map(|l| self.ident(span(&l)));
-            let op = self.token_loc(span(&b.operator_loc()));
-            let loc = match name {
-                Some(n) => op.to(&self.loc(n)),
-                None => op,
-            };
-            self.add(Kind::BlockArg { name }, loc)
-        });
+        let block = params
+            .block()
+            .and_then(|b| b.as_block_parameter_node())
+            .map(|b| {
+                let name = b.name_loc().map(|l| self.ident(span(&l)));
+                let op = self.token_loc(span(&b.operator_loc()));
+                let loc = match name {
+                    Some(n) => op.to(&self.loc(n)),
+                    None => op,
+                };
+                self.add(Kind::BlockArg { name }, loc)
+            });
         if let Some(b) = block {
             locs.push(self.loc(b));
         }
@@ -3559,7 +3562,7 @@ impl<'s> Builder<'s> {
             last = next.location();
             current = next.subsequent();
         }
-        let mut position = last.end_offset();
+        let mut position = last.end() as usize;
         while position < self.bytes.len() {
             match self.bytes[position] {
                 b' ' | b'\t' | b'\n' | b'\r' | b';' => position += 1,
@@ -4120,7 +4123,7 @@ impl<'s> Builder<'s> {
             }
         };
         let consequent = n.else_clause().map(|e| self.else_node(&e, end_span));
-        let beginning = self.token_loc(span(&n.keyword_loc()));
+        let beginning = self.token_loc(span(&n.unless_keyword_loc()));
         let ending = match consequent {
             Some(c) => self.loc(c),
             None => self.token_loc(end_span.unwrap()),
@@ -4165,18 +4168,18 @@ impl<'s> Builder<'s> {
         let (keyword_loc, do_loc, closing_loc, predicate, stmts) = if is_while {
             let n = node.as_while_node().unwrap();
             (
-                span(&n.keyword_loc()),
+                span(&n.while_keyword_loc()),
                 n.do_keyword_loc().map(|l| span(&l)),
-                n.closing_loc().map(|l| span(&l)),
+                n.end_keyword_loc().map(|l| span(&l)),
                 n.predicate(),
                 n.statements(),
             )
         } else {
             let n = node.as_until_node().unwrap();
             (
-                span(&n.keyword_loc()),
+                span(&n.until_keyword_loc()),
                 n.do_keyword_loc().map(|l| span(&l)),
-                n.closing_loc().map(|l| span(&l)),
+                n.end_keyword_loc().map(|l| span(&l)),
                 n.predicate(),
                 n.statements(),
             )
@@ -4293,7 +4296,7 @@ impl<'s> Builder<'s> {
         for condition in &conditions {
             let w = condition.as_when_node().unwrap();
             let elements: Vec<pm::Node> = w.conditions().iter().collect();
-            let arguments = self.arguments_list(&elements, span(&w.keyword_loc()).end);
+            let arguments = self.arguments_list(&elements, span(&w.when_keyword_loc()).end);
             let statements = match w.statements() {
                 None => self.statements(vec![], self.loc(arguments).end_char),
                 Some(s) => {
@@ -4301,7 +4304,7 @@ impl<'s> Builder<'s> {
                     self.statements(body, self.loc(arguments).end_char)
                 }
             };
-            clauses.push((span(&w.keyword_loc()), arguments, statements));
+            clauses.push((span(&w.when_keyword_loc()), arguments, statements));
         }
         let mut current = n.else_clause().map(|e| self.else_node(&e, Some(end_span)));
         for (keyword, arguments, statements) in clauses.into_iter().rev() {
@@ -4359,7 +4362,7 @@ impl<'s> Builder<'s> {
                     self.statements(body, self.loc(pattern).end_char)
                 }
             };
-            clauses.push((span(&i.in_loc()), pattern, statements));
+            clauses.push((span(&i.in_keyword_loc()), pattern, statements));
         }
         let mut current = n.else_clause().map(|e| self.else_node(&e, Some(end_span)));
         for (in_loc, pattern, statements) in clauses.into_iter().rev() {
@@ -4545,13 +4548,7 @@ impl<'s> Builder<'s> {
             .iter()
             .map(|r| self.visit_pattern(&r))
             .collect();
-        let right = match n.right().as_splat_node() {
-            Some(s) => self.splat_var_field(&s, true),
-            None => {
-                let loc = self.token_loc(node_span(&n.right()));
-                self.add(Kind::VarField { value: NilOr::None }, loc)
-            }
-        };
+        let right = self.splat_var_field(&n.right(), true);
         let opening = n.opening_loc().map(|o| self.token_loc(span(&o)));
         let closing = n.closing_loc().map(|c| self.token_loc(span(&c)));
         let start = match constant {
@@ -4691,14 +4688,14 @@ impl TokenCollector {
             pm::Node::IfNode { .. } => node.as_if_node().unwrap().then_keyword_loc(),
             pm::Node::UnlessNode { .. } => node.as_unless_node().unwrap().then_keyword_loc(),
             pm::Node::WhenNode { .. } => node.as_when_node().unwrap().then_keyword_loc(),
-            pm::Node::InNode { .. } => node.as_in_node().unwrap().then_loc(),
+            pm::Node::InNode { .. } => node.as_in_node().unwrap().then_keyword_loc(),
             pm::Node::RescueNode { .. } => node.as_rescue_node().unwrap().then_keyword_loc(),
             _ => None,
         };
         if let Some(then) = then
             && then.as_slice() == b"then"
         {
-            self.then.push(then.start_offset());
+            self.then.push(then.start() as usize);
         }
         let pow = match node {
             pm::Node::CallNode { .. } => {
@@ -4723,7 +4720,7 @@ impl TokenCollector {
             _ => None,
         };
         if let Some(pow) = pow {
-            self.pow.push(pow.start_offset());
+            self.pow.push(pow.start() as usize);
         }
     }
 }
