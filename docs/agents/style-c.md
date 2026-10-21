@@ -57,6 +57,7 @@
 - Style/RedundantReturn 39
 - Style/RedundantSortBy 8
 - Style/RedundantStructKeywordInit 12
+- Style/RegexpLiteral 65
 - Style/RequireOrder 24
 - Style/ReturnNil 5
 - Style/ReturnNilInPredicateMethodDefinition 39
