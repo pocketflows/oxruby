@@ -116,7 +116,7 @@ with `find -newer` after each run). oxfmt 0.72.0 was installed earlier in a
 session scratchpad (`.../scratchpad/oxfmt-research/npm/node_modules/.bin/oxfmt`);
 that path is ephemeral, so `npm i oxfmt@0.72.0` anywhere outside code/.
 
-Results on code/ (9bf6841d2, 4,515 files: 3,879 Ruby-handler files, 636 ERB):
+Results on code/ (9bf6841d2, 4,515 files: 3,933 Ruby-handler files, 582 ERB):
 
 | Width | Files selected (both) | Outputs identical | Check report |
 | --- | --- | --- | --- |
