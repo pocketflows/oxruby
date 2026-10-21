@@ -5,6 +5,7 @@
 - Style/NegatedIf 15
 - Style/NegatedWhile 10
 - Style/NestedTernaryOperator 7
+- Style/Next 72
 - Style/NilComparison 10
 - Style/Not 11
 - Style/OpenStructUse 12
@@ -71,6 +72,7 @@
 - Style/RedundantStructKeywordInit 12
 - Style/RegexpLiteral 65
 - Style/RequireOrder 24
+- Style/RescueModifier 20
 - Style/RescueStandardError 37
 - Style/ReturnNil 5
 - Style/ReturnNilInPredicateMethodDefinition 39
@@ -86,9 +88,10 @@ else on that branch has landed.
 
 `style-c-wip` holds cops that pass all but a few examples blocked on the
 shim or runner (see below): Style/NumberedParametersLimit,
-Style/NumericLiterals, Style/RedundantArgument, Style/RescueModifier,
-Style/Next, Style/PercentLiteralDelimiters (the last also needs style-d's
-`mixin/preferred_delimiters.rs`, not on main yet).
+Style/NumericLiterals, Style/RedundantArgument,
+Style/PercentLiteralDelimiters (it also needs style-d's
+`mixin/preferred_delimiters.rs`, not on main yet). Style/Next and
+Style/RescueModifier, also parked there earlier, now pass on main and landed.
 
 ## Left
 
@@ -114,12 +117,6 @@ Style/Next, Style/PercentLiteralDelimiters (the last also needs style-d's
   `ASCII-8BIT` encoding on invalid strings before dumping) would fix it; the
   binary side already decodes `!binary` values for this cop.
   - Style/RedundantArgument (14/15), on `style-c-wip`.
-- **The runner's final `offenses.uniq`** (owner: `runtime`, `runner.rs`).
-  RuboCop's runner drops offenses equal in line, column, cop, message and
-  severity; the cop-level specs don't. `blah rescue 1 rescue 2` gives two
-  RescueModifier offenses at 1:1 (ranges 0..13 and 0..22) and the spec
-  expects both. Skipping the dedup in spec mode (`--raw-config`) would fix it.
-  - Style/RescueModifier (19/20), on `style-c-wip`.
 - **Errors raised by a cop** (owner: `runtime`, `spec/oxcop/`). Some specs
   expect the cop to raise for bad config: `raise_error(ArgumentError)` or
   `raise_error('MinBodyLength needs to be a positive integer!')`. The binary
@@ -127,8 +124,8 @@ Style/Next, Style/PercentLiteralDelimiters (the last also needs style-d's
   `Oxcop::Spec::Binary::Error`, so the class/message don't match. Needs the
   binary to report the Ruby exception class and message and the shim to
   re-raise it.
-  - Style/Next (71/72), Style/PercentLiteralDelimiters (65/66), on
-    `style-c-wip`.
+  - Style/PercentLiteralDelimiters (65/66), on `style-c-wip`. (Style/Next's
+    `raise_error('MinBodyLength ...')` example passes now.)
 
 ## Mixins owned
 
