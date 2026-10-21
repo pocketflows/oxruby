@@ -400,6 +400,37 @@ impl<'a, 'src> Investigation<'a, 'src> {
         );
     }
 
+    /// `correct(range) { |corrector| ... }` outside `add_offense`: when
+    /// autocorrecting, the correction is merged into this investigation's
+    /// corrector (no offense is registered and directives don't apply).
+    pub fn correct(&mut self, correct: impl FnOnce(&mut Corrector)) {
+        let mut corrector = Corrector::new(self.processed_source.raw_source().len());
+        correct(&mut corrector);
+        if corrector.is_empty() && !corrector.is_clobbered() {
+            return;
+        }
+        assert!(
+            self.support_autocorrect,
+            "The Cop {} must `extend AutoCorrector` to be able to autocorrect",
+            self.cop_name
+        );
+        if !self.autocorrect() {
+            return;
+        }
+        let merged = !corrector.is_clobbered()
+            && self
+                .corrector
+                .as_mut()
+                .is_none_or(|current| current.merge(&corrector).is_ok());
+        if !merged {
+            self.errors.push(format!(
+                "An error occurred while {} cop was inspecting {}.",
+                self.cop_name,
+                self.processed_source.path().display()
+            ));
+        }
+    }
+
     pub fn add_offense_full(
         &mut self,
         range: Range,
