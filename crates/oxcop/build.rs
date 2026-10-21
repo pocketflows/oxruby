@@ -31,6 +31,22 @@ fn camel_case(snake: &str) -> String {
         .collect()
 }
 
+/// A module name for a cop file: Rust keywords (`loop.rs`) need `r#`.
+fn module_ident(file: &str) -> String {
+    const KEYWORDS: &[&str] = &[
+        "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn",
+        "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
+        "return", "static", "struct", "trait", "true", "type", "unsafe", "use", "where", "while",
+        "async", "await", "dyn", "abstract", "become", "box", "do", "final", "macro", "override",
+        "priv", "typeof", "unsized", "virtual", "yield", "try", "gen",
+    ];
+    if KEYWORDS.contains(&file) {
+        format!("r#{file}")
+    } else {
+        file.to_owned()
+    }
+}
+
 fn main() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let cop_dir = Path::new(&manifest_dir).join("src").join("cop");
@@ -57,8 +73,9 @@ fn main() {
         for file in &files {
             let path = dir.join(format!("{file}.rs"));
             let _ = writeln!(modules, "    #[path = {:?}]", path.display().to_string());
-            let _ = writeln!(modules, "    mod {file};");
-            let _ = writeln!(modules, "    pub use {file}::{};", camel_case(file));
+            let module = module_ident(file);
+            let _ = writeln!(modules, "    mod {module};");
+            let _ = writeln!(modules, "    pub use {module}::{};", camel_case(file));
             let _ = writeln!(
                 constructors,
                 "    || Box::new({department}::{}::default()),",

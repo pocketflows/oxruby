@@ -186,6 +186,24 @@ impl<'a, 'src> Investigation<'a, 'src> {
         self.register(range, message, None, None::<fn(&mut Corrector)>);
     }
 
+    /// `add_global_offense`: an offense without a location (`NO_LOCATION`).
+    pub fn add_global_offense(&mut self, message: &str) {
+        let severity = self.find_severity(None);
+        let message = self.annotate(message);
+        let status = if self.enabled_line(1) {
+            Status::Unsupported
+        } else {
+            Status::Disabled
+        };
+        self.offenses.push(Offense {
+            severity,
+            location: Location::no_location(),
+            message,
+            cop_name: self.cop_name.to_owned(),
+            status,
+        });
+    }
+
     pub fn add_offense_with_severity(&mut self, range: Range, message: &str, severity: Severity) {
         self.register(range, message, Some(severity), None::<fn(&mut Corrector)>);
     }

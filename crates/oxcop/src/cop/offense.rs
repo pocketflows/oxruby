@@ -46,6 +46,20 @@ impl Location {
         }
     }
 
+    /// `Offense::NO_LOCATION`: line 1, column 0, empty source line.
+    pub fn no_location() -> Self {
+        Self {
+            range: Range::new(0, 0),
+            line: 1,
+            column: 0,
+            last_line: 1,
+            last_column: 0,
+            length: 0,
+            source_line: String::new(),
+            source: String::new(),
+        }
+    }
+
     pub fn single_line(&self) -> bool {
         self.line == self.last_line
     }
