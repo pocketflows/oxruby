@@ -236,7 +236,7 @@ fn show_resolved_cops(options: &Options, io: &mut Io) -> i32 {
         let mut params = config.for_cop(name).clone();
         params.insert(
             "Enabled".into(),
-            serde_yaml_ng::Value::Bool(config.cop_enabled(name)),
+            serde_yaml_ng::Value::Bool(config.cop_registered(name) && config.cop_enabled(name)),
         );
         cops.insert(
             name.to_owned(),

@@ -150,6 +150,20 @@ pub fn department(cop_name: &str) -> &str {
         .map_or(cop_name, |(department, _)| department)
 }
 
+/// The departments ported from plugins, with their plugin gems. Upstream,
+/// these cops only exist once the gem is loaded.
+pub const PLUGIN_DEPARTMENTS: &[(&str, &str)] =
+    &[("Rails", "rubocop-rails"), ("RSpec", "rubocop-rspec")];
+
+/// The plugin gem a cop comes from, if it isn't a core cop.
+pub fn plugin_of(cop_name: &str) -> Option<&'static str> {
+    let department = department(cop_name);
+    PLUGIN_DEPARTMENTS
+        .iter()
+        .find(|(name, _)| *name == department)
+        .map(|(_, plugin)| *plugin)
+}
+
 /// The parts of an offense `Lint/RedundantCopDisableDirective` looks at.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OffenseToCheck {

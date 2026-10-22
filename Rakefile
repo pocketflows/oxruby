@@ -122,6 +122,56 @@ namespace :vendor do
     end
     puts "synced from rubocop #{tag}; update RUBOCOP_VERSION in version.rs/version.rb and the Gemfile to match"
   end
+
+  # Plugins whose cops are ported, from sibling checkouts at the versions the
+  # Gemfile pins: each one's cop specs, the spec support those specs rely on,
+  # and its license.
+  PLUGINS = {
+    "rubocop-rails" => {
+      department: "rails",
+      license: "LICENSE.txt",
+      support: %w[spec/support/shared_contexts.rb]
+    },
+    "rubocop-rspec" => {
+      department: "rspec",
+      license: "MIT-LICENSE.md",
+      support: %w[spec/support/expect_offense.rb spec/shared/smoke_test_examples.rb
+                  spec/shared/detects_style_behavior.rb],
+      # Unit tests of the plugin's Ruby mixins rather than of cop behavior.
+      skip: %w[mixin],
+      # Sources the 'smoke test' shared examples inspect.
+      extra: %w[spec/smoke_tests]
+    }
+  }.freeze
+
+  desc "Re-sync the plugin cop specs from the ../rubocop-rails and ../rubocop-rspec checkouts"
+  task :plugins do
+    PLUGINS.each do |name, plugin|
+      upstream = oxtree_sibling(name)
+      tag = `git -C #{upstream} describe --tags`.strip
+      pinned = File.read(File.join(ROOT, "Gemfile"))[/gem "#{name}", "([^"]+)"/, 1]
+      warn "#{name}: #{upstream} is at #{tag}, but the Gemfile pins #{pinned}" if tag != "v#{pinned}"
+
+      specs = File.join(ROOT, "spec/rubocop/cop", plugin[:department])
+      FileUtils.rm_rf(specs)
+      FileUtils.cp_r(File.join(upstream, "spec/rubocop/cop", plugin[:department]), File.join(ROOT, "spec/rubocop/cop"))
+      plugin.fetch(:skip, []).each { |dir| FileUtils.rm_rf(File.join(specs, dir)) }
+
+      support = File.join(ROOT, "spec/support", name)
+      FileUtils.rm_rf(support)
+      FileUtils.mkdir_p(support)
+      plugin[:support].each { |path| FileUtils.cp(File.join(upstream, path), support) }
+
+      plugin.fetch(:extra, []).each do |path|
+        FileUtils.rm_rf(File.join(ROOT, path))
+        FileUtils.cp_r(File.join(upstream, path), File.join(ROOT, File.dirname(path)))
+      end
+
+      FileUtils.mkdir_p(File.join(ROOT, "vendor", name))
+      FileUtils.cp(File.join(upstream, plugin[:license]), File.join(ROOT, "vendor", name))
+      puts "synced from #{name} #{tag}"
+    end
+  end
 end
 
 task default: %w[version:check cargo:check spec]

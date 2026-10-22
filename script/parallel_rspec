@@ -21,10 +21,11 @@ binary = ENV.fetch("OXCOP_BINARY") { File.join(root, "target", "debug", "oxcop")
 
 ported, status = Open3.capture2(binary, "--show-ported-cops")
 abort "parallel_rspec: could not list ported cops from #{binary}" unless status.success?
-snake = ->(s) { s.gsub(/([A-Z]+)([A-Z][a-z])/, '\1_\2').gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase }
+snake = ->(s) { s.sub(%r{\ARSpec/}, "Rspec/").gsub(/([A-Z]+)([A-Z][a-z])/, '\1_\2').gsub(/([a-z\d])([A-Z])/, '\1_\2').downcase }
 ported_specs = ported.lines(chomp: true).to_set { |name| "spec/rubocop/cop/#{snake.(name)}_spec.rb" }
 
-files = Dir["spec/**/*_spec.rb"].sort
+# spec/smoke_tests/ holds sources rubocop-rspec's smoke tests inspect, not specs.
+files = Dir["spec/**/*_spec.rb"].reject { |file| file.start_with?("spec/smoke_tests/") }.sort
 weight = ->(file) { File.size(file) / (ported_specs.include?(file) ? 1 : 50) + 1 }
 groups = Array.new(jobs) { [] }
 loads = Array.new(jobs, 0)

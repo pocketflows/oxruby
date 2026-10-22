@@ -91,7 +91,7 @@ gate() {
     while IFS= read -r path; do
       # Only department directories hold cops; mixin/, correctors/, utils/ and
       # the like are shared, so changing them takes the full gate.
-      if [[ "$path" =~ ^crates/oxcop/src/cop/(bundler|gemspec|layout|lint|metrics|migration|naming|security|style)/([a-z0-9_]+)\.rs$ && "${BASH_REMATCH[2]}" != "mod" ]]; then
+      if [[ "$path" =~ ^crates/oxcop/src/cop/(bundler|gemspec|layout|lint|metrics|migration|naming|rails|rspec|security|style)/([a-z0-9_]+)\.rs$ && "${BASH_REMATCH[2]}" != "mod" ]]; then
         cop_files+=("${BASH_REMATCH[1]}/${BASH_REMATCH[2]}")
         local spec="spec/rubocop/cop/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}_spec.rb"
         [[ -f "$spec" ]] && specs+=("$spec")
@@ -124,7 +124,7 @@ gate() {
       local cops
       cops=$(target/debug/oxcop --show-ported-cops | ruby -rset -e '
         files = ARGV.to_set
-        snake = ->(s) { s.gsub(/([A-Z]+)([A-Z][a-z])/, "\\1_\\2").gsub(/([a-z\d])([A-Z])/, "\\1_\\2").downcase }
+        snake = ->(s) { s.sub(%r{\ARSpec/}, "Rspec/").gsub(/([A-Z]+)([A-Z][a-z])/, "\\1_\\2").gsub(/([a-z\d])([A-Z])/, "\\1_\\2").downcase }
         puts $stdin.each_line(chomp: true).select { |name| files.include?(snake.(name)) }.join(",")
       ' "${cop_files[@]}")
       if [[ -n "$cops" ]]; then
@@ -149,7 +149,7 @@ for attempt in 1 2 3 4 5 6 7 8; do
   # rebased branch covers the combination, so a full gate isn't starved by
   # a stream of cop landings.
   if [[ -n "$previous" && -z "${FULL:-}" ]] &&
-    ! git diff --name-only "$previous" "$base" | grep -qvE '^(crates/oxcop/src/cop/(bundler|gemspec|layout|lint|metrics|migration|naming|security|style)/[a-z0-9_]+\.rs|docs/.*)$'; then
+    ! git diff --name-only "$previous" "$base" | grep -qvE '^(crates/oxcop/src/cop/(bundler|gemspec|layout|lint|metrics|migration|naming|rails|rspec|security|style)/[a-z0-9_]+\.rs|docs/.*)$'; then
     echo "land: main gained only cops/docs since the last gate; gating those"
     gate "$previous..$base"
   else

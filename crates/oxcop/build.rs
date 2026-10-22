@@ -18,6 +18,9 @@ const DEPARTMENTS: &[&str] = &[
     "naming",
     "security",
     "style",
+    // Plugin departments (`cop::base::plugin_of`).
+    "rails",
+    "rspec",
 ];
 
 fn camel_case(snake: &str) -> String {

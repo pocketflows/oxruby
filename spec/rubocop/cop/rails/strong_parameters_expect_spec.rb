@@ -1,0 +1,585 @@
+# frozen_string_literal: true
+
+RSpec.describe RuboCop::Cop::Rails::StrongParametersExpect, :config do
+  context 'Rails >= 8.0', :rails80 do
+    it 'registers an offense when using `params[:key]` with method call' do
+      expect_offense(<<~RUBY)
+        params[:key].do_something
+              ^^^^^^ Use `expect(:key)` instead.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        params.expect(:key).do_something
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key]`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key]
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].nil?`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].nil?
+      RUBY
+    end
+
+    it 'does not register an offense when using `key = params[:key].to_i`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].to_i
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].to_s`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].to_s
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].inspect`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].inspect
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].to_a`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].to_a
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].to_f`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].to_f
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].to_h`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].to_h
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].is_a?(String)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].is_a?(String)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].kind_of?(String)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].kind_of?(String)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].instance_of?(String)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].instance_of?(String)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].try(:method)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].try(:method)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].try!(:method)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].try!(:method)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].key?(:inner)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].key?(:inner)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].has_key?(:inner)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].has_key?(:inner)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].include?(:inner)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].include?(:inner)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].member?(:inner)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].member?(:inner)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].delete(:inner)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].delete(:inner)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].each do |_index, subparams|`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].each do |_index, subparams|
+          do_something(subparams)
+        end
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].map { ... }`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].map { |item| item[:id] }
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].select(&:present?)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].select(&:present?)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].reject { |k, v| v.blank? }`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].reject { |_k, v| v.blank? }
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].keys`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].keys
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].values`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].values
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].slice(:a, :b)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].slice(:a, :b)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].except(:a)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].except(:a)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].merge(other)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].merge(other)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].dig(:a, :b)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].dig(:a, :b)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].fetch(:inner)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].fetch(:inner)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].compact`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].compact
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].transform_values(&:to_s)`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].transform_values(&:to_s)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].to_unsafe_h`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].to_unsafe_h
+      RUBY
+    end
+
+    it "does not register an offense when using `params[:key] == 'value'`" do
+      expect_no_offenses(<<~RUBY)
+        params[:key] == 'value'
+      RUBY
+    end
+
+    it 'does not register an offense when using `!params[:key]`' do
+      expect_no_offenses(<<~RUBY)
+        !params[:key]
+      RUBY
+    end
+
+    it 'does not register an offense when using `condition && !params[:key]`' do
+      expect_no_offenses(<<~RUBY)
+        condition && !params[:key]
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].blank?`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].blank?
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].present?`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].present?
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:key].presence`' do
+      expect_no_offenses(<<~RUBY)
+        params[:key].presence || default
+      RUBY
+    end
+
+    it 'does not flag params[:key]&.method' do
+      expect_no_offenses(<<~RUBY)
+        sort_direction = params[:sort_direction]&.downcase
+      RUBY
+    end
+
+    it 'does not flag params[:key]&.method used in a condition' do
+      expect_no_offenses(<<~RUBY)
+        if params[:query]&.present?
+          filter(params[:query])
+        end
+      RUBY
+    end
+
+    it 'does not flag params[:key]&.method in a ternary' do
+      expect_no_offenses(<<~RUBY)
+        direction = (params[:sort_direction]&.downcase == "asc") ? :asc : :desc
+      RUBY
+    end
+
+    it 'registers an offense when using `Model.find(params[:id])`' do
+      expect_offense(<<~RUBY)
+        Model.find(params[:id])
+                         ^^^^^ Use `expect(:id)` instead.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        Model.find(params.expect(:id))
+      RUBY
+    end
+
+    it 'registers an offense when using `Model&.find(params[:id])`' do
+      expect_offense(<<~RUBY)
+        Model&.find(params[:id])
+                          ^^^^^ Use `expect(:id)` instead.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        Model&.find(params.expect(:id))
+      RUBY
+    end
+
+    it 'does not register an offense when using `Model.find(params[:id]) || DEFAULT_VALUE`' do
+      expect_no_offenses(<<~RUBY)
+        Model.find(params[:id] || DEFAULT_VALUE)
+      RUBY
+    end
+
+    it 'does not register an offense when using `Model.find_by(key: params[:key])`' do
+      expect_no_offenses(<<~RUBY)
+        Model.find_by(key: params[:key])
+      RUBY
+    end
+
+    it 'registers an offense when using `Model.find_by!(key: params[:key])`' do
+      expect_offense(<<~RUBY)
+        Model.find_by!(key: params[:key])
+                                  ^^^^^^ Use `expect(:key)` instead.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        Model.find_by!(key: params.expect(:key))
+      RUBY
+    end
+
+    it 'does not register an offense when using `Model.find_or_initialize_by(key: params[:key])`' do
+      expect_no_offenses(<<~RUBY)
+        Model.find_or_initialize_by(key: params[:key])
+      RUBY
+    end
+
+    it 'does not register an offense when using `Model&.find_or_initialize_by(key: params[:key])`' do
+      expect_no_offenses(<<~RUBY)
+        Model&.find_or_initialize_by(key: params[:key])
+      RUBY
+    end
+
+    it 'does not register an offense when using `Model.find_or_create_by(key: params[:key])`' do
+      expect_no_offenses(<<~RUBY)
+        Model.find_or_create_by(key: params[:key])
+      RUBY
+    end
+
+    it 'does not register an offense when using `Model.find_or_create_by!(key: params[:key])`' do
+      expect_no_offenses(<<~RUBY)
+        Model.find_or_create_by!(key: params[:key])
+      RUBY
+    end
+
+    it 'registers an offense when using `Model.find_sole_by(key: params[:key])`' do
+      expect_offense(<<~RUBY)
+        Model.find_sole_by(key: params[:key])
+                                      ^^^^^^ Use `expect(:key)` instead.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        Model.find_sole_by(key: params.expect(:key))
+      RUBY
+    end
+
+    it 'does not register an offense when using `Model.find(non_params[:key])`' do
+      expect_no_offenses(<<~RUBY)
+        Model.find(non_params[:key])
+      RUBY
+    end
+
+    it 'does not register an offense when using `Model.findxxx(params[:key])`' do
+      expect_no_offenses(<<~RUBY)
+        Model.findxxx(params[:key])
+      RUBY
+    end
+
+    it 'does not register an offense when using methods that do not start with `find_` such as `Model.where' do
+      expect_no_offenses(<<~RUBY)
+        Model.where(key: params[:key])
+      RUBY
+    end
+
+    it 'does not register an offense when using `Model.delete(params[:id])`' do
+      expect_no_offenses(<<~RUBY)
+        Model.delete(params[:id])
+      RUBY
+    end
+
+    it 'does not register an offense when using `Model.destroy(params[:id])`' do
+      expect_no_offenses(<<~RUBY)
+        Model.destroy(params[:id])
+      RUBY
+    end
+
+    it 'does not register an offense when using `Model.delete_by(key: params[:key])`' do
+      expect_no_offenses(<<~RUBY)
+        Model.delete_by(key: params[:key])
+      RUBY
+    end
+
+    it 'does not register an offense when using `Model.destroy_by(params[:key])`' do
+      expect_no_offenses(<<~RUBY)
+        Model.destroy_by(key: params[:key])
+      RUBY
+    end
+
+    it 'does not register an offense when using `Model.delete_custom_method(params[:key])`' do
+      expect_no_offenses(<<~RUBY)
+        Model.delete_custom_method(params[:key])
+      RUBY
+    end
+
+    it 'does not register an offense when using `Model.destroy_custom_method(params[:key])`' do
+      expect_no_offenses(<<~RUBY)
+        Model.destroy_custom_method(params[:key])
+      RUBY
+    end
+
+    it 'registers an offense when using `params.require(:user).permit(:name, :age)`' do
+      expect_offense(<<~RUBY)
+        params.require(:user).permit(:name, :age)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Use `expect(user: [:name, :age])` instead.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        params.expect(user: [:name, :age])
+      RUBY
+    end
+
+    it 'registers an offense when using `params&.require(:user)&.permit(:name, :age)`' do
+      expect_offense(<<~RUBY)
+        params&.require(:user)&.permit(:name, :age)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Use `expect(user: [:name, :age])` instead.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        params&.expect(user: [:name, :age])
+      RUBY
+    end
+
+    it 'registers an offense when using `params.permit(user: [:name, :age]).require(:user)`' do
+      expect_offense(<<~RUBY)
+        params.permit(user: [:name, :age]).require(:user)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Use `expect(user: [:name, :age])` instead.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        params.expect(user: [:name, :age])
+      RUBY
+    end
+
+    it 'registers an offense when using `params&.permit(user: [:name, :age])&.require(:user)`' do
+      expect_offense(<<~RUBY)
+        params&.permit(user: [:name, :age])&.require(:user)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Use `expect(user: [:name, :age])` instead.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        params&.expect(user: [:name, :age])
+      RUBY
+    end
+
+    it 'registers an offense when using `params.require(:user).permit(:name, some_ids: [])`' do
+      expect_offense(<<~RUBY)
+        params.require(:user).permit(:name, some_ids: [])
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Use `expect(user: [:name, some_ids: []])` instead.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        params.expect(user: [:name, some_ids: []])
+      RUBY
+    end
+
+    it 'registers an offense when using `params.require(:user).permit(*parameters, some_ids: [])`' do
+      expect_offense(<<~RUBY)
+        params.require(:user).permit(*parameters, some_ids: [])
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Use `expect(user: [*parameters, some_ids: []])` instead.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        params.expect(user: [*parameters, some_ids: []])
+      RUBY
+    end
+
+    it 'registers an offense when using `params.require(var).permit(:name, some_ids: [])`' do
+      expect_offense(<<~RUBY)
+        var = :user
+        params.require(var).permit(:name, some_ids: [])
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Use `expect(var => [:name, some_ids: []])` instead.
+      RUBY
+
+      expect_correction(<<~RUBY)
+        var = :user
+        params.expect(var => [:name, some_ids: []])
+      RUBY
+    end
+
+    it "registers an offense when using `params.require(:user).permit(:name, :age)` and `permit`'s args has comment" do
+      expect_offense(<<~RUBY)
+        params.require(:user).permit(
+               ^^^^^^^^^^^^^^^^^^^^^^ Use `expect(user: [:name, :age])` instead.
+          :name, # comment
+          :age # comment
+        )
+      RUBY
+
+      expect_correction(<<~RUBY)
+        params.expect(
+          user: [:name, # comment
+          :age] # comment
+        )
+      RUBY
+    end
+
+    it 'registers an offense when using a leading dot multiline call to `params.require(:user).permit(:name, :age)`' do
+      expect_offense(<<~RUBY)
+        params
+          .require(:user)
+           ^^^^^^^^^^^^^^ Use `expect(user: [:name, :age])` instead.
+          .permit(:name, :age)
+      RUBY
+
+      expect_correction(<<~RUBY)
+        params
+          .expect(user: [:name, :age])
+      RUBY
+    end
+
+    it 'does not register an offense when using `params.expect(user: [:name, :age])`' do
+      expect_no_offenses(<<~RUBY)
+        params.expect(user: [:name, :age])
+      RUBY
+    end
+
+    it 'does not register an offense when `permit` receives a single method call argument' do
+      expect_no_offenses(<<~RUBY)
+        params.require(:moderation_comment).permit(policy(ModerationComment).permitted_attributes_for_create)
+      RUBY
+    end
+
+    it 'does not register an offense when `permit` receives a single variable argument' do
+      expect_no_offenses(<<~RUBY)
+        permitted_keys = %i[name age]
+        params.require(:user).permit(permitted_keys)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params.permit(unmatch_require_param: [:name, :age]).require(:user)`' do
+      expect_no_offenses(<<~RUBY)
+        params.permit(unmatch_require_param: [:name, :age]).require(:user)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params.require([:foo, :bar]).permit(:baz)`' do
+      expect_no_offenses(<<~RUBY)
+        params.require([:foo, :bar]).permit(:baz)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params.require(:name)`' do
+      expect_no_offenses(<<~RUBY)
+        params.require(:name)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params.permit(:name)`' do
+      expect_no_offenses(<<~RUBY)
+        params.permit(:name)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params.require(:target).permit`' do
+      expect_no_offenses(<<~RUBY)
+        params.require(:target).permit
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:name]`' do
+      expect_no_offenses(<<~RUBY)
+        params[:name]
+      RUBY
+    end
+
+    it 'does not register an offense when using `params.fetch(:name)`' do
+      expect_no_offenses(<<~RUBY)
+        params.fetch(:name)
+      RUBY
+    end
+
+    it 'does not register an offense when using `params[:user][:name]`' do
+      expect_no_offenses(<<~RUBY)
+        params[:user][:name]
+      RUBY
+    end
+  end
+
+  context 'Rails <= 7.2', :rails72 do
+    it 'does not register an offense when using `params.require(:user).permit(:name, :age)`' do
+      expect_no_offenses(<<~RUBY)
+        params.require(:user).permit(:name, :age)
+      RUBY
+    end
+  end
+end

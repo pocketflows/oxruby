@@ -13,7 +13,8 @@ start, together with `AGENTS.md`, `docs/ROADMAP.md` (oxcop) and
 - `main` is not checked out anywhere, and you never check it out. It only
   moves through `script/land`.
 - References, read-only, under `/Users/teddy/_startup/rubocop-rs/`:
-  `rubocop` (RuboCop 1.91.0), `syntax_tree`, `syntax_tree-erb`, and `code`,
+  `rubocop` (RuboCop 1.91.0), `rubocop-rails` (2.37.0), `rubocop-rspec`
+  (3.10.2), `syntax_tree`, `syntax_tree-erb`, and `code`,
   the user's app and the real-world test corpus. Docs say `../rubocop`
   relative to the main checkout. From a worktree that is
   `../../../rubocop`, so use the absolute paths. Never write to any of them, and never run `bundle install`,
@@ -93,14 +94,32 @@ Each agent owns the paths listed for it. Outside them:
 
 ## Roster
 
-Round 2 (2026-10-21). The first round's 15 agents finished; their notes are
-in `docs/agents/` and their roster is in git history.
+Round 3 (2026-10-21): plugin cops. Rounds 1 and 2 finished; their notes are
+in `docs/agents/` and their rosters are in git history. The scope is the
+plugin cops `../code` enables, not whole plugins.
 
 | Name | Owns | Goal, in order |
 | --- | --- | --- |
-| `utf8` | Source loading and encoding: `processed_source.rs`, the encoding parts of `magic_comment.rs` and `runner.rs` | A file with invalid UTF-8 and no encoding comment fails exactly as it does in RuboCop (measured, not guessed), instead of having its bytes replaced. |
-| `index` | `project_index*.rs`, `cop/mixin/project_index_help.rs`, `cop/mixin/indexed_method_arity.rs`, the project-index parts of `config.rs`, `runner.rs`, `server.rs` and `spec/oxcop/`; the cops Lint/ArgumentMismatch, Lint/DeprecatedReference, Lint/NameTypo, and the index-aware code paths in the existing cops whose specs have `:project_index` examples | `AllCops/UseProjectIndex` on top of the `rubydex` crate: build the graph, a shim hook so specs' `build_index` reaches the binary, the three cops, then every `:project_index` example passing. |
-| `config` | `config_loader.rs`, `config_loader_resolver`-equivalents, `target_ruby.rs`, `script/compare_with_rubocop` and its use in `script/land` | 1. A real-config compare (no `--only`) in the gate. 2. `handle_disabled_by_default`: `code/` configures cops without `Enabled: true` under `DisabledByDefault`, and oxcop skips them. 3. The other config gaps, the TargetRuby sources and `gem_versions_in_target`. |
+| `rails` | `crates/oxcop/src/cop/rails/**` (cops, and any Rails-only helpers in a `rails/<helper>/mod.rs` subdirectory) | Rails/TimeZoneAssignment, Rails/TimeZone, Rails/HttpStatusNameConsistency, each with its whole vendored spec green. |
+| `rspec` | `crates/oxcop/src/cop/rspec/**` (cops, plus rubocop-rspec's base and mixins such as `RSpec::Language`, `EmptyLineSeparation`, `FinalEndLocation` in `rspec/<helper>/mod.rs` subdirectories) | RSpec/EmptyLineAfterHook and RSpec/EmptyLineAfterExample, each with its whole vendored spec green, smoke tests included. |
+
+How plugin cops work (landed before this round):
+
+- Specs: `rake vendor:plugins` copies `spec/rubocop/cop/rails/` and
+  `spec/rubocop/cop/rspec/`, the support those specs use
+  (`spec/support/rubocop-rails/`, `spec/support/rubocop-rspec/`), and
+  rubocop-rspec's `spec/smoke_tests/`. All vendored: never edit them.
+  `spec/oxcop/plugins.rb` gives each plugin's specs a default configuration
+  with only that plugin integrated, plus rubocop-rspec's spec_helper setup.
+- Registry: a cop in `cop/rails/` or `cop/rspec/` only runs once its plugin
+  is loaded (`Config::cop_registered`, `cop::base::PLUGIN_DEPARTMENTS`): from
+  `plugins:`/`require:` in a real run, or when a `--raw-config` has the
+  `Rails`/`RSpec` department key, as the specs' dumped config does.
+- `script/land` treats `cop/rails/*.rs` and `cop/rspec/*.rs` as cop files.
+  A helper subdirectory (`cop/rspec/language/mod.rs`) counts as shared and
+  takes the full gate. That's fine: land it with the first cop that uses it.
+- `../code` has no offenses for these five cops today, so the compare only
+  proves no false positives. The specs prove detection.
 
 The `cop/mixin/` files that already exist are listed in `ROADMAP.md`. The
 mixins most needed but not yet ported are Alignment, SurroundingSpace,

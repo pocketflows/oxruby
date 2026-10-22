@@ -38,12 +38,16 @@ script/land                              # gate and land your branch on main
   `rubydex` (oxcop's project index, at a commit), both unmodified; don't add
   others without asking the user.
 - `../rubocop` is checked out at the tracked tag (see `version.rs`). Read the
-  Ruby source and its spec before porting a cop.
+  Ruby source and its spec before porting a cop. Plugin cops (`cop/rails/`,
+  `cop/rspec/`) port from `../rubocop-rails` and `../rubocop-rspec`, checked
+  out at the versions the Gemfile pins; they only run once their plugin is
+  loaded (`Config::cop_registered`).
 
 ## Specs
 
-- `spec/rubocop/` and `spec/support/` are vendored from upstream: **never edit
-  them**. Re-sync with `rake vendor:rubocop`. If an upstream spec can't pass
+- `spec/rubocop/`, `spec/support/` and `spec/smoke_tests/` are vendored from
+  upstream: **never edit them**. Re-sync with `rake vendor:rubocop` and
+  `rake vendor:plugins`. If an upstream spec can't pass
   for a principled reason, record it (in your `docs/agents/<name>.md` when
   working in parallel). Don't change the spec.
 - `spec/oxcop/` is ours: the shim that sends `expect_offense` and friends to

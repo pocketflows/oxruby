@@ -27,6 +27,9 @@ pub struct Config {
     pub preview_option: Option<bool>,
     /// `Config#target_ruby` (`TargetRuby.new(self)`), resolved once.
     target_ruby: OnceLock<crate::target_ruby::Source>,
+    /// The plugins loaded by the time this configuration was resolved, which
+    /// decides whether their cops are registered (`cop_registered`).
+    pub loaded_plugins: std::collections::HashSet<String>,
 }
 
 /// The cops RuboCop's registry would know about for this configuration:
@@ -166,6 +169,7 @@ impl Config {
             pending_cops_option: None,
             preview_option: None,
             target_ruby: OnceLock::new(),
+            loaded_plugins: std::collections::HashSet::new(),
         }
     }
 
@@ -380,6 +384,13 @@ impl Config {
             .collect()
     }
 
+    /// Whether the cop is in `Registry.global`: core cops always are, a
+    /// plugin's cops (`cop::base::plugin_of`) once that plugin is loaded.
+    pub fn cop_registered(&self, cop_name: &str) -> bool {
+        crate::cop::base::plugin_of(cop_name)
+            .is_none_or(|plugin| self.loaded_plugins.contains(plugin))
+    }
+
     /// `Config#cop_enabled?` alone: `!!for_cop(name)['Enabled']`, where
     /// `for_cop` computes `Enabled` with `enable_cop?` (so `pending` is
     /// truthy here).
@@ -574,4 +585,20 @@ fn comparable_version(value: &str) -> Option<Vec<u64>> {
         segments.pop();
     }
     Some(segments)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plugin_cops_are_registered_once_their_plugin_loads() {
+        let mut config = Config::new(Mapping::new(), None);
+        assert!(config.cop_registered("Style/HashSyntax"));
+        assert!(!config.cop_registered("Rails/TimeZone"));
+        assert!(!config.cop_registered("RSpec/EmptyLineAfterHook"));
+        config.loaded_plugins.insert("rubocop-rails".to_owned());
+        assert!(config.cop_registered("Rails/TimeZone"));
+        assert!(!config.cop_registered("RSpec/EmptyLineAfterHook"));
+    }
 }

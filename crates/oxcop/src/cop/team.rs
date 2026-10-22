@@ -115,7 +115,8 @@ impl<'a> Team<'a> {
             })
             .filter(|cop| {
                 let name = cop.name();
-                self.selected(name, comment_config)
+                self.config.cop_registered(name)
+                    && self.selected(name, comment_config)
                     && self.config.cop_relevant_file(name, processed_source.path())
                     && cop
                         .minimum_target_ruby_version()

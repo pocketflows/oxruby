@@ -234,6 +234,11 @@ impl ConfigLoader {
         Ok(Config::new(merged, Some(config_file)))
     }
 
+    /// The plugins integrated so far (`plugins:`, or a plugin gem in `require:`).
+    pub fn loaded_plugins(&self) -> &HashSet<String> {
+        &self.loaded_plugins
+    }
+
     /// `ConfigFinder.project_root`, cached for the run.
     pub fn project_root(&self) -> Option<&Path> {
         self.project_root.get_or_init(project_root).as_deref()
@@ -1254,10 +1259,21 @@ impl ConfigStore {
                     .map_err(|e| ConfigError(format!("{}: {e}", path.display())))?;
                 let hash: Mapping = serde_yaml_ng::from_str(&contents)
                     .map_err(|e| ConfigError(format!("{}: {e}", path.display())))?;
-                Config::new(hash, Some(path.clone()))
+                let mut config = Config::new(hash, Some(path.clone()));
+                // RuboCop's own specs load the plugin they test, so a plugin
+                // counts as loaded when the configuration has its department.
+                for (department, plugin) in crate::cop::base::PLUGIN_DEPARTMENTS {
+                    if config.get(department).is_some() {
+                        config.loaded_plugins.insert((*plugin).to_owned());
+                    }
+                }
+                config
             } else {
-                self.loader
-                    .configuration_from_file(config_path.as_deref())?
+                let mut config = self
+                    .loader
+                    .configuration_from_file(config_path.as_deref())?;
+                config.loaded_plugins = self.loader.loaded_plugins().clone();
+                config
             };
             let mut config = config;
             config.pending_cops_option = self.pending_cops_option;
