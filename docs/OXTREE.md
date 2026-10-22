@@ -4,7 +4,10 @@ oxtree is a Rust port of syntax_tree 6.3.0 (the Ruby formatter), its ERB
 plugin w_syntax_tree-erb 0.12.0, and `../code`'s `ErbEmbeddedFormatter`
 (oxfmt for `<script>`/`<style>` bodies and `.js/.css/.json.erb` files). The
 goal is a drop-in replacement for `bin/rails stree_new:{check,write}` in
-`../code`, shipped as the `oxtree` gem. All work is on branch `stree`.
+`../code`, shipped as the `oxtree` gem: `oxtree --check .` and `oxtree
+--write .` (the flag CLI, `cli/flags.rs`) format ERB the way `stree_new`
+does, with no flag. The earlier `oxtree stree-new` subcommand was removed
+(2026-10-22, user decision).
 
 ## What's done
 
@@ -19,7 +22,7 @@ goal is a drop-in replacement for `bin/rails stree_new:{check,write}` in
 | ERB fixtures (`test/fixture/*`) | **7/7 pass** | not yet in `cargo test`, see "What's left" |
 | `ErbEmbeddedFormatter` port | Done | `embedded.rs` |
 | oxfmt: oxc crates linked in | Done | `oxc.rs`, `oxfmt.rs`, feature `oxc` (default) |
-| CLI (`stree` drop-in, stree_new) | **Not started** | `main.rs` only has dev commands |
+| CLI (`stree` drop-in; flag CLI replacing stree_new) | Done | `cli/`, `script/compare_with_stree` |
 | Gem `gems/oxtree`, `rakelib/oxtree.rake` | **Not started** | |
 | Differential script in `script/` | Partial | Ruby reference scripts in `crates/oxtree/tools/` |
 
@@ -40,7 +43,8 @@ in `crates/oxtree/tools/`; each `reference_*.rb` header names the matching
 ### Speed (`../code`, check mode, single-threaded dev commands)
 
 These dev commands format without git discovery and without parallelism,
-so this isn't yet the `stree_new:check` comparison. That needs the CLI.
+so this isn't the `stree_new:check` comparison; `oxtree --check .` on
+code/ takes 0.52 s (`docs/agents/tree-cli.md`).
 
 | Run | Time |
 | --- | --- |
@@ -131,19 +135,11 @@ so this isn't yet the `stree_new:check` comparison. That needs the CLI.
      parsing, `--ignore-files` with plain `File.fnmatch` semantics (no
      `FNM_PATHNAME`), and stree's exact messages and exit codes. Check
      against `vendor/syntax_tree/test/cli_test.rb`.
-   - Add the stree_new mode as a subcommand, for example
-     `oxtree stree-new check|write [--modified]`:
-     - git file discovery: `git ls-files -z` plus untracked files;
-     - the source globs with `FNM_PATHNAME|FNM_EXTGLOB`;
-     - `FILES=`;
-     - `--modified`, which diffs against `git merge-base main HEAD`;
-     - largest-first ordering and rayon parallelism;
-     - output lines `[warn] file` / `[error] file: Class: msg`, then the
-       summary line and exit 1, as in `code/lib/tasks/stree_new.rake`.
-   - Handler choice:
-     - `.erb` files go to `embedded::format`, using the file path;
-     - everything else goes to the Ruby formatter at `print_width` with
-       default options (stree_new loads no Ruby plugins).
+   - (Done, then replaced.) The stree_new mode was first a subcommand,
+     `oxtree stree-new check|write [--modified]`; it is now the flag CLI:
+     a directory selects stree_new's ERB globs, `.erb` files go to
+     `embedded::format`, largest first on rayon. `FILES=` and `--modified`
+     went with the subcommand.
    - Read files like `SyntaxTree.read`, honoring magic encoding comments.
      UTF-8 is enough for code/.
 2. **Gem and rake tasks.**
@@ -161,7 +157,7 @@ so this isn't yet the `stree_new:check` comparison. That needs the CLI.
    - Compare outputs in memory and never write to code/.
    - Point `ErbEmbeddedFormatter::OXFMT_BIN` at an oxfmt installed outside
      code/; see `tools/reference_embedded.rb`.
-   - Then time `oxtree stree-new check` against `bin/rails stree_new:check`.
+   - Then time `oxtree --check .` against `bin/rails stree_new:check`.
 4. **Wire the ERB suite into tests.**
    - Add a Rust test that formats `vendor/syntax_tree-erb/test/fixture/*`
      (7/7 pass today by hand) and checks idempotency.
@@ -197,13 +193,21 @@ Decided by the user (2026-10-21):
 - **Flag-style command line** (2026-10-21, `src/cli/flags.rs`):
   `oxtree [--write|--check|--list-different] [options] [PATH...]`, write by
   default, like rufo and oxfmt. PATHs are files, directories (their Ruby
-  files; ERB with `--plugins=erb`; dot-directories and git-ignored files
-  left out) or globs. Options, `.streerc` and output are stree's, except
-  that the print width defaults to 100, `--ignore-files` also skips
-  directories, and the exit status is 0/1/2 (formatted, not formatted,
-  error) as with rubocop. ERB goes through the stree-erb plugin, not the
-  app's embedded formatter (that stays `stree-new`). stree's own commands
-  (`oxtree check FILE`, ...) are unchanged.
+  files and `*.html.erb`/`*.js.erb`/`*.css.erb`/`*.json.erb`;
+  dot-directories and git-ignored files left out) or globs. Options,
+  `.streerc` and output are stree's, except that the print width defaults
+  to 100, `--ignore-files` also skips directories, and the exit status is
+  0/1/2 (formatted, not formatted, error) as with rubocop. stree's own
+  commands (`oxtree check FILE`, ...) are unchanged.
+- **ERB in the flag CLI** (2026-10-22): supported out of the box, formatted
+  exactly as code/'s `stree_new` does (`embedded.rs`, oxfmt resolved from
+  the git root); `--plugins=erb` is accepted and changes nothing there. The
+  `stree-new` subcommand was removed. Selection differs from stree_new's
+  globs by design: a directory walk can't pick extensionless files named by
+  path (code/'s `bin/generate-openapi-spec`), and it adds `*.ru`,
+  `*.gemspec`, nested `Gemfile`/`Rakefile` and dotfiles outside
+  dot-directories. `FILES=` and `--modified` are gone (name files as
+  PATHs).
 
 Still open:
 

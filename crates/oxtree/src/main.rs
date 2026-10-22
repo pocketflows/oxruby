@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 //! The `oxtree` executable: syntax_tree's `stree` command line plus the
-//! `stree-new` mode (see `cli/`). The `--format-*`/`--dump-ast` commands are
+//! flag-style `oxtree [--write|--check|-l] [PATH...]` (see `cli/`). The `--format-*`/`--dump-ast` commands are
 //! hidden development helpers used by `tools/reference_*.rb`.
 
 use std::io::Write;
