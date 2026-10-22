@@ -15,7 +15,13 @@ bundle exec rake                         # everything CI runs
 bundle exec rspec spec/rubocop/cop/layout/trailing_whitespace_spec.rb
 bundle exec rake compare                 # diff vs real rubocop on ../code
 script/land                              # gate and land your branch on main
+script/plugin_specs <crate> [specs...]   # an app's cop specs vs its own binary
 ```
+
+oxcop is also a library: an application can compile its own cops (ported
+to Rust) into its own `oxcop` binary with `oxcop::Oxcop` and
+`oxcop::plugin::Plugin`. `docs/PLUGINS.md` has the API, the requirements for
+dependent crates, and how to run their specs.
 
 ## Porting rules
 

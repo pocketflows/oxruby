@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Runs an application's own cop specs against its custom oxcop binary (a
+# crate built on the oxcop library with its cops compiled in; see
+# docs/PLUGINS.md), through the same shim as RuboCop's vendored specs.
+#
+#   script/plugin_specs <plugin crate dir> [spec files...]
+#
+# Builds the crate's debug `oxcop` binary, then runs rspec from this
+# repository (its Gemfile, .rspec and spec/spec_helper.rb; the app specs'
+# `require "spec_helper"` resolves to ours) with OXCOP_BINARY set. rspec and
+# the binary share this repository as the working directory, so cops that
+# look at paths relative to `Dir.pwd` see the same thing in both.
+#
+# Without spec files, it runs every `*_spec.rb` under the crate's
+# `../spec/lib/rubocop/cop/` that uses RuboCop's cop spec support
+# (`require "rubocop/rspec/support"`); specs that drive RuboCop's Ruby
+# classes some other way (a hand-built Commissioner, a booted Rails app)
+# can't run against the binary and are listed as skipped.
+set -euo pipefail
+
+if (($# < 1)); then
+  sed -n '2,/^set /p' "$0" | sed '$d' | sed 's/^# \{0,1\}//' >&2
+  exit 2
+fi
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+crate="$(cd "$1" && pwd)"
+shift
+
+cargo build --quiet --manifest-path "$crate/Cargo.toml" --bin oxcop
+binary="${CARGO_TARGET_DIR:-$crate/target}/debug/oxcop"
+
+specs=()
+if (($#)); then
+  for spec in "$@"; do
+    specs+=("$(cd "$(dirname "$spec")" && pwd)/$(basename "$spec")")
+  done
+else
+  spec_dir="$(cd "$crate/.." && pwd)/spec/lib/rubocop/cop"
+  while IFS= read -r spec; do
+    if grep -q 'rubocop/rspec/support' "$spec"; then
+      specs+=("$spec")
+    else
+      echo "plugin_specs: skipping ${spec#"$spec_dir/"} (no rubocop/rspec/support)" >&2
+    fi
+  done < <(find "$spec_dir" -name '*_spec.rb' | sort)
+fi
+
+cd "$root"
+OXCOP_BINARY="$binary" BUNDLE_GEMFILE="$root/Gemfile" exec bundle exec rspec "${specs[@]}"

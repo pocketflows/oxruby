@@ -19,6 +19,12 @@ file is the consolidated view. oxtree has its own status file,
   `rake vendor:plugins` (`docs/agents/rails.md`, `docs/agents/rspec.md`).
   Not yet checked: user additions under `RSpec: Language:` merging with the
   defaults (`inherit_mode`).
+- **App cops (compiled-in plugins):** an application ports its own cops to
+  Rust and builds its own `oxcop` binary on the library
+  (`oxcop::Oxcop::new().plugin(..).run()`, `docs/PLUGINS.md`). Plugin cops
+  join the registry, their default.yml is integrated like a lint_roller
+  plugin's, and they claim the `require:` entries they replace.
+  `script/plugin_specs` runs the app's own cop specs against its binary.
 - **Project index:** `AllCops/UseProjectIndex` and `ProjectIndexIncludesGems`
   work on Shopify's `rubydex` crate (pinned git dependency), and every
   `:project_index` example passes except two that call the Ruby cop's
@@ -46,7 +52,10 @@ file is the consolidated view. oxtree has its own status file,
   - The autocorrect loop.
   - Comment directives, including push/pop and `*-next`.
   - The directive cops: RedundantCopDisableDirective and its siblings.
-  - `--fail-level`, `--display-only-*` and `-F`.
+  - `--fail-level`, `--display-only-*`, `-F` and
+    `--ignore-disable-comments`.
+  - Formatters: progress, simple, quiet, clang, emacs, json and offenses
+    (without its terminal progress bar).
 - **Specs:** one `oxcop --server` per rspec process. `script/parallel_rspec`
   runs the suite in about 32 s, and `script/land` uses it.
 
