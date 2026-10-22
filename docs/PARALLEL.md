@@ -33,9 +33,9 @@ onto; a three-hour branch is not.
    - checks fmt, clippy, tests and that every crate root has
      `#![forbid(unsafe_code)]`. When only cop files changed, it runs just
      those cops' upstream specs. When anything shared changed (mixins,
-     `ast/`, config, the shim, Cargo files), it runs every ported spec plus
-     `script/compare_with_rubocop ../code`, which must report 0 mismatched
-     files;
+     `ast/`, config, the shim, Cargo files), it runs every ported spec. The
+     diff against real RuboCop on ../code (`script/compare_with_rubocop`) is
+     opt-in with `COMPARE=1`; don't run it unless asked;
    - takes the landing lock first (`.git/land.lock`, shared by all
      worktrees), so landings run one at a time and a slow full gate can't be
      starved by faster cop landings. Expect to wait a few minutes behind
@@ -118,8 +118,7 @@ How plugin cops work (landed before this round):
 - `script/land` treats `cop/rails/*.rs` and `cop/rspec/*.rs` as cop files.
   A helper subdirectory (`cop/rspec/language/mod.rs`) counts as shared and
   takes the full gate. That's fine: land it with the first cop that uses it.
-- `../code` has no offenses for these five cops today, so the compare only
-  proves no false positives. The specs prove detection.
+- The vendored specs are the gate. Don't run the ../code comparison.
 
 The `cop/mixin/` files that already exist are listed in `ROADMAP.md`. The
 mixins most needed but not yet ported are Alignment, SurroundingSpace,

@@ -8,6 +8,7 @@
 #   script/land            # gate + land
 #   script/land --dry-run  # gate only
 #   FULL=1 script/land     # always run the full gates
+#   COMPARE=1 script/land  # also diff against real RuboCop on ../code
 set -euo pipefail
 
 # The whole script is one function so bash has parsed all of it before the
@@ -29,8 +30,11 @@ fi
 
 # Diff the ported cops (or just $1, comma separated) against real RuboCop on
 # ../code; any difference fails the gate. With $2 = real, both tools run with
-# ../code's own configuration instead of `--only` (REAL_CONFIG=1).
+# ../code's own configuration instead of `--only` (REAL_CONFIG=1). Opt-in
+# (COMPARE=1): the vendored specs are the gate; this is a slower integration
+# check.
 compare() {
+  [[ -n "${COMPARE:-}" ]] || return 0
   # ../code relative to the main checkout (worktrees live in .worktrees/).
   local code out status=0
   code="$(cd "$(git rev-parse --git-common-dir)/../.." && pwd)/code"
