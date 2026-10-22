@@ -10,6 +10,15 @@ file is the consolidated view. oxtree has its own status file,
 - **Cops:** all 613 of RuboCop 1.91.0's core cops are ported. Each passes
   its whole vendored upstream spec through the binary: 29,116 examples,
   0 failures, 5 pending.
+- **Plugin cops:** the five that ../code enables, each passing its whole
+  vendored upstream spec: Rails/TimeZone, Rails/TimeZoneAssignment and
+  Rails/HttpStatusNameConsistency (rubocop-rails 2.37.0), and
+  RSpec/EmptyLineAfterHook and RSpec/EmptyLineAfterExample (rubocop-rspec
+  3.10.2), on a port of rubocop-rspec's `Language` and `EmptyLineSeparation`.
+  They run only when the project loads the plugin. Specs come from
+  `rake vendor:plugins` (`docs/agents/rails.md`, `docs/agents/rspec.md`).
+  Not yet checked: user additions under `RSpec: Language:` merging with the
+  defaults (`inherit_mode`).
 - **Project index:** `AllCops/UseProjectIndex` and `ProjectIndexIncludesGems`
   work on Shopify's `rubydex` crate (pinned git dependency), and every
   `:project_index` example passes except two that call the Ruby cop's
