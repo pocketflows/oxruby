@@ -43,7 +43,8 @@ module Oxcop
           priors: (@oxcop_priors ||= []).dup,
           real_file: real_file?(cop, processed_source),
           offenses_to_check: offenses_to_check(cop),
-          project_index: project_index_sources(cop)
+          project_index: project_index_sources(cop),
+          target_gems: target_gems(cop)
         }
         cop_options = cop.instance_variable_get(:@options) || {}
 
@@ -92,6 +93,21 @@ module Oxcop
           "path_sourced" => config.path_sourced_gems_in_target || []
         }
         { sources: index.sources, target_gems: target_gems }
+      end
+
+      # The lockfile gems the `:config` context stubs
+      # (`gem_versions_in_target`, `path_sourced_gems_in_target`), for a cop
+      # that `requires_gem` (Rails/HttpStatusNameConsistency).
+      def target_gems(cop)
+        return if cop.class.gem_requirements.empty?
+
+        config = cop.config
+        versions = config.gem_versions_in_target || {}
+        {
+          "names" => versions.keys,
+          "path_sourced" => config.path_sourced_gems_in_target || [],
+          "versions" => versions.transform_values(&:to_s)
+        }
       end
 
       # The spec wrote the source to a real file (`expect_offense(source,
