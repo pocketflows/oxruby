@@ -31,7 +31,8 @@ pub struct Options {
     #[arg(short = 'c', long = "config", value_name = "FILE")]
     pub config: Option<PathBuf>,
 
-    /// Choose an output formatter (progress, simple, clang, json, quiet).
+    /// Choose an output formatter (progress, simple, clang, emacs, json,
+    /// offenses, quiet).
     #[arg(short = 'f', long = "format", value_name = "FORMATTER")]
     pub format: Option<String>,
 
@@ -101,6 +102,11 @@ pub struct Options {
     /// first file containing offenses.
     #[arg(short = 'F', long = "fail-fast")]
     pub fail_fast: bool,
+
+    /// Report offenses even if they have been manually disabled with a
+    /// `rubocop:disable` or `rubocop:todo` directive.
+    #[arg(long = "ignore-disable-comments")]
+    pub ignore_disable_comments: bool,
 
     /// Run without pending cops.
     #[arg(long = "disable-pending-cops")]

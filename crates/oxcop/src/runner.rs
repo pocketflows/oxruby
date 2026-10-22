@@ -295,6 +295,7 @@ impl<'a> Runner<'a> {
                 }
             }
         }
+        formatter.set_default_configuration(self.config_store.default_configuration());
         formatter.finished(&inspected);
         Ok(all_passed)
     }

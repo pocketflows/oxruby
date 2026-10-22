@@ -83,11 +83,11 @@ pub mod visibility_help;
 #[macro_export]
 macro_rules! regex {
     ($re:expr) => {{
-        static RE: std::sync::LazyLock<onig::Regex> = std::sync::LazyLock::new(|| {
-            onig::Regex::with_options(
+        static RE: ::std::sync::LazyLock<$crate::onig::Regex> = ::std::sync::LazyLock::new(|| {
+            $crate::onig::Regex::with_options(
                 &$crate::cop::mixin::ruby_pattern($re),
-                onig::RegexOptions::REGEX_OPTION_NONE,
-                onig::Syntax::ruby(),
+                $crate::onig::RegexOptions::REGEX_OPTION_NONE,
+                $crate::onig::Syntax::ruby(),
             )
             .unwrap()
         });

@@ -1,4 +1,5 @@
-//! Port of `lib/rubocop/cop/registry.rb`. Every ported cop is listed here.
+//! Port of `lib/rubocop/cop/registry.rb`. Every ported cop is listed here,
+//! together with the cops of the compiled-in plugins (`crate::plugin`).
 
 use std::sync::LazyLock;
 
@@ -6,12 +7,15 @@ use crate::cop::{CONSTRUCTORS, Cop};
 
 pub type CopConstructor = fn() -> Box<dyn Cop>;
 
-/// Every ported cop, sorted by name like RuboCop's registry (departments in
-/// alphabetical order, cops alphabetically within them).
+/// Every ported cop and every installed plugin's cop, sorted by name like
+/// RuboCop's registry (departments in alphabetical order, cops
+/// alphabetically within them). Plugins must be installed before the first
+/// call.
 pub fn all() -> &'static [CopConstructor] {
     static SORTED: LazyLock<Vec<CopConstructor>> = LazyLock::new(|| {
         let mut cops: Vec<(String, CopConstructor)> = CONSTRUCTORS
             .iter()
+            .chain(&crate::plugin::installed().cops)
             .map(|new| (new().name().to_owned(), *new))
             .collect();
         cops.sort_by(|a, b| a.0.cmp(&b.0));

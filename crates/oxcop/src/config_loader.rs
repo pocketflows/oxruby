@@ -178,6 +178,13 @@ impl Gems {
     }
 }
 
+/// A plugin's default configuration: a gem's `config/default.yml`, or a
+/// compiled-in plugin's.
+enum PluginConfig<'a> {
+    File(&'a PathBuf),
+    Compiled(&'a Mapping),
+}
+
 /// `ConfigLoader`'s class-level state, scoped to one run: the default
 /// configuration (which plugins extend) and the plugins loaded so far.
 #[derive(Debug, Default)]
@@ -207,13 +214,33 @@ impl ConfigLoader {
 
     /// `ConfigLoader.default_configuration`: default.yml with its `Exclude`s
     /// made absolute (relative to the working directory, as default.yml isn't
-    /// a `.rubocop*` file), plus any integrated plugins.
+    /// a `.rubocop*` file), plus any integrated plugins. The compiled-in
+    /// plugins (`crate::plugin`) are always loaded, so they are integrated
+    /// first, as if every configuration listed them in `plugins:`.
     pub fn default_configuration(&mut self) -> &Mapping {
-        self.default_configuration.get_or_insert_with(|| {
+        if self.default_configuration.is_none() {
             let mut config = Config::new(default_configuration().clone(), None);
             config.make_excludes_absolute();
-            config.to_h().clone()
-        })
+            self.default_configuration = Some(config.to_h().clone());
+            self.integrate_compiled_plugins();
+        }
+        self.default_configuration.get_or_insert_with(Mapping::new)
+    }
+
+    /// `Plugin.integrate_plugins` for the compiled-in plugins.
+    fn integrate_compiled_plugins(&mut self) {
+        let installed = &crate::plugin::installed().plugins;
+        let sources: Vec<PluginConfig<'_>> = installed
+            .iter()
+            .filter_map(|(_, config)| config.as_ref().map(PluginConfig::Compiled))
+            .collect();
+        if !sources.is_empty() {
+            // Compiled configurations are plain YAML (no `inherit_from` or
+            // `require` to resolve), so integrating them can't fail.
+            let _ = self.integrate_plugins_into_rubocop_config(&sources);
+        }
+        self.loaded_plugins
+            .extend(installed.iter().map(|(name, _)| name.clone()));
     }
 
     /// Port of `ConfigLoader.configuration_from_file`.
@@ -362,7 +389,10 @@ impl ConfigLoader {
                 _ => {}
             }
         }
-        names.retain(|name| !self.loaded_plugins.contains(name));
+        names.retain(|name| {
+            !self.loaded_plugins.contains(name)
+                && !crate::plugin::plugin_names().any(|compiled| compiled == name)
+        });
         if names.is_empty() {
             return Ok(());
         }
@@ -381,13 +411,16 @@ impl ConfigLoader {
                 .ok_or_else(|| ConfigError(plugin_load_error(name)))?;
             paths.push(path);
         }
-        self.integrate_plugins_into_rubocop_config(&paths)?;
+        let sources: Vec<PluginConfig<'_>> = paths.iter().map(PluginConfig::File).collect();
+        self.integrate_plugins_into_rubocop_config(&sources)?;
         self.loaded_plugins.extend(names);
         Ok(())
     }
 
     /// `ConfigLoaderResolver#resolve_requires`. Ruby features can't be
-    /// loaded; plugin gems named in `require:` are integrated as plugins.
+    /// loaded; plugin gems named in `require:` are integrated as plugins,
+    /// and features a compiled-in plugin claims (`Plugin::provides_require`,
+    /// `Plugin::ignores_require`) are satisfied.
     fn resolve_requires(&mut self, path: &Path, hash: &mut Mapping) -> Result<(), ConfigError> {
         let Some(features) = hash.shift_remove("require") else {
             return Ok(());
@@ -397,6 +430,9 @@ impl ConfigLoader {
             let Value::String(feature) = feature else {
                 continue;
             };
+            if crate::plugin::require_claim(&feature).is_some() {
+                continue;
+            }
             if self.gems.plugin_capable(&feature) {
                 warn(&format!(
                     "{feature} extension supports plugin, specify `plugins: {feature}` instead of \
@@ -469,10 +505,10 @@ impl ConfigLoader {
     /// Port of `Plugin::ConfigurationIntegrator.integrate_plugins_into_rubocop_config`.
     fn integrate_plugins_into_rubocop_config(
         &mut self,
-        plugin_paths: &[PathBuf],
+        plugins: &[PluginConfig<'_>],
     ) -> Result<(), ConfigError> {
         let mut default_config = self.default_configuration().clone();
-        let plugin_config = self.combine_rubocop_configs(&default_config, plugin_paths)?;
+        let plugin_config = self.combine_rubocop_configs(&default_config, plugins)?;
 
         // merge_plugin_config_into_all_cops!
         if let (Some(Value::Mapping(all_cops)), Some(Value::Mapping(plugin_all_cops))) = (
@@ -500,23 +536,30 @@ impl ConfigLoader {
     fn combine_rubocop_configs(
         &mut self,
         default_config: &Mapping,
-        plugin_paths: &[PathBuf],
+        plugins: &[PluginConfig<'_>],
     ) -> Result<Mapping, ConfigError> {
         let original = self.default_configuration.take();
         let mut combined = default_config.clone();
         let mut configured_keys = Vec::new();
         let result = (|| {
-            for path in plugin_paths {
+            for plugin in plugins {
                 // Each plugin's config merges onto the defaults combined so far.
                 self.default_configuration = Some(combined.clone());
-                let mut plugin_config = self.load_file_checked(path, false)?;
+                let (mut plugin_config, path) = match plugin {
+                    PluginConfig::File(path) => {
+                        (self.load_file_checked(path, false)?, Some((*path).clone()))
+                    }
+                    // Path parameters resolve against the working directory,
+                    // as for a plugin's default.yml.
+                    PluginConfig::Compiled(config) => ((*config).clone(), None),
+                };
                 let all_cops = merge_all_cop_settings(
                     combined.get("AllCops"),
                     plugin_config.get("AllCops"),
                     &mut configured_keys,
                 );
                 plugin_config.insert("AllCops".into(), all_cops);
-                let mut plugin = Config::new(plugin_config, Some(path.clone()));
+                let mut plugin = Config::new(plugin_config, path);
                 plugin.make_excludes_absolute();
                 combined = self.merge_with_default(plugin.to_h().clone(), false);
             }
@@ -1229,6 +1272,12 @@ impl ConfigStore {
 
     pub fn for_file(&mut self, file: &Path) -> Result<Rc<Config>, ConfigError> {
         self.for_dir(file.parent().unwrap_or(Path::new(".")))
+    }
+
+    /// `ConfigLoader.default_configuration`, with the plugins integrated so
+    /// far.
+    pub fn default_configuration(&mut self) -> &Mapping {
+        self.loader.default_configuration()
     }
 
     /// The gems the launcher found (`OXCOP_GEMS`).

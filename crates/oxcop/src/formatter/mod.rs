@@ -5,6 +5,7 @@ mod clang_style_formatter;
 mod colorizable;
 mod emacs_style_formatter;
 mod json_formatter;
+mod offense_count_formatter;
 mod progress_formatter;
 mod simple_text_formatter;
 mod text_util;
@@ -20,6 +21,10 @@ pub trait Formatter {
     fn started(&mut self, _target_files: &[PathBuf]) {}
     fn file_started(&mut self, _file: &Path) {}
     fn file_finished(&mut self, file: &Path, offenses: &[Offense]);
+    /// `ConfigLoader.default_configuration` (with the plugins integrated
+    /// during the run), given before `finished`, for formatters that
+    /// describe cops as upstream's do through `Config.new`.
+    fn set_default_configuration(&mut self, _default_configuration: &serde_yaml_ng::Mapping) {}
     fn finished(&mut self, inspected_files: &[PathBuf]);
 }
 
@@ -56,6 +61,9 @@ pub fn build(
             output, color,
         )),
         "json" | "j" => Box::new(json_formatter::JsonFormatter::new(output)),
+        "offenses" | "o" => Box::new(offense_count_formatter::OffenseCountFormatter::new(
+            output, color,
+        )),
         _ => return Err(format!("Formatter \"{key}\" not found")),
     })
 }

@@ -331,7 +331,7 @@ fn execute_runner(options: &Options, io: &mut Io) -> Result<i32, String> {
         autocorrect: options.autocorrect_mode(),
         display_cop_names: options.display_cop_names(),
         json_format: matches!(format.as_str(), "json" | "j"),
-        ignore_disable_comments: false,
+        ignore_disable_comments: options.ignore_disable_comments,
         stdin: options.stdin.is_some(),
         lsp: options.lsp,
     };

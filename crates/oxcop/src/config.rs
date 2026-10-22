@@ -72,10 +72,18 @@ impl KnownCops {
 }
 
 /// `Cop::Registry.global`: every core cop (default.yml's), whether ported
-/// or not.
+/// or not, and the compiled-in plugins' cops (`crate::plugin`).
 pub fn core_cops() -> &'static KnownCops {
-    static CORE: LazyLock<KnownCops> =
-        LazyLock::new(|| KnownCops::from_config(crate::config_loader::default_configuration()));
+    static CORE: LazyLock<KnownCops> = LazyLock::new(|| {
+        let mut core = KnownCops::from_config(crate::config_loader::default_configuration());
+        let plugin_cops: Mapping = crate::plugin::installed()
+            .cop_names
+            .iter()
+            .map(|name| (Value::from(*name), Value::Null))
+            .collect();
+        core.extend(&KnownCops::from_config(&plugin_cops));
+        core
+    });
     &CORE
 }
 
