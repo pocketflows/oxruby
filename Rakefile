@@ -130,7 +130,7 @@ namespace :vendor do
     "rubocop-rails" => {
       department: "rails",
       license: "LICENSE.txt",
-      support: %w[spec/support/shared_contexts.rb]
+      support: %w[spec/support/shared_contexts.rb spec/support/schema_loader.rb]
     },
     "rubocop-rspec" => {
       department: "rspec",
