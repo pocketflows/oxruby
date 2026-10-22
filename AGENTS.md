@@ -16,6 +16,7 @@ bundle exec rspec spec/rubocop/cop/layout/trailing_whitespace_spec.rb
 bundle exec rake compare                 # diff vs real rubocop on ../code
 script/land                              # gate and land your branch on main
 script/plugin_specs <crate> [specs...]   # an app's cop specs vs its own binary
+script/release [--push]                  # commit macOS arm64 + Linux binaries to the release branch
 ```
 
 oxcop is also a library: an application can compile its own cops (ported

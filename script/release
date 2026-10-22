@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# Build release binaries of oxcop and oxtree on this Mac (Apple silicon) and
+# commit them to the `release` branch, which apps install as git gems:
+#
+#   git "git@github.com:pocketflows/oxruby.git", ref: "<sha>", glob: "gems/*/*.gemspec" do
+#     gem "oxcop", require: false
+#     gem "oxtree", require: false
+#   end
+#
+# Each release commit's tree is main's tree plus
+# gems/{oxcop,oxtree}/exe/<platform>/<name> (ignored on main), where the
+# launchers in gems/*/lib find them. Its parents are the previous release
+# commit and the main commit it was built from.
+#
+#   script/release          # build, commit to `release`, print the commit
+#   script/release --push   # ... and push `release` to origin
+#
+# Linux binaries are cross-built with cargo-zigbuild against glibc 2.31, so
+# they run on Ubuntu 20.04 and later (every GitHub-hosted Ubuntu runner).
+set -euo pipefail
+
+# rustc target, rubygems platform (the exe/ directory), expected `file` output.
+TARGETS=(
+  "aarch64-apple-darwin|arm64-darwin|Mach-O 64-bit executable arm64"
+  "x86_64-unknown-linux-gnu|x86_64-linux|ELF 64-bit LSB pie executable, x86-64"
+  "aarch64-unknown-linux-gnu|aarch64-linux|ELF 64-bit LSB pie executable, ARM aarch64"
+)
+GLIBC=2.31
+BINARIES=(oxcop oxtree)
+TOOLCHAIN=${RELEASE_TOOLCHAIN:-stable}
+
+log() { echo "release: $*" >&2; }
+die() {
+  log "$*"
+  exit 2
+}
+
+main() {
+  cd "$(git rev-parse --show-toplevel)"
+  local push=false
+  case "${1:-}" in
+    --push) push=true ;;
+    "") ;;
+    *) die "usage: script/release [--push]" ;;
+  esac
+
+  [[ "$(uname -s) $(uname -m)" == "Darwin arm64" ]] || die "run this on an Apple silicon Mac"
+  [[ "$(git symbolic-ref -q --short HEAD || true)" == "main" ]] || die "check out main first"
+  [[ -z "$(git status --porcelain)" ]] || die "commit or discard your changes first"
+  local main_sha
+  main_sha=$(git rev-parse HEAD)
+
+  setup_tools
+  local started=$SECONDS
+  build
+  log "built in $((SECONDS - started))s"
+
+  local commit
+  commit=$(commit_release "$main_sha")
+  if $push; then
+    git push origin refs/heads/release:refs/heads/release >&2
+  fi
+  echo "$commit"
+}
+
+# zig and cargo-zigbuild from Homebrew; Rust from rustup, whose toolchains
+# carry the Linux standard libraries (Homebrew's rust only has the host's).
+# `rustup run` doesn't put the toolchain first on PATH with Homebrew's
+# rustup, so do it by hand.
+setup_tools() {
+  command -v zig >/dev/null || brew install zig
+  command -v cargo-zigbuild >/dev/null || brew install cargo-zigbuild
+  command -v rustup >/dev/null || die "install rustup (brew install rustup)"
+  rustup toolchain install --profile minimal --no-self-update "$TOOLCHAIN" >&2
+  local entry
+  for entry in "${TARGETS[@]}"; do
+    rustup target add --toolchain "$TOOLCHAIN" "${entry%%|*}" >&2
+  done
+  PATH="$(dirname "$(rustup which --toolchain "$TOOLCHAIN" cargo)"):$PATH"
+  export PATH
+  # Kept apart from target/release, which development builds use.
+  export CARGO_TARGET_DIR="$PWD/target/dist"
+  log "$(rustc --version), zig $(zig version), $(cargo-zigbuild --version)"
+}
+
+build() {
+  local entry triple platform expected name path
+  for entry in "${TARGETS[@]}"; do
+    IFS="|" read -r triple platform expected <<<"$entry"
+    log "building $triple"
+    if [[ "$triple" == *-apple-darwin ]]; then
+      cargo build --release --locked --target "$triple" -p oxcop -p oxtree >&2
+    else
+      cargo zigbuild --release --locked --target "$triple.$GLIBC" -p oxcop -p oxtree >&2
+    fi
+    for name in "${BINARIES[@]}"; do
+      path="$CARGO_TARGET_DIR/$triple/release/$name"
+      # rustup's rust-objcopy can't load its libLLVM here, so `strip = true`
+      # doesn't take on macOS (the linker strips the Linux binaries). Xcode's
+      # strip keeps the linker's ad-hoc signature.
+      if [[ "$triple" == *-apple-darwin ]]; then
+        strip "$path"
+      fi
+      file -b "$path" | grep -qF "$expected" || die "$path is not $expected: $(file -b "$path")"
+    done
+    if [[ "$triple" == *-apple-darwin ]]; then
+      for name in "${BINARIES[@]}"; do
+        "$CARGO_TARGET_DIR/$triple/release/$name" --version >/dev/null || die "$name doesn't run"
+      done
+    fi
+  done
+}
+
+# Writes main's tree plus the binaries through a scratch index (main's
+# checkout is never touched), commits it on top of the previous release and
+# moves `release` with a compare-and-swap. Prints the commit.
+commit_release() {
+  local main_sha=$1 scratch entry triple platform expected name blob tree prev old commit
+  scratch=$(mktemp -d)
+  export GIT_INDEX_FILE="$scratch/index"
+  git read-tree "$main_sha"
+  for entry in "${TARGETS[@]}"; do
+    IFS="|" read -r triple platform expected <<<"$entry"
+    for name in "${BINARIES[@]}"; do
+      blob=$(git hash-object -w "$CARGO_TARGET_DIR/$triple/release/$name")
+      git update-index --add --cacheinfo "100755,$blob,gems/$name/exe/$platform/$name"
+    done
+  done
+  tree=$(git write-tree)
+  unset GIT_INDEX_FILE
+  rm -rf "$scratch"
+
+  old=$(git rev-parse -q --verify refs/heads/release || true)
+  prev=${old:-$(git rev-parse -q --verify refs/remotes/origin/release || true)}
+  if [[ -n "$prev" && "$(git rev-parse "$prev^{tree}")" == "$tree" ]]; then
+    log "release $prev already has these binaries"
+    commit=$prev
+  else
+    commit=$(
+      {
+        echo "release: oxcop and oxtree from main $(git rev-parse --short "$main_sha")"
+        echo
+        echo "Built from main $main_sha"
+        echo "($(git log -1 --format=%s "$main_sha"))"
+        echo "with $(rustc --version) and zig $(zig version)."
+        echo
+        for entry in "${TARGETS[@]}"; do
+          IFS="|" read -r triple platform expected <<<"$entry"
+          if [[ "$triple" == *-linux-gnu ]]; then
+            echo "- $platform ($triple, glibc $GLIBC)"
+          else
+            echo "- $platform ($triple)"
+          fi
+        done
+      } | git commit-tree "$tree" ${prev:+-p "$prev"} -p "$main_sha"
+    )
+  fi
+  git update-ref -m "script/release" refs/heads/release "$commit" "$old"
+  log "release is now $commit"
+  echo "$commit"
+}
+
+main "$@"
