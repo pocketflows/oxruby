@@ -3,7 +3,8 @@
 //! options, `.streerc` handling, `--ignore-files`, messages and exit codes.
 //!
 //! Also the `stree-new` subcommand, a port of the app's
-//! `lib/tasks/stree_new.rake` (see `stree_new.rs`).
+//! `lib/tasks/stree_new.rake` (see `stree_new.rs`), and the flag-style
+//! `oxtree [--write|--check|--list-different] [PATH...]` (see `flags.rs`).
 //!
 //! The actions that print syntax_tree's Ruby objects (`ast`, `doc`, `expr`,
 //! `json`, `match`, `search`, `ctags`) and the language server (`lsp`) are
@@ -16,6 +17,7 @@
 //! print `oxtree: <message> (<class>)` without a backtrace; the help text
 //! names the `oxtree` command (no `stree` executable is shipped).
 
+pub mod flags;
 pub mod fnmatch;
 pub mod glob;
 pub mod stree_new;
@@ -86,14 +88,7 @@ impl Fatal {
 pub fn run(argv: &[String], cwd: &Path, io: &mut Io) -> i32 {
     match argv.first().map(String::as_str) {
         Some("stree-new" | "stree_new") => stree_new::run(&argv[1..], cwd, io),
-        Some("--version") => {
-            let _ = writeln!(
-                io.stdout,
-                "oxtree {} (syntax_tree {SYNTAX_TREE_VERSION}, w_syntax_tree-erb 0.12.0)",
-                env!("CARGO_PKG_VERSION")
-            );
-            0
-        }
+        _ if flags::handles(argv, cwd) => flags::run(argv, cwd, io),
         _ => match run_stree(argv, cwd, io) {
             Ok(status) => status,
             Err(fatal) => {
@@ -102,6 +97,14 @@ pub fn run(argv: &[String], cwd: &Path, io: &mut Io) -> i32 {
             }
         },
     }
+}
+
+/// What `oxtree --version` prints.
+pub fn version() -> String {
+    format!(
+        "oxtree {} (syntax_tree {SYNTAX_TREE_VERSION}, w_syntax_tree-erb 0.12.0)",
+        env!("CARGO_PKG_VERSION")
+    )
 }
 
 /// The plugins upstream ships, which `--plugins` requires as
@@ -671,6 +674,8 @@ struct ItemOutput {
     stdout: Vec<u8>,
     stderr: Vec<u8>,
     errored: bool,
+    /// The item failed only because it isn't formatted.
+    unformatted: bool,
 }
 
 fn run_stree(argv: &[String], cwd: &Path, io: &mut Io) -> Result<i32, Fatal> {
@@ -899,6 +904,7 @@ fn run_item(action: Action, item: &Item, options: &Options, cwd: &Path) -> ItemO
     }
     // `process_queue`'s rescue clauses.
     out.errored = true;
+    out.unformatted = matches!(failure, Failure::Unformatted);
     match failure {
         Failure::Parse(error) => {
             puts(

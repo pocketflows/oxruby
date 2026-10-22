@@ -11,8 +11,15 @@ gem "oxtree", require: false
 ```
 
 ```sh
-bundle exec oxtree check '**/*.rb'   # stree's commands, options and output
+bundle exec oxtree .                 # format the project's Ruby files in place
+bundle exec oxtree --check app lib   # exit 1 if any file isn't formatted
+bundle exec oxtree --list-different . --ignore-files=db --ignore-files=vendor
+bundle exec oxtree check '**/*.rb'   # stree's commands work too
 ```
+
+Options and `.streerc` are syntax_tree's (`--print-width`, `--plugins`,
+`--ignore-files`, `--config`); the print width defaults to 100. See
+`oxtree --help`.
 
 The gem installs a single `oxtree` executable. It has no `stree` alias, so
 it never shadows syntax_tree's when both are bundled.

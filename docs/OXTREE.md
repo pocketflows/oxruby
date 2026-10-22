@@ -194,6 +194,16 @@ Decided by the user (2026-10-21):
   still an error.
 - **Executable name:** the gem ships `oxtree` only, with no `stree`-named
   executable.
+- **Flag-style command line** (2026-10-21, `src/cli/flags.rs`):
+  `oxtree [--write|--check|--list-different] [options] [PATH...]`, write by
+  default, like rufo and oxfmt. PATHs are files, directories (their Ruby
+  files; ERB with `--plugins=erb`; dot-directories and git-ignored files
+  left out) or globs. Options, `.streerc` and output are stree's, except
+  that the print width defaults to 100, `--ignore-files` also skips
+  directories, and the exit status is 0/1/2 (formatted, not formatted,
+  error) as with rubocop. ERB goes through the stree-erb plugin, not the
+  app's embedded formatter (that stays `stree-new`). stree's own commands
+  (`oxtree check FILE`, ...) are unchanged.
 
 Still open:
 

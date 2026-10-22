@@ -551,3 +551,188 @@ fn stree_new_warns_when_tailwind_needs_oxfmt() {
         "[warn] a.html.erb: oxfmt not found; Tailwind classes left unsorted\n"
     );
 }
+
+// The flag-style command line (`flags.rs`).
+
+/// A project with formatted, unformatted and non-Ruby files.
+fn flags_project() -> PathBuf {
+    let dir = tmpdir();
+    for (path, contents) in [
+        ("app/clean.rb", "a = 1\n"),
+        ("app/messy.rb", "a=1\n"),
+        ("app/views/page.html.erb", "<div><%= x  %></div>\n"),
+        ("lib/tasks/a.rake", "task :a do\nend\n"),
+        ("db/schema.rb", "b=2\n"),
+        ("README.md", "x=1\n"),
+        ("Gemfile", "source \"https://rubygems.org\"\n"),
+    ] {
+        let file = dir.join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, contents).unwrap();
+    }
+    dir
+}
+
+#[test]
+fn flags_write_is_the_default_and_expands_directories() {
+    let dir = flags_project();
+    let result = run_in(&dir, &["."], "");
+    assert_eq!(result.status, 0, "{}", result.stderr);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("app/messy.rb")).unwrap(),
+        "a = 1\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("db/schema.rb")).unwrap(),
+        "b = 2\n"
+    );
+    // Not Ruby, and ERB only with the plugin.
+    assert_eq!(
+        std::fs::read_to_string(dir.join("README.md")).unwrap(),
+        "x=1\n"
+    );
+    assert!(!result.stdio.contains("page.html.erb"));
+    assert!(result.stdio.contains("Gemfile"));
+}
+
+#[test]
+fn flags_check_reports_unformatted_files() {
+    let dir = flags_project();
+    let result = run_in(&dir, &["--check", "app", "lib"], "");
+    assert_eq!(result.status, 1);
+    assert_eq!(
+        result.stderr,
+        "[\x1b[33mwarn\x1b[0m] app/messy.rb\nThe listed files did not match the expected format.\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("app/messy.rb")).unwrap(),
+        "a=1\n"
+    );
+
+    let result = run_in(&dir, &["-c", "app/clean.rb", "lib"], "");
+    assert_eq!(result.status, 0);
+    assert_eq!(result.stdio, "All files matched expected format.\n");
+}
+
+#[test]
+fn flags_list_different_prints_only_paths() {
+    let dir = flags_project();
+    let result = run_in(&dir, &["--list-different", "."], "");
+    assert_eq!(result.status, 1);
+    assert_eq!(result.stdio, "app/messy.rb\ndb/schema.rb\n");
+    assert_eq!(result.stderr, "");
+}
+
+#[test]
+fn flags_ignore_files_take_directories_from_the_command_line_and_streerc() {
+    let dir = flags_project();
+    let result = run_in(&dir, &["-l", ".", "--ignore-files=db"], "");
+    assert_eq!(result.stdio, "app/messy.rb\n");
+
+    let result = run_in(
+        &dir,
+        &[
+            "-l",
+            ".",
+            "--ignore-files=db/",
+            "--ignore-files",
+            "app/messy.rb",
+        ],
+        "",
+    );
+    assert_eq!(result.status, 0);
+    assert_eq!(result.stdio, "");
+
+    std::fs::write(dir.join(".streerc"), "--ignore-files=app\n").unwrap();
+    let result = run_in(&dir, &["-l", "."], "");
+    assert_eq!(result.stdio, "db/schema.rb\n");
+}
+
+#[test]
+fn flags_globs_and_plugins() {
+    let dir = flags_project();
+    let result = run_in(&dir, &["-l", "app/**/*.rb"], "");
+    assert_eq!(result.stdio, "app/messy.rb\n");
+
+    let result = run_in(&dir, &["-l", "--plugins=erb", "app"], "");
+    assert_eq!(result.stdio, "app/messy.rb\napp/views/page.html.erb\n");
+}
+
+#[test]
+fn flags_print_width_defaults_to_100() {
+    let dir = tmpdir();
+    // 88 characters: one line at width 100, broken at stree's 80.
+    let call = format!(
+        "foo({})\n",
+        (0..17)
+            .map(|i| format!("a{i:02}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    std::fs::write(dir.join("a.rb"), &call).unwrap();
+    assert_eq!(run_in(&dir, &["--check", "a.rb"], "").status, 0);
+    assert_eq!(
+        run_in(&dir, &["--check", "--print-width=80", "a.rb"], "").status,
+        1
+    );
+    std::fs::write(dir.join(".streerc"), "--print-width=80\n").unwrap();
+    assert_eq!(run_in(&dir, &["--check", "a.rb"], "").status, 1);
+}
+
+#[test]
+fn flags_errors_exit_2() {
+    let dir = flags_project();
+    std::fs::write(dir.join("app/broken.rb"), "def\n").unwrap();
+    let result = run_in(&dir, &["--check", "app"], "");
+    assert_eq!(result.status, 2);
+    assert!(result.stderr.contains("app/messy.rb"));
+    assert!(result.stderr.contains("Error: "));
+
+    let result = run_in(&dir, &["--check", "app/missing.rb"], "");
+    assert_eq!(result.status, 2);
+    assert_eq!(
+        result.stderr,
+        "oxtree: No such file or directory - app/missing.rb\nRun `oxtree --help` for usage.\n"
+    );
+
+    let result = run_in(&dir, &["--check", "--write", "app"], "");
+    assert_eq!(result.status, 2);
+    let result = run_in(&dir, &["--bogus"], "");
+    assert_eq!(result.status, 2);
+}
+
+#[test]
+fn flags_without_paths_format_stdin() {
+    let dir = tmpdir();
+    let result = run_in(&dir, &["--write"], "a=1");
+    assert_eq!((result.status, result.stdio.as_str()), (0, "a = 1\n"));
+    let result = run_in(&dir, &["--check"], "a=1");
+    assert_eq!(result.status, 1);
+}
+
+#[test]
+fn flags_help_and_version() {
+    let dir = tmpdir();
+    let result = run_in(&dir, &["--help"], "");
+    assert!(
+        result
+            .stdio
+            .starts_with("Usage: oxtree [options] [PATH...]")
+    );
+    let result = run_in(&dir, &["-v"], "");
+    assert!(result.stdio.starts_with("oxtree "));
+}
+
+#[test]
+fn flags_directories_leave_out_git_ignored_files_and_dot_directories() {
+    let dir = flags_project();
+    git(&dir, &["init", "-q", "-b", "main"]);
+    std::fs::write(dir.join(".gitignore"), "db/\n").unwrap();
+    std::fs::create_dir_all(dir.join(".claude")).unwrap();
+    std::fs::write(dir.join(".claude/hook.rb"), "c=3\n").unwrap();
+    let result = run_in(&dir, &["-l", "."], "");
+    assert_eq!(result.stdio, "app/messy.rb\n");
+    // A file named directly is formatted even when git ignores it.
+    let result = run_in(&dir, &["-l", ".", "db/schema.rb"], "");
+    assert_eq!(result.stdio, "app/messy.rb\ndb/schema.rb\n");
+}
