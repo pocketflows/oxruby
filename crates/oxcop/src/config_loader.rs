@@ -1261,9 +1261,17 @@ impl ConfigStore {
                     .map_err(|e| ConfigError(format!("{}: {e}", path.display())))?;
                 let mut config = Config::new(hash, Some(path.clone()));
                 // RuboCop's own specs load the plugin they test, so a plugin
-                // counts as loaded when the configuration has its department.
+                // counts as loaded when the configuration has its department
+                // or one of its cops (rubocop-rails' `:config` context dumps
+                // only `AllCops` and the cop under test).
                 for (department, plugin) in crate::cop::base::PLUGIN_DEPARTMENTS {
-                    if config.get(department).is_some() {
+                    let prefix = format!("{department}/");
+                    if config.get(department).is_some()
+                        || config
+                            .to_h()
+                            .keys()
+                            .any(|key| key.as_str().is_some_and(|key| key.starts_with(&prefix)))
+                    {
                         config.loaded_plugins.insert((*plugin).to_owned());
                     }
                 }
