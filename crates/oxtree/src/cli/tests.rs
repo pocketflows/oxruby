@@ -437,96 +437,112 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?}");
 }
 
+// ERB in the flag CLI: formatted with the app's embedded formatter (as its
+// stree_new task did), selected by stree_new's ERB globs, no flag needed.
 #[test]
-fn stree_new_check_and_write() {
+fn flags_format_erb_like_stree_new() {
     let dir = tmpdir();
     git(&dir, &["init", "-q", "-b", "main"]);
     std::fs::create_dir_all(dir.join("db/x")).unwrap();
-    std::fs::create_dir_all(dir.join("app")).unwrap();
+    std::fs::create_dir_all(dir.join("app/views")).unwrap();
     std::fs::write(dir.join("ok.rb"), "a\n").unwrap();
     std::fs::write(dir.join("bad.rb"), "a  +  1").unwrap();
-    std::fs::write(dir.join("broken.rb"), "def").unwrap();
     std::fs::write(dir.join("db/x/skip.rb"), "a  +  1").unwrap();
     std::fs::write(dir.join("notes.txt"), "a  +  1").unwrap();
-    std::fs::write(dir.join("app/v.html.erb"), "<div>\n<%= foo %>\n</div>\n").unwrap();
+    std::fs::write(
+        dir.join("app/views/v.html.erb"),
+        "<div>\n<%= foo %>\n</div>\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("app/views/ok.html.erb"), "<div><%= foo %></div>\n").unwrap();
+    // Not one of stree_new's ERB globs.
+    std::fs::write(dir.join("app/views/m.text.erb"), "<%= foo  %>\n").unwrap();
     std::fs::write(dir.join(".streerc"), "--ignore-files=db/**/*.rb\n").unwrap();
     git(&dir, &["add", "ok.rb", "notes.txt"]);
 
-    let result = run_in(&dir, &["stree-new", "--list"], "");
+    let result = run_in(&dir, &["--list-files", "."], "");
     let mut listed: Vec<&str> = result.stdio.lines().collect();
     listed.sort();
-    assert_eq!(listed, ["app/v.html.erb", "bad.rb", "broken.rb", "ok.rb"]);
-
-    let result = run_in(&dir, &["stree-new", "check"], "");
-    assert_eq!(result.status, 1);
-    let lines: Vec<&str> = result.stdio.lines().collect();
-    // Largest first: app/v.html.erb (24 bytes), bad.rb (7), broken.rb (3), ok.rb (2).
-    assert_eq!(lines[0], "[warn] app/v.html.erb");
-    assert_eq!(lines[1], "[warn] bad.rb");
-    assert!(
-        lines[2].starts_with("[error] broken.rb: SyntaxTree::Parser::ParseError: "),
-        "{}",
-        lines[2]
+    assert_eq!(
+        listed,
+        [
+            "app/views/ok.html.erb",
+            "app/views/v.html.erb",
+            "bad.rb",
+            "ok.rb"
+        ]
     );
-    assert_eq!(lines[3], "");
-    assert!(lines[4].starts_with("check completed with 3 file(s) reporting errors ("));
 
-    let result = run_in(&dir, &["stree-new", "write"], "");
+    let result = run_in(&dir, &["-l", "."], "");
     assert_eq!(result.status, 1);
-    let lines: Vec<&str> = result.stdio.lines().collect();
-    assert_eq!(lines[0], "app/v.html.erb");
-    assert_eq!(lines[1], "bad.rb");
-    assert!(lines[4].starts_with("write completed with 1 file(s) reporting errors ("));
+    assert_eq!(result.stdio, "app/views/v.html.erb\nbad.rb\n");
+
+    // --plugins=erb (as a .streerc may have it) changes nothing.
+    let result = run_in(&dir, &["-l", "--plugins=erb", "."], "");
+    assert_eq!(result.stdio, "app/views/v.html.erb\nbad.rb\n");
+
+    let result = run_in(&dir, &["--check", "."], "");
+    assert_eq!(result.status, 1);
+    assert_eq!(
+        result.stderr,
+        "[\x1b[33mwarn\x1b[0m] app/views/v.html.erb\n[\x1b[33mwarn\x1b[0m] bad.rb\n\
+         The listed files did not match the expected format.\n"
+    );
+
+    let result = run_in(&dir, &["--write", "."], "");
+    assert_eq!(result.status, 0, "{}", result.stderr);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("app/views/v.html.erb")).unwrap(),
+        "<div><%= foo %></div>\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("app/views/m.text.erb")).unwrap(),
+        "<%= foo  %>\n"
+    );
+    assert_eq!(run_in(&dir, &["--check", "."], "").status, 0);
+
+    // Named directly, any .erb goes to the embedded formatter, which has no
+    // formatter for .text.erb.
+    let result = run_in(&dir, &["--check", "app/views/m.text.erb"], "");
+    assert_eq!(result.status, 2);
+    assert!(
+        result.stderr.contains("no formatter for .text.erb"),
+        "{}",
+        result.stderr
+    );
+}
+
+#[test]
+fn flags_emit_json_has_every_file_or_its_error() {
+    let dir = tmpdir();
+    std::fs::write(dir.join("bad.rb"), "a  +  1").unwrap();
+    std::fs::write(dir.join("broken.rb"), "def").unwrap();
+    std::fs::write(dir.join("v.html.erb"), "<div>\n<%= foo %>\n</div>\n").unwrap();
+    let result = run_in(&dir, &["--emit-json", "."], "");
+    assert_eq!(result.status, 0, "{}", result.stderr);
+    let json: serde_json::Value = serde_json::from_str(&result.stdio).unwrap();
+    assert_eq!(json["bad.rb"], "a + 1\n");
+    assert_eq!(json["v.html.erb"], "<div><%= foo %></div>\n");
+    assert!(
+        json["broken.rb"]
+            .as_str()
+            .unwrap()
+            .starts_with("ERROR SyntaxTree::Parser::ParseError: "),
+        "{}",
+        json["broken.rb"]
+    );
+    // Nothing was written.
     assert_eq!(
         std::fs::read_to_string(dir.join("bad.rb")).unwrap(),
-        "a + 1\n"
-    );
-
-    std::fs::remove_file(dir.join("broken.rb")).unwrap();
-    let result = run_in(&dir, &["stree-new", "check"], "");
-    assert_eq!(result.status, 0, "{}", result.stdio);
-    let processes = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
-        .min(3);
-    assert!(result.stdio.starts_with(&format!(
-        "\ncheck passed for 3 files across {processes} processes ("
-    )));
-
-    git(&dir, &["add", "."]);
-    git(
-        &dir,
-        &[
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "-q",
-            "-m",
-            "x",
-        ],
-    );
-    let result = run_in(&dir, &["stree-new", "check:modified"], "");
-    assert!(
-        result.stdio.starts_with("No files to check ("),
-        "{}",
-        result.stdio
-    );
-    std::fs::write(dir.join("new.rb"), "x  =  1").unwrap();
-    let result = run_in(&dir, &["stree-new", "check", "--modified"], "");
-    assert!(
-        result.stdio.starts_with("[warn] new.rb\n"),
-        "{}",
-        result.stdio
+        "a  +  1"
     );
 }
 
 // User decision: without oxfmt, Tailwind classes stay unsorted with a
-// warning instead of an OxfmtMissingError.
+// warning instead of an OxfmtMissingError, in every mode.
 #[cfg(feature = "oxc")]
 #[test]
-fn stree_new_warns_when_tailwind_needs_oxfmt() {
+fn flags_warn_when_tailwind_needs_oxfmt() {
     let dir = tmpdir();
     git(&dir, &["init", "-q", "-b", "main"]);
     std::fs::write(
@@ -544,11 +560,19 @@ fn stree_new_warns_when_tailwind_needs_oxfmt() {
         "<script>\n  const b = 1;\n</script>\n",
     )
     .unwrap();
-    let result = run_in(&dir, &["stree-new", "check"], "");
-    assert_eq!(result.status, 0, "{}", result.stdio);
+    let warning = "[warn] a.html.erb: oxfmt not found; Tailwind classes left unsorted\n";
+    let result = run_in(&dir, &["--check", "."], "");
+    assert_eq!(result.status, 0, "{}", result.stderr);
+    assert_eq!(result.stderr, warning);
+    assert_eq!(result.stdio, "All files matched expected format.\n");
+    let result = run_in(&dir, &["-l", "."], "");
+    assert_eq!((result.status, result.stderr.as_str()), (0, warning));
+    // The oxfmt configuration comes from the repository root.
+    std::fs::create_dir_all(dir.join("sub")).unwrap();
+    let result = run_in(&dir.join("sub"), &["--check", "../a.html.erb"], "");
     assert_eq!(
         result.stderr,
-        "[warn] a.html.erb: oxfmt not found; Tailwind classes left unsorted\n"
+        "[warn] ../a.html.erb: oxfmt not found; Tailwind classes left unsorted\n"
     );
 }
 
@@ -586,12 +610,15 @@ fn flags_write_is_the_default_and_expands_directories() {
         std::fs::read_to_string(dir.join("db/schema.rb")).unwrap(),
         "b = 2\n"
     );
-    // Not Ruby, and ERB only with the plugin.
+    // Not Ruby or ERB.
     assert_eq!(
         std::fs::read_to_string(dir.join("README.md")).unwrap(),
         "x=1\n"
     );
-    assert!(!result.stdio.contains("page.html.erb"));
+    assert_eq!(
+        std::fs::read_to_string(dir.join("app/views/page.html.erb")).unwrap(),
+        "<div><%= x %></div>\n"
+    );
     assert!(result.stdio.contains("Gemfile"));
 }
 
@@ -602,7 +629,8 @@ fn flags_check_reports_unformatted_files() {
     assert_eq!(result.status, 1);
     assert_eq!(
         result.stderr,
-        "[\x1b[33mwarn\x1b[0m] app/messy.rb\nThe listed files did not match the expected format.\n"
+        "[\x1b[33mwarn\x1b[0m] app/messy.rb\n[\x1b[33mwarn\x1b[0m] app/views/page.html.erb\n\
+         The listed files did not match the expected format.\n"
     );
     assert_eq!(
         std::fs::read_to_string(dir.join("app/messy.rb")).unwrap(),
@@ -619,7 +647,10 @@ fn flags_list_different_prints_only_paths() {
     let dir = flags_project();
     let result = run_in(&dir, &["--list-different", "."], "");
     assert_eq!(result.status, 1);
-    assert_eq!(result.stdio, "app/messy.rb\ndb/schema.rb\n");
+    assert_eq!(
+        result.stdio,
+        "app/messy.rb\napp/views/page.html.erb\ndb/schema.rb\n"
+    );
     assert_eq!(result.stderr, "");
 }
 
@@ -627,7 +658,7 @@ fn flags_list_different_prints_only_paths() {
 fn flags_ignore_files_take_directories_from_the_command_line_and_streerc() {
     let dir = flags_project();
     let result = run_in(&dir, &["-l", ".", "--ignore-files=db"], "");
-    assert_eq!(result.stdio, "app/messy.rb\n");
+    assert_eq!(result.stdio, "app/messy.rb\napp/views/page.html.erb\n");
 
     let result = run_in(
         &dir,
@@ -637,6 +668,7 @@ fn flags_ignore_files_take_directories_from_the_command_line_and_streerc() {
             "--ignore-files=db/",
             "--ignore-files",
             "app/messy.rb",
+            "--ignore-files=app/views",
         ],
         "",
     );
@@ -654,8 +686,14 @@ fn flags_globs_and_plugins() {
     let result = run_in(&dir, &["-l", "app/**/*.rb"], "");
     assert_eq!(result.stdio, "app/messy.rb\n");
 
-    let result = run_in(&dir, &["-l", "--plugins=erb", "app"], "");
-    assert_eq!(result.stdio, "app/messy.rb\napp/views/page.html.erb\n");
+    let result = run_in(&dir, &["-l", "app/**/*.erb"], "");
+    assert_eq!(result.stdio, "app/views/page.html.erb\n");
+
+    // ERB is always formatted; --plugins=erb is accepted and changes nothing.
+    for args in [&["-l", "app"][..], &["-l", "--plugins=erb", "app"]] {
+        let result = run_in(&dir, args, "");
+        assert_eq!(result.stdio, "app/messy.rb\napp/views/page.html.erb\n");
+    }
 }
 
 #[test]
@@ -731,8 +769,11 @@ fn flags_directories_leave_out_git_ignored_files_and_dot_directories() {
     std::fs::create_dir_all(dir.join(".claude")).unwrap();
     std::fs::write(dir.join(".claude/hook.rb"), "c=3\n").unwrap();
     let result = run_in(&dir, &["-l", "."], "");
-    assert_eq!(result.stdio, "app/messy.rb\n");
+    assert_eq!(result.stdio, "app/messy.rb\napp/views/page.html.erb\n");
     // A file named directly is formatted even when git ignores it.
     let result = run_in(&dir, &["-l", ".", "db/schema.rb"], "");
-    assert_eq!(result.stdio, "app/messy.rb\ndb/schema.rb\n");
+    assert_eq!(
+        result.stdio,
+        "app/messy.rb\napp/views/page.html.erb\ndb/schema.rb\n"
+    );
 }
