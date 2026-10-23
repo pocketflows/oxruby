@@ -6,7 +6,7 @@ use std::sync::{LazyLock, OnceLock};
 
 use serde_yaml_ng::{Mapping, Value};
 
-use crate::path_util::{self, match_path};
+use crate::path_util::{self, MatchPath, PathPattern, match_path};
 
 static EMPTY: LazyLock<Mapping> = LazyLock::new(Mapping::new);
 
@@ -30,6 +30,15 @@ pub struct Config {
     /// The plugins loaded by the time this configuration was resolved, which
     /// decides whether their cops are registered (`cop_registered`).
     pub loaded_plugins: std::collections::HashSet<String>,
+    /// `AllCops` `Include` and `Exclude`, brace-expanded once: file
+    /// discovery matches every file under the project against them.
+    all_cops_patterns: OnceLock<AllCopsPatterns>,
+}
+
+#[derive(Debug, Clone)]
+struct AllCopsPatterns {
+    include: Vec<PathPattern>,
+    exclude: Vec<PathPattern>,
 }
 
 /// The cops RuboCop's registry would know about for this configuration:
@@ -178,6 +187,7 @@ impl Config {
             preview_option: None,
             target_ruby: OnceLock::new(),
             loaded_plugins: std::collections::HashSet::new(),
+            all_cops_patterns: OnceLock::new(),
         }
     }
 
@@ -477,9 +487,12 @@ impl Config {
             return false;
         }
         let absolute = path_util::expand_path(file).to_string_lossy().into_owned();
-        patterns(self.for_all_cops(), "Include")
-            .filter(|pattern| accept(pattern))
-            .any(|pattern| match_path(pattern, &relative) || match_path(pattern, &absolute))
+        let (relative, absolute) = (MatchPath::new(&relative), MatchPath::new(&absolute));
+        self.all_cops_patterns()
+            .include
+            .iter()
+            .filter(|pattern| accept(pattern.as_str()))
+            .any(|pattern| pattern.matches(&relative) || pattern.matches(&absolute))
     }
 
     /// `allowed_camel_case_file?(file)`.
@@ -497,12 +510,37 @@ impl Config {
 
     pub fn file_to_exclude(&self, file: &Path) -> bool {
         let absolute = path_util::expand_path(file).to_string_lossy().into_owned();
-        patterns(self.for_all_cops(), "Exclude").any(|pattern| match_path(pattern, &absolute))
+        let absolute = MatchPath::new(&absolute);
+        self.all_cops_patterns()
+            .exclude
+            .iter()
+            .any(|pattern| pattern.matches(&absolute))
+    }
+
+    /// `AllCops` `Exclude` as `file_to_exclude` matches it.
+    pub fn all_cops_exclude(&self) -> &[PathPattern] {
+        &self.all_cops_patterns().exclude
+    }
+
+    fn all_cops_patterns(&self) -> &AllCopsPatterns {
+        self.all_cops_patterns.get_or_init(|| {
+            let compile = |key| {
+                patterns(self.for_all_cops(), key)
+                    .map(PathPattern::new)
+                    .collect()
+            };
+            AllCopsPatterns {
+                include: compile("Include"),
+                exclude: compile("Exclude"),
+            }
+        })
     }
 
     fn possibly_include_hidden(&self) -> bool {
-        patterns(self.for_all_cops(), "Include")
-            .any(|pattern| pattern.starts_with('.') || pattern.contains("/."))
+        self.all_cops_patterns().include.iter().any(|pattern| {
+            let pattern = pattern.as_str();
+            pattern.starts_with('.') || pattern.contains("/.")
+        })
     }
 
     /// Port of `Base#relevant_file?` / `file_name_matches_any?` for a cop's
@@ -528,6 +566,7 @@ impl Config {
     /// Port of `Config#make_excludes_absolute`.
     pub fn make_excludes_absolute(&mut self) {
         let base = self.base_dir_for_path_parameters.clone();
+        self.all_cops_patterns = OnceLock::new();
         for (_, value) in self.hash.iter_mut() {
             let Some(Value::Sequence(excludes)) =
                 value.as_mapping_mut().and_then(|m| m.get_mut("Exclude"))

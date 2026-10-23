@@ -141,6 +141,65 @@ pub fn match_path(pattern: &str, path: &str) -> bool {
     matches || hidden_file_in_not_hidden_dir(pattern, path)
 }
 
+/// A `match_path` pattern brace-expanded once, for matching it against
+/// many files (`AllCops` `Include`/`Exclude` during file discovery).
+#[derive(Debug, Clone)]
+pub struct PathPattern {
+    source: String,
+    glob: bool,
+    expanded: Vec<Vec<char>>,
+}
+
+/// A path as `PathPattern::matches` takes it: its characters split out once.
+pub struct MatchPath<'a> {
+    text: &'a str,
+    chars: Vec<char>,
+    hidden_file_in_not_hidden_dir: bool,
+}
+
+impl<'a> MatchPath<'a> {
+    pub fn new(text: &'a str) -> Self {
+        Self {
+            text,
+            chars: text.chars().collect(),
+            hidden_file_in_not_hidden_dir: hidden_file(text) && !hidden_dir(text),
+        }
+    }
+}
+
+impl PathPattern {
+    pub fn new(source: &str) -> Self {
+        // `fnmatch` expands braces the same way with or without
+        // `FNM_DOTMATCH`, so one expansion serves both `match_path` checks.
+        let expanded = brace_expand(source, FNM_PATHNAME | FNM_EXTGLOB)
+            .iter()
+            .map(|pattern| pattern.chars().collect())
+            .collect();
+        Self {
+            source: source.to_owned(),
+            glob: glob(source),
+            expanded,
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.source
+    }
+
+    /// `match_path(pattern, path)`.
+    pub fn matches(&self, path: &MatchPath) -> bool {
+        let fnmatch = |flags| {
+            self.expanded
+                .iter()
+                .any(|pattern| fnmatch_chars(pattern, &path.chars, flags))
+        };
+        self.source == path.text
+            || (self.glob && fnmatch(FNM_PATHNAME | FNM_EXTGLOB))
+            || (path.hidden_file_in_not_hidden_dir
+                && fnmatch(FNM_PATHNAME | FNM_EXTGLOB | FNM_DOTMATCH))
+    }
+}
+
 fn hidden_file_in_not_hidden_dir(pattern: &str, path: &str) -> bool {
     hidden_file(path)
         && fnmatch(pattern, path, FNM_PATHNAME | FNM_EXTGLOB | FNM_DOTMATCH)
@@ -468,5 +527,50 @@ mod tests {
     fn match_path_handles_hidden_files_in_visible_dirs() {
         assert!(match_path("**/*", "lib/.rubocop.yml"));
         assert!(!match_path("**/*", ".git/config"));
+    }
+
+    #[test]
+    fn path_pattern_matches_as_match_path() {
+        let patterns = [
+            "**/*.rb",
+            "**/*",
+            "**/{Gemfile,gems.rb}",
+            "**/[Rr]akefile",
+            "**/.pryrc",
+            "tmp/**/*",
+            "/x/node_modules/**/*",
+            "db/*schema.rb",
+            "Gemfile",
+            "lib/{a,b{c,d}}/*.rb",
+        ];
+        let paths = [
+            "a.rb",
+            "lib/a/b.rb",
+            "lib/.hidden/b.rb",
+            ".a.rb",
+            "lib/.rubocop.yml",
+            ".git/config",
+            ".pryrc",
+            "app/.pryrc",
+            "app/gems.rb",
+            "Rakefile",
+            "Gemfile",
+            "tmp/a/b.rb",
+            "/x/node_modules/a/b.js",
+            "db/schema.rb",
+            "lib/bd/x.rb",
+            "lib/c/x.rb",
+            "é/ü.rb",
+        ];
+        for pattern in patterns {
+            let compiled = PathPattern::new(pattern);
+            for path in paths {
+                assert_eq!(
+                    compiled.matches(&MatchPath::new(path)),
+                    match_path(pattern, path),
+                    "{pattern} vs {path}"
+                );
+            }
+        }
     }
 }
