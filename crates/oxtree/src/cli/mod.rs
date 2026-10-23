@@ -2,9 +2,9 @@
 //! line (`check`, `debug`, `format`, `write`, `help`, `version`), with its
 //! options, `.streerc` handling, `--ignore-files`, messages and exit codes.
 //!
-//! Also the `stree-new` subcommand, a port of the app's
-//! `lib/tasks/stree_new.rake` (see `stree_new.rs`), and the flag-style
-//! `oxtree [--write|--check|--list-different] [PATH...]` (see `flags.rs`).
+//! Also the flag-style `oxtree [--write|--check|--list-different] [PATH...]`
+//! (see `flags.rs`), which formats ERB files with the app's embedded
+//! formatter (`embedded.rs`).
 //!
 //! The actions that print syntax_tree's Ruby objects (`ast`, `doc`, `expr`,
 //! `json`, `match`, `search`, `ctags`) and the language server (`lsp`) are
@@ -20,7 +20,6 @@
 pub mod flags;
 pub mod fnmatch;
 pub mod glob;
-pub mod stree_new;
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -28,6 +27,7 @@ use std::time::Instant;
 
 use rayon::prelude::*;
 
+use crate::oxfmt::Oxfmt;
 use crate::parser::ParseError;
 
 /// `SyntaxTree::VERSION`, which `stree version` prints.
@@ -87,7 +87,6 @@ impl Fatal {
 /// name. Returns the exit status.
 pub fn run(argv: &[String], cwd: &Path, io: &mut Io) -> i32 {
     match argv.first().map(String::as_str) {
-        Some("stree-new" | "stree_new") => stree_new::run(&argv[1..], cwd, io),
         _ if flags::handles(argv, cwd) => flags::run(argv, cwd, io),
         _ => match run_stree(argv, cwd, io) {
             Ok(status) => status,
@@ -508,19 +507,23 @@ enum Action {
     Write,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Handler {
+#[derive(Clone, Copy)]
+enum Handler<'a> {
     Ruby,
     Erb,
+    /// The app's `ErbEmbeddedFormatter` (`embedded.rs`), which the flag CLI
+    /// uses for every `.erb` file.
+    Embedded(&'a Oxfmt),
 }
 
 /// `HANDLERS[extension]`: `.erb` and `.html.erb` are registered by the erb
-/// plugin; everything else is Ruby.
-fn handler_for(extension: &str, plugins: &Plugins) -> Handler {
-    if plugins.erb && (extension == ".erb" || extension == ".html.erb") {
-        Handler::Erb
-    } else {
-        Handler::Ruby
+/// plugin; everything else is Ruby. With `embedded` (the flag CLI), `.erb`
+/// goes to the embedded formatter whatever the plugins.
+fn handler_for<'a>(extension: &str, plugins: &Plugins, embedded: Option<&'a Oxfmt>) -> Handler<'a> {
+    match embedded {
+        Some(oxfmt) if extension.ends_with(".erb") => Handler::Embedded(oxfmt),
+        _ if plugins.erb && (extension == ".erb" || extension == ".html.erb") => Handler::Erb,
+        _ => Handler::Ruby,
     }
 }
 
@@ -676,6 +679,8 @@ struct ItemOutput {
     errored: bool,
     /// The item failed only because it isn't formatted.
     unformatted: bool,
+    /// Printed to stderr in every mode, without failing the item.
+    warning: Option<String>,
 }
 
 fn run_stree(argv: &[String], cwd: &Path, io: &mut Io) -> Result<i32, Fatal> {
@@ -755,7 +760,7 @@ fn run_stree(argv: &[String], cwd: &Path, io: &mut Io) -> Result<i32, Fatal> {
     let outputs: Vec<ItemOutput> = queue
         .par_iter()
         .with_max_len(1)
-        .map(|item| run_item(action, item, &options, cwd))
+        .map(|item| run_item(action, item, &options, cwd, None))
         .collect();
 
     let mut errored = false;
@@ -795,7 +800,12 @@ fn run_stree(argv: &[String], cwd: &Path, io: &mut Io) -> Result<i32, Fatal> {
     }
 }
 
-fn format_with(handler: Handler, source: &str, options: &Options) -> Result<String, Failure> {
+fn format_with(
+    handler: Handler,
+    source: &str,
+    options: &Options,
+    filepath: &str,
+) -> Result<String, Failure> {
     match handler {
         Handler::Ruby => crate::format(source, options.print_width, options.formatter_options())
             .map_err(Failure::Parse),
@@ -807,17 +817,49 @@ fn format_with(handler: Handler, source: &str, options: &Options) -> Result<Stri
             options.plugins.format_options(),
         )
         .map_err(Failure::Parse),
+        // `ErbEmbeddedFormatter.format(source, width, filepath:)`: plugins
+        // don't apply, as in the app's stree_new task.
+        Handler::Embedded(oxfmt) => {
+            crate::embedded::format(source, options.print_width, filepath, oxfmt).map_err(|e| {
+                match e {
+                    crate::embedded::Error::Parse(e) => Failure::Parse(e),
+                    e => Failure::Other {
+                        class: e.class_name(),
+                        message: e.message(),
+                    },
+                }
+            })
+        }
     }
 }
 
-fn run_item(action: Action, item: &Item, options: &Options, cwd: &Path) -> ItemOutput {
+/// One item's output. `embedded` is the flag CLI's oxfmt, which sends
+/// `.erb` items to the embedded formatter.
+fn run_item(
+    action: Action,
+    item: &Item,
+    options: &Options,
+    cwd: &Path,
+    embedded: Option<&Oxfmt>,
+) -> ItemOutput {
     let mut out = ItemOutput::default();
     let start = Instant::now();
     let extension = match item {
         Item::File(path) => extname(path).to_string(),
         _ => options.extension.clone(),
     };
-    let handler = handler_for(&extension, &options.plugins);
+    let handler = handler_for(&extension, &options.plugins, embedded);
+    // What the embedded formatter picks the language from.
+    let filepath = match item {
+        Item::File(path) => path.clone(),
+        _ => format!("{}{}", item.filepath(), options.extension),
+    };
+    if matches!(handler, Handler::Embedded(_)) {
+        crate::oxfmt::take_tailwind_unsorted();
+    }
+    let format_with = |handler: Handler, text: &str, options: &Options| {
+        format_with(handler, text, options, &filepath)
+    };
     let disk: PathBuf = match item {
         Item::File(path) => cwd.join(path),
         _ => PathBuf::new(),
@@ -827,7 +869,7 @@ fn run_item(action: Action, item: &Item, options: &Options, cwd: &Path) -> ItemO
         Item::File(_) => match std::fs::read(&disk) {
             Ok(bytes) => match handler {
                 Handler::Ruby => read_ruby(bytes),
-                Handler::Erb => read_utf8(bytes),
+                Handler::Erb | Handler::Embedded(_) => read_utf8(bytes),
             },
             Err(e) => Err(Failure::Other {
                 class: "SystemCallError",
@@ -890,6 +932,14 @@ fn run_item(action: Action, item: &Item, options: &Options, cwd: &Path) -> ItemO
                 }
             });
 
+    // Formatted with Tailwind classes left unsorted (no oxfmt executable):
+    // a warning, not a failure (user decision, as in the app's stree_new).
+    if matches!(handler, Handler::Embedded(_)) && crate::oxfmt::take_tailwind_unsorted() {
+        out.warning = Some(format!(
+            "[warn] {}: oxfmt not found; Tailwind classes left unsorted",
+            item.filepath()
+        ));
+    }
     let Err(failure) = result else {
         return out;
     };

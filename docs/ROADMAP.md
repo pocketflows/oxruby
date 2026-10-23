@@ -110,8 +110,9 @@ file is the consolidated view. oxtree has its own status file,
 
 ## oxtree
 
-The formatter, the `oxtree` CLI with `stree-new` mode, and the gem are done.
-Output matches syntax_tree and code/'s `stree_new` byte for byte on all
-4,515 selected files, and `oxtree stree-new check` takes 0.72 s against
-11.2 s. `docs/OXTREE.md` covers the details and what's left: the stree
+The formatter, the `oxtree` CLI and the gem are done. `oxtree --check .`
+replaces code/'s `bin/rails stree_new:check`, ERB included, with no flag:
+it reports the same files with byte-identical output (4,524 files both
+select; `script/compare_with_stree`), in 0.52 s against 11.2 s. The
+`stree-new` subcommand is gone. `docs/OXTREE.md` covers the details and what's left: the stree
 actions that print Ruby objects, and the untested release matrix.

@@ -7,7 +7,7 @@ with prebuilt native binaries.
 | Gem | Replaces | Status |
 | --- | --- | --- |
 | [`oxcop`](gems/oxcop) | [RuboCop](https://github.com/rubocop/rubocop) 1.91.0 | All 613 core cops, each passing its whole upstream spec; matches RuboCop on a 5,692-file Rails app. See [docs/ROADMAP.md](docs/ROADMAP.md) |
-| [`oxtree`](gems/oxtree) | [syntax_tree](https://github.com/ruby-syntax-tree/syntax_tree) 6.3.0 + ERB | Formatter, `oxtree` CLI and `stree-new` mode; byte-identical to syntax_tree on every corpus tried. See [docs/OXTREE.md](docs/OXTREE.md) |
+| [`oxtree`](gems/oxtree) | [syntax_tree](https://github.com/ruby-syntax-tree/syntax_tree) 6.3.0 + ERB | Formatter and `oxtree` CLI; `oxtree --check .` formats ERB (with oxfmt for embedded JS/CSS) like code/'s `stree_new` task; byte-identical to syntax_tree on every corpus tried. See [docs/OXTREE.md](docs/OXTREE.md) |
 
 ## oxcop
 
