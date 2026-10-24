@@ -8,7 +8,7 @@ use walkdir::WalkDir;
 
 use crate::config::Config;
 use crate::config_loader::{ConfigError, ConfigStore};
-use crate::path_util::{self, match_path};
+use crate::path_util::{self, MatchPath};
 
 pub struct TargetFinder<'a> {
     config_store: &'a mut ConfigStore,
@@ -78,14 +78,11 @@ impl<'a> TargetFinder<'a> {
 /// default `node_modules/**/*`).
 fn excluded_dir(config: &Config, dir: &Path) -> bool {
     let probe = dir.join("__oxcop_probe__").to_string_lossy().into_owned();
+    let probe = MatchPath::new(&probe);
     config
-        .for_all_cops()
-        .get("Exclude")
-        .and_then(Value::as_sequence)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .any(|pattern| pattern.ends_with("/**/*") && match_path(pattern, &probe))
+        .all_cops_exclude()
+        .iter()
+        .any(|pattern| pattern.as_str().ends_with("/**/*") && pattern.matches(&probe))
 }
 
 fn to_inspect(config: &Config, file: &Path, base_dir: &Path) -> bool {
