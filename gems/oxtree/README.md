@@ -33,5 +33,5 @@ keep syntax_tree's ERB handling, behind `--plugins=erb`.
 The gem installs a single `oxtree` executable. It has no `stree` alias, so
 it never shadows syntax_tree's when both are bundled.
 
-oxtree is early: see the [project README](https://github.com/theodoretliu/oxruby)
+oxtree is early: see the [project README](https://github.com/pocketflows/oxruby)
 for status.

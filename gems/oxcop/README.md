@@ -12,5 +12,5 @@ gem "oxcop", require: false
 bundle exec oxcop            # same flags, config and output as `rubocop`
 ```
 
-oxcop is early: see the [project README](https://github.com/theodoretliu/oxruby)
+oxcop is early: see the [project README](https://github.com/pocketflows/oxruby)
 for which cops are ported and what is not supported yet.

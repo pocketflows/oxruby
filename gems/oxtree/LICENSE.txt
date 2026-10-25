@@ -19,8 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-Portions of this project (config/default.yml, cop logic, messages and the
-specs under spec/rubocop/ and spec/support/) are derived from RuboCop,
-Copyright (c) 2012-26 Bozhidar Batsov, also under the MIT License; see
-vendor/rubocop/LICENSE.txt.

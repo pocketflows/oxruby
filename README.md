@@ -86,7 +86,32 @@ There are two acceptance bars:
 user that no prebuilt binary exists. `.github/workflows/release.yml` builds
 every platform and pushes on a `v*` tag.
 
+## Credits
+
+oxruby is a port, and the design and behavior are its upstreams'. Thanks to
+the authors and contributors of:
+
+- **oxcop:** [RuboCop](https://github.com/rubocop/rubocop),
+  [rubocop-ast](https://github.com/rubocop/rubocop-ast),
+  [rubocop-rails](https://github.com/rubocop/rubocop-rails),
+  [rubocop-rspec](https://github.com/rubocop/rubocop-rspec),
+  [parser](https://github.com/whitequark/parser),
+  [Prism](https://github.com/ruby/prism)'s parser translation,
+  [regexp_parser](https://github.com/ammar/regexp_parser),
+  [did_you_mean](https://github.com/ruby/did_you_mean) and
+  [RubyGems](https://github.com/ruby/rubygems)' version matching
+- **oxtree:** [syntax_tree](https://github.com/ruby-syntax-tree/syntax_tree),
+  [w_syntax_tree-erb](https://github.com/davidwessman/syntax_tree-erb) and
+  [prettier_print](https://github.com/ruby/prettier_print)
+- **Both:** [Ruby](https://github.com/ruby/ruby)'s `File.fnmatch` (and, in
+  oxtree, `Dir.glob`)
+- **Linked:** [Prism](https://github.com/ruby/prism) (via `ruby-prism`),
+  Shopify's [rubydex](https://github.com/Shopify/rubydex) and
+  [oxc](https://github.com/oxc-project/oxc)'s formatter
+
 ## License
 
-MIT. Portions are derived from RuboCop (MIT); see `LICENSE` and
-`vendor/rubocop/LICENSE.txt`.
+MIT; see `LICENSE`. The upstream projects above are MIT-licensed, except
+Ruby, which is used here under its 2-clause BSD option.
+`THIRD_PARTY_NOTICES.md` reproduces each one's copyright notice and license;
+the gems ship it alongside `LICENSE.txt`.

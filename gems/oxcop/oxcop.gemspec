@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
     prints RuboCop-compatible output, but runs as a native binary. It tracks
     RuboCop #{Oxcop::RUBOCOP_VERSION}.
   DESC
-  spec.homepage = "https://github.com/theodoretliu/oxruby"
+  spec.homepage = "https://github.com/pocketflows/oxruby"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.1"
 
@@ -24,7 +24,7 @@ Gem::Specification.new do |spec|
     "rubygems_mfa_required" => "true"
   }
 
-  spec.files = Dir["lib/**/*.rb", "exe/oxcop", "exe/*/oxcop", "LICENSE.txt", "README.md"]
+  spec.files = Dir["lib/**/*.rb", "exe/oxcop", "exe/*/oxcop", "LICENSE.txt", "THIRD_PARTY_NOTICES.md", "README.md"]
   spec.bindir = "exe"
   spec.executables = ["oxcop"]
 end

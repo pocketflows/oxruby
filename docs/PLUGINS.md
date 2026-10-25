@@ -97,7 +97,7 @@ path = "src/main.rs"
 
 [dependencies]
 oxcop = { path = "../../oxruby/crates/oxcop" }
-# or: oxcop = { git = "https://github.com/theodoretliu/oxruby", rev = "..." }
+# or: oxcop = { git = "https://github.com/pocketflows/oxruby", rev = "..." }
 
 [workspace]          # its own workspace, so its profiles apply
 

@@ -6,7 +6,7 @@ members = ["crates/*"]
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/theodoretliu/oxruby"
+repository = "https://github.com/pocketflows/oxruby"
 rust-version = "1.88"
 
 [workspace.dependencies]

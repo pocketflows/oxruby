@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
     and w_syntax_tree-erb #{Oxtree::SYNTAX_TREE_ERB_VERSION} do, but runs as a native
     binary.
   DESC
-  spec.homepage = "https://github.com/theodoretliu/oxruby"
+  spec.homepage = "https://github.com/pocketflows/oxruby"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.1"
 
@@ -24,7 +24,7 @@ Gem::Specification.new do |spec|
     "rubygems_mfa_required" => "true"
   }
 
-  spec.files = Dir["lib/**/*.rb", "exe/oxtree", "exe/*/oxtree", "LICENSE.txt", "README.md"]
+  spec.files = Dir["lib/**/*.rb", "exe/oxtree", "exe/*/oxtree", "LICENSE.txt", "THIRD_PARTY_NOTICES.md", "README.md"]
   spec.bindir = "exe"
   spec.executables = ["oxtree"]
 end

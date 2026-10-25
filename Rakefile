@@ -70,16 +70,31 @@ namespace :version do
   end
 end
 
+namespace :license do
+  desc "Check that each gem ships the root LICENSE and THIRD_PARTY_NOTICES.md"
+  task :check do
+    copies = { "LICENSE" => "LICENSE.txt", "THIRD_PARTY_NOTICES.md" => "THIRD_PARTY_NOTICES.md" }
+    stale = %w[oxcop oxtree].flat_map do |gem|
+      copies.filter_map do |root, copy|
+        path = File.join("gems", gem, copy)
+        full = File.join(ROOT, path)
+        path unless File.exist?(full) && FileUtils.identical?(File.join(ROOT, root), full)
+      end
+    end
+    abort "out of date (copy from the root): #{stale.join(", ")}" unless stale.empty?
+  end
+end
+
 namespace :gem do
   desc "Build the plain `ruby` platform gem (no binary; explains how to get one)"
-  task ruby: "version:check" do
+  task ruby: %w[version:check license:check] do
     build_gem
   end
 
   # A native gem for PLATFORM. The binary comes from BINARY=path when given
   # (CI cross-builds it), otherwise from `cargo build --release --target`.
   desc "Build a native gem, e.g. rake gem:native[arm64-darwin]"
-  task :native, [:platform] => "version:check" do |_, args|
+  task :native, [:platform] => %w[version:check license:check] do |_, args|
     platform = args.fetch(:platform)
     target = NATIVE_PLATFORMS.fetch(platform) { abort "unknown platform #{platform}" }
     binary = ENV["BINARY"] || begin
@@ -174,4 +189,4 @@ namespace :vendor do
   end
 end
 
-task default: %w[version:check cargo:check spec]
+task default: %w[version:check license:check cargo:check spec]

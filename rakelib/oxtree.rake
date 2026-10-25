@@ -73,14 +73,14 @@ namespace :oxtree do
 
   namespace :gem do
     desc "Build the plain `ruby` platform oxtree gem (no binary; explains how to get one)"
-    task ruby: "oxtree:version:check" do
+    task ruby: %w[oxtree:version:check license:check] do
       oxtree_build_gem
     end
 
     # A native gem for PLATFORM. The binary comes from BINARY=path when given
     # (CI cross-builds it), otherwise from `cargo build --release --target`.
     desc "Build a native oxtree gem, e.g. rake oxtree:gem:native[arm64-darwin]"
-    task :native, [:platform] => "oxtree:version:check" do |_, args|
+    task :native, [:platform] => %w[oxtree:version:check license:check] do |_, args|
       platform = args.fetch(:platform)
       target = NATIVE_PLATFORMS.fetch(platform) { abort "unknown platform #{platform}" }
       binary = ENV["BINARY"] || begin
