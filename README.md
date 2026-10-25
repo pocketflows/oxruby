@@ -7,7 +7,7 @@ with prebuilt native binaries.
 | Gem | Replaces | Status |
 | --- | --- | --- |
 | [`oxcop`](gems/oxcop) | [RuboCop](https://github.com/rubocop/rubocop) 1.91.0 | All 613 core cops, each passing its whole upstream spec; matches RuboCop on a 5,692-file Rails app. See [docs/ROADMAP.md](docs/ROADMAP.md) |
-| [`oxtree`](gems/oxtree) | [syntax_tree](https://github.com/ruby-syntax-tree/syntax_tree) 6.3.0 + ERB | Formatter and `oxtree` CLI; `oxtree --check .` formats ERB (with oxfmt for embedded JS/CSS) like code/'s `stree_new` task; byte-identical to syntax_tree on every corpus tried. See [docs/OXTREE.md](docs/OXTREE.md) |
+| [`oxtree`](gems/oxtree) | [syntax_tree](https://github.com/ruby-syntax-tree/syntax_tree) 6.3.0 + ERB | Formatter and `oxtree` CLI; `oxtree --check .` also formats ERB (with oxfmt for embedded JS/CSS); byte-identical to syntax_tree on every corpus tried. See [docs/OXTREE.md](docs/OXTREE.md) |
 
 ## oxcop
 
@@ -52,11 +52,10 @@ spec/oxcop/          the shim that runs those specs against the oxcop binary
 script/              differential testing against real RuboCop
 ```
 
-The repository expects two sibling checkouts next to it:
+Porting expects a sibling checkout of upstream RuboCop:
 
 ```
 ../rubocop   upstream RuboCop at the tracked tag (reference for porting)
-../code      a real Rails app used as a differential-testing corpus
 ```
 
 ## Testing
@@ -65,7 +64,7 @@ The repository expects two sibling checkouts next to it:
 bundle install
 bundle exec rake          # version check, cargo fmt/clippy/test, specs
 bundle exec rake spec     # RuboCop's own cop specs, run against oxcop
-bundle exec rake compare  # oxcop vs. real rubocop on ../code (DIR=... to override)
+bundle exec rake compare DIR=path/to/app  # oxcop vs. real rubocop on a project
 ```
 
 There are two acceptance bars:
